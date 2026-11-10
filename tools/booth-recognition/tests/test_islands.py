@@ -190,6 +190,7 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(data["processingSteps"], [
                 "booth_recognition", "booth_block_grouping", "island_recognition", "booth_island_assignment",
                 "island_marker_alignment",
+                "half_booth_splitting",
             ])
             self.assertEqual(data["pages"][0]["islandAssignment"]["counts"]["assignedBooths"], 16)
             self.assertEqual(len(data["pages"][0]["islands"]), 1)
@@ -201,6 +202,9 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(page["blocks"][0]["grid"], {"rows": 4, "columns": 4})
             self.assertFalse({"outline", "dividers", "islandId"} & page["blocks"][0].keys())
             self.assertNotIn("components", page["islandAssignment"])
+            self.assertEqual(len(page["halfBooths"]), 32)
+            self.assertEqual({h["boothId"] for h in page["halfBooths"]}, {b["id"] for b in page["booths"]})
+            self.assertEqual(page["halfBoothSplitting"]["counts"]["booths"], 16)
             self.assertNotIn("boothIds", page["islands"][0])
             self.assertNotIn("componentIds", page["islands"][0])
             self.assertTrue(all(not {"blockId", "islandId", "assignment"} & b.keys() for b in page["booths"]))
@@ -215,6 +219,12 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("center", page["islandMarkers"][0])
             self.assertTrue((target.parent / "block-grouping.json").is_file())
             self.assertEqual(json.loads(target.read_text(encoding="utf-8")), data)
+            final = json.loads((target.parent / "final.json").read_text(encoding="utf-8"))
+            self.assertEqual(set(final), {"halls"})
+            island = final["halls"][0]["islands"][0]
+            self.assertEqual(island["code"], "A")
+            self.assertEqual(len(island["blocks"][0]["booths"]), 16)
+            self.assertEqual(island["markers"][0]["pos"], page["islandMarkers"][0]["center"])
 
     def test_assignment_can_be_disabled_without_losing_context_stage(self) -> None:
         image = Image.new("RGB", (420, 300), "white")
@@ -291,6 +301,7 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(data["pages"][0]["islandMarkers"][0]["label"], "あ")
             target = result.save(Path(directory) / "result")
             self.assertEqual(json.loads(target.read_text(encoding="utf-8")), data)
+            self.assertFalse((target.parent / "final.json").exists())
             self.assertTrue((target.parent / "page-001-overlay.png").is_file())
             raw = json.loads((target.parent / "step-1.json").read_text(encoding="utf-8"))
             self.assertEqual(raw["schemaVersion"], 2)

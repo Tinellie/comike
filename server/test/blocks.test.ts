@@ -7,6 +7,7 @@ import type { PreviewOptions } from '../../client/src/preview/layers.ts'
 import { blockGeometry, inferMatrixGrid } from '../../client/src/preview/blockGeometry.ts'
 import { IslandLayer } from '../../client/src/preview/layers.ts'
 import { previewMargin } from '../../client/src/preview/MapPreviewRenderer.ts'
+import { HalfBoothLayer } from '../../client/src/preview/HalfBoothLayer.ts'
 
 function fixture() {
   const edge = (x1: number, y1: number, x2: number, y2: number) => ({ x1, y1, x2, y2, status: 'recognized' })
@@ -103,6 +104,86 @@ function centeredFixture(assigned = true) {
     })),
   }
 }
+
+function halfFixture() {
+  const data = centeredFixture()
+  return {
+    ...data,
+    pages: data.pages.map(page => ({
+      ...page,
+      halfBooths: page.booths.flatMap(booth => [0, 1].map(index => ({
+        id: `${booth.id}-h${index + 1}`, boothId: booth.id, suffix: index === 0 ? 'a' : 'b',
+        bbox: { ...booth.bbox, x: booth.bbox.x + index * booth.bbox.width / 2, width: booth.bbox.width / 2 },
+        status: 'resolved', issues: [] as string[],
+      }))),
+      halfBoothSplitting: { method: 'island-neighbor-ab', counts: { booths: 4, halfBooths: 8, reviewBooths: 0 } },
+    })),
+  }
+}
+
+test('half-booth parser validates full parent coverage and fractional equal partitions without mutation', () => {
+  const data = halfFixture()
+  const before = JSON.stringify(data)
+  const page = parsePreviewData(data)[0]
+  assert.equal(page.halfBooths?.length, 8)
+  assert.equal(page.halfBooths?.[0].suffix, 'a')
+  assert.equal(JSON.stringify(data), before)
+  assert.equal(parsePreviewData(centeredFixture())[0].halfBooths, null)
+  const reviewed = halfFixture()
+  for (const half of reviewed.pages[0].halfBooths.slice(0, 2)) {
+    Object.assign(half, { suffix: null, status: 'needs_review', issues: ['number_evidence_missing'] })
+  }
+  reviewed.pages[0].halfBoothSplitting.counts.reviewBooths = 1
+  assert.equal(parsePreviewData(reviewed)[0].halfBooths?.[0].suffix, null)
+})
+
+test('half-booth parser rejects duplicate or missing halves, false statistics and changed parent geometry', () => {
+  for (const mutate of [
+    (d: ReturnType<typeof halfFixture>) => { d.pages[0].halfBooths.pop() },
+    (d: ReturnType<typeof halfFixture>) => { d.pages[0].halfBooths[1].id = d.pages[0].halfBooths[0].id },
+    (d: ReturnType<typeof halfFixture>) => { d.pages[0].halfBooths[0].boothId = 'missing' },
+    (d: ReturnType<typeof halfFixture>) => { d.pages[0].halfBooths[0].bbox.width += 1 },
+    (d: ReturnType<typeof halfFixture>) => { d.pages[0].halfBooths[0].bbox.x = NaN },
+    (d: ReturnType<typeof halfFixture>) => { d.pages[0].halfBooths[1].suffix = 'a' },
+    (d: ReturnType<typeof halfFixture>) => { d.pages[0].halfBooths[0].status = 'other' },
+    (d: ReturnType<typeof halfFixture>) => { d.pages[0].halfBoothSplitting.counts.reviewBooths = 1 },
+    (d: ReturnType<typeof halfFixture>) => { Object.assign(d.pages[0], { halfBoothSplitting: undefined }) },
+  ]) {
+    const data = halfFixture()
+    mutate(data)
+    assert.throws(() => parsePreviewData(data), /Half-booth|Booth 必须/)
+  }
+})
+
+test('half-booth drawing emits one cut per parent, two a/b labels and respects toggle and Island filtering', () => {
+  const page = parsePreviewData(halfFixture())[0]
+  const text: [string, number, number][] = []
+  let strokes = 0
+  const lines: number[][] = []
+  const context = {
+    lineWidth: 0, strokeStyle: '', fillStyle: '', font: '',
+    textAlign: 'center' as const, textBaseline: 'middle' as const,
+    beginPath() {}, moveTo(x: number, y: number) { lines.push([x, y]) },
+    lineTo(x: number, y: number) { lines.push([x, y]) },
+    stroke() { strokes++ }, setLineDash() {},
+    fillText(value: string, x: number, y: number) { text.push([value, x, y]) },
+  }
+  const layer = new HalfBoothLayer()
+  layer.draw(context, { page, options: frameOptions() })
+  assert.equal(strokes, 0)
+  layer.draw(context, { page, options: { ...frameOptions(), halfBooths: true, numbers: true } })
+  assert.equal(strokes, 4)
+  assert.equal(text.length, 8)
+  assert.deepEqual(text[0], ['a', 15, 25])
+  assert.ok(text.every(([value]) => value === 'a' || value === 'b'))
+  assert.deepEqual(lines.slice(0, 2), [[20, 10], [20, 39]])
+  layer.draw(context, { page, options: { ...frameOptions(), halfBooths: true, selectedIsland: 'other' } })
+  assert.equal(strokes, 4)
+  page.booths[3].status = 'needs_review'
+  layer.draw(context, { page, options: { ...frameOptions(), halfBooths: true } })
+  assert.equal(context.fillStyle, '#e08000')
+  assert.equal(text.at(-1)?.[0], 'b')
+})
 
 test('schema 7 reads center-only markers without recreating OCR boxes or changing source data', () => {
   const data = centeredFixture()
@@ -290,7 +371,7 @@ test('Block rendering strokes the complete outer frame before each unique inner 
 function frameOptions(): PreviewOptions {
   return {
     background: false, boxes: false, blockFrames: true, numbers: false,
-    islands: false, groups: false, gaps: false, selectedIsland: null,
+    islands: false, groups: false, gaps: false, halfBooths: false, selectedIsland: null,
   }
 }
 

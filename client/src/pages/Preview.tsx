@@ -20,7 +20,7 @@ export default function Preview() {
   const [zoom, setZoom] = useState<number | 'fit'>('fit')
   const [options, setOptions] = useState<PreviewOptions>({
     background: true, boxes: true, blockFrames: true, numbers: true, islands: true,
-    groups: true, gaps: true, selectedIsland: null,
+    groups: true, gaps: true, halfBooths: true, selectedIsland: null,
   })
 
   useEffect(() => {
@@ -98,12 +98,14 @@ export default function Preview() {
               ['blockFrames', 'Block 外扩框'],
               ['islands', 'Island 标记'],
               ['groups', '分组着色'], ['gaps', '缺号断点'],
+              ['halfBooths', 'Half-booth a/b'],
             ] as const).map(([key, label]) => (
               <FormControlLabel
                 key={key} label={label}
                 control={<Checkbox checked={options[key]} disabled={
                   (key === 'islands' && page.islandMarkers === null)
                   || (key === 'blockFrames' && page.blocks === null)
+                  || (key === 'halfBooths' && page.halfBooths === null)
                   || ((key === 'groups' || key === 'gaps') && page.islandAssignment === null)
                 } onChange={(_, checked) =>
                   setOptions(previous => ({ ...previous, [key]: checked }))} />}
@@ -115,6 +117,13 @@ export default function Preview() {
               场馆：{page.venue.label ?? (page.venue.status === 'not_run' ? '未执行 OCR' : '未识别')}
               {page.venue.status === 'needs_review' && '（待复核）'}
               {page.venue.recognitionScore !== null && ` · OCR 置信度 ${Math.round(page.venue.recognitionScore * 100)}%`}
+            </Typography>
+          )}
+          {page.halfBooths && (
+            <Typography variant="body2" color="text.secondary">
+              步骤 6：{page.halfBooths.length} 个 half-booth；
+              {page.halfBooths.filter(h => h.status === 'needs_review').length / 2} 个原 Booth 的分割建议待复核。
+              内部 Block 两端采用平行切线，端部外半：相邻编号小取 a，大取 b；壁摊不改变端部切线。
             </Typography>
           )}
           <Typography variant="body2" color="text.secondary">

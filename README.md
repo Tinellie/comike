@@ -3,9 +3,36 @@
 空白全栈项目：TypeScript、Node.js、React、Vite、React Router、Express、
 MUI、MySQL 和 Drizzle ORM。
 
-界面仅包含主导航栏以及两个空页面：Home (`/`) 和 Map (`/map`)。
-未添加业务内容、示例数据或业务表。
+界面包含主导航栏、空白 Home (`/`) 和 OSM 地图 Map (`/map`)。
+未添加数据库业务表。
 另提供 Preview (`/preview`) 用于查看地图识别结果。
+
+## OSM 地图
+
+运行 `npm run dev` 后打开 http://localhost:5173/map。
+Map 页面读取本地 [osm-map.osm](./ref/osm-map.osm)，在 React 管理的原生 Canvas 2D 上绘制，
+不需要在线地图服务、瓦片或 API Key，也不会上传地图文件。
+后端仅通过 `/api/map/osm-map.osm` 提供该固定文件，不开放其他参考文件。
+
+- 使用 Web Mercator 投影；配色与绘制规则参考原项目的 OSM 页面：
+  东馆红色、西馆蓝色、南馆绿色，普通建筑暖橙色，步行区青色，步道绿色，铁路蓝色；
+  没有 `tokyo-big-sight` 标签的范围外要素灰化。
+- 按 `level`（默认 1，0 视为 1）、类型图层排序，展示 100 米网格及单行方向箭头。
+  线宽、楼梯虚线和箭头采用实际地图米数，随地图缩放，而不是固定屏幕像素；
+  已补偿 Mercator 在当地纬度的比例变形，原始地图坐标不变。
+- 标签优先显示 `hall:e` / `hall:w` / `hall:s` 的彩色馆号，不再铺满普通地名，
+  馆号保持正向、白色描边并避让；较大比例下字号也随地图放大。
+- 继承有效 Relation 的绘制标签（含路径、单行和馆区标签），保留多个取值；
+  已组合的多边形不重复填充成员边界或标注馆号。
+- 支持拼接多边形关系的分段外环/内环，以保留孔洞；忽略 JOSM 的 `action="delete"` 和 `visible="false"` 对象。
+- 初始适应有效地图范围；按住鼠标左键拖动，滚轮围绕鼠标位置缩放。
+- 提供放大、缩小、适应地图按钮；聚焦画布后也可用方向键、`+` / `-`、`Home`。
+- 画布随容器调整尺寸，并适配高分屏；缩放范围为适应比例的 25%–25600%。
+- 加载/解析失败会显示错误与重试入口；缺失几何引用会显示警告，不跨缺失节点连线或强行填充不完整多边形。
+
+绘图使用本地矢量样式，并非完整的 OSM 官方地图样式；非多边形关系只提供成员的绘制标签，不额外叠绘，避免重复道路/线路。
+本页没有移植参考项目的编辑器、楼层筛选、路径高亮选择或车站 HTML 徽标。
+此页面与识图 Preview、展位精简数据相互独立。
 
 ## 地图预览
 
@@ -53,7 +80,7 @@ Booth 编号按照原图方向绘制，Island 标签正向显示，所有层使�
 独立的 [地图识别模块](./tools/booth-recognition/README.md)
 支持 PDF/图片输入，通过 OpenCV 定位方格、PaddleOCR 识别两位数字，
 并通过单独的 Island 模块定位彩色编号、识别大小写英文字母及平/片假名。
-主脚本通过五个独立阶段流水执行：
+主脚本通过六个独立阶段流水执行：
 
 1. `BoothRecognitionStep`：定位 Booth、识别两位数字。
 2. 独立的 [BoothBlockGrouper](./tools/booth-recognition/booth_blocks/grouping.py)：
@@ -66,10 +93,21 @@ Booth 编号按照原图方向绘制，Island 标签正向显示，所有层使�
 5. 独立的 [IslandMarkerAligner](./tools/booth-recognition/map_recognition/marker_alignment.py)：
    仅用 marker 中点对齐附近行列，内部 Island 再尝试沿另一轴居中；
    壁摊只与附近同向、同侧壁摊标记对齐，不参与内部 Island 居中。
+6. 独立的 [HalfBoothSplitter](./tools/booth-recognition/map_recognition/half_booths.py)：
+   按 grid 走向和同 Island 邻近编号将原 Booth 等分为 a/b；内部 Block 两端改为平行切线。
+   新增 `pages[].halfBooths`，原 Booth 和 Island → Block → Booth 映射不变。
+   Preview 的 `Half-booth a/b` 开关显示切线及编号后缀，并跟随 Island 筛选。
 
 输出 `step-1.json`（原始 Booth/Island OCR，沿用旧命名）、
 `step-2.json`（编号校正后、划分前）、`block-grouping.json`（独立 Block 结果）
 和 `result.json`（schema 7，带 Block、归属、缺号和 marker 中心点的最终结果）。
+完整流水线保存 `result.json` 后，还会生成独立的 `final.json`：
+以 `halls → islands → blocks → booths` 嵌套，仅保留场馆名、Island 编号/marker 中心点、
+Block ID/外框/可选 grid，以及 Booth ID/两位编号/外框/a-b 位置映射。
+例如 `split: {a: "l", b: "r"}` 表示 a 在左、b 在右，`t/b` 表示上/下；
+未知值保留 `null` 并输出警告。不重复导出 half-booth 坐标或统计、评分、推断数据。
+每页保留独立坐标系；此精简文件不替代 Preview 使用的 `result.json`。
+跳过划分的模式不生成新的精简文件；可通过工具文档中的独立命令从已有完整结果重新导出。
 最终 `islandMarkers[]` 仅保存 `center: {x, y}`，不再保存 `bbox`；
 原始 OCR 外框仍保留在阶段快照中。Preview 在中心点绘制半径 2.5 px 的圆点，
 文字在中心上方 24 px，不再描 marker 外框；画布自动补足顶部留白以避免文字裁切。
@@ -84,6 +122,7 @@ Preview 从已有 Booth 坐标重建真实形状。`outline`、`dividers` 只在
 其 Booth 有稳定的逻辑 Island ID，但官方文字仍需复核。
 使用 `--no-assignment` 仅跳过划分，`--ocr-only` 同时跳过编号校正与划分。
 这两种模式仍生成几何 Block；`--booths-only` 保留旧版纯 Booth 输出。
+Half-booth 分割需要已完成的 Island 划分；跳过划分时不生成 half-booth，也不猜测其 a/b。
 全程不依赖启动网页或数据库；已有 Python 环境需重新安装工具的 requirements 以加入 OR-Tools。
 
 独立的 [VenueRecognizer](./tools/booth-recognition/map_recognition/venue.py) 识别左上角的场馆编号，

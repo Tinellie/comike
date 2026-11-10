@@ -17,10 +17,13 @@ test('Express APIs and SPA deep links', async (t) => {
     'base64',
   )
   await writeFile(join(directory, 'page-001.png'), png)
+  const osm = '<osm version="0.6"><node id="1" lat="35.63" lon="139.79"/></osm>'
+  await writeFile(join(directory, 'osm-map.osm'), osm)
   let databaseAvailable = true
   const app = createApp({
     clientDirectory: directory,
     recognitionDirectory: directory,
+    osmFile: join(directory, 'osm-map.osm'),
     checkDatabase: async () => {
       if (!databaseAvailable) {
         throw new Error('Test database unavailable')
@@ -81,6 +84,24 @@ test('Express APIs and SPA deep links', async (t) => {
       assert.equal(response.status, 404)
       assert.deepEqual(await response.json(), { message: 'API route not found' })
     }
+  })
+  await t.test('map serves only its configured OSM file', async () => {
+    const response = await fetch(`${base}/api/map/osm-map.osm`)
+    assert.equal(response.status, 200)
+    assert.match(response.headers.get('content-type') ?? '', /application\/xml/)
+    assert.equal(await response.text(), osm)
+    for (const name of ['index.html', 'other.osm', '%2e%2e%2findex.html']) {
+      const forbidden = await fetch(`${base}/api/map/${name}`)
+      assert.equal(forbidden.status, 404)
+      assert.deepEqual(await forbidden.json(), { message: 'API route not found' })
+    }
+  })
+  await t.test('missing OSM file returns an explicit JSON error', async () => {
+    await rm(join(directory, 'osm-map.osm'))
+    const response = await fetch(`${base}/api/map/osm-map.osm`)
+    assert.equal(response.status, 404)
+    assert.match(response.headers.get('content-type') ?? '', /application\/json/)
+    assert.deepEqual(await response.json(), { message: 'OSM map not found. Add ref/osm-map.osm first.' })
   })
   await t.test('home, map and preview serve the SPA entry', async () => {
     for (const path of ['/', '/map', '/preview']) {

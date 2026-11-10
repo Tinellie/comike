@@ -7,9 +7,10 @@ interface AppOptions {
   checkDatabase: () => Promise<void>
   clientDirectory?: string
   recognitionDirectory?: string
+  osmFile?: string
 }
 
-export function createApp({ checkDatabase, clientDirectory, recognitionDirectory }: AppOptions) {
+export function createApp({ checkDatabase, clientDirectory, recognitionDirectory, osmFile }: AppOptions) {
   const app = express()
   app.disable('x-powered-by')
   app.use(express.json())
@@ -41,6 +42,24 @@ export function createApp({ checkDatabase, clientDirectory, recognitionDirectory
         res.status(404).json({ message: 'Recognition output not found. Run the recognition script first.' })
         return
       }
+      next(error)
+    })
+  })
+
+  app.get('/api/map/osm-map.osm', (_req, res, next) => {
+    if (!osmFile) {
+      res.status(404).json({ message: 'OSM map is not configured' })
+      return
+    }
+    res.type('application/xml')
+    res.sendFile(osmFile, (error) => {
+      if (!error) return
+      if ('code' in error && error.code === 'ENOENT') {
+        console.warn('OSM map file missing:', osmFile)
+        res.status(404).type('json').json({ message: 'OSM map not found. Add ref/osm-map.osm first.' })
+        return
+      }
+      res.removeHeader('Content-Type')
       next(error)
     })
   })

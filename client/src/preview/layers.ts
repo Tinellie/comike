@@ -9,6 +9,7 @@ export interface PreviewOptions {
   islands: boolean
   groups: boolean
   gaps: boolean
+  halfBooths: boolean
   selectedIsland: string | null
 }
 
@@ -44,7 +45,7 @@ export class BoothLayer implements CanvasLayer {
 
 export class NumberLayer implements CanvasLayer {
   draw(context: CanvasRenderingContext2D, { page, options }: DrawingScene) {
-    if (!options.numbers) return
+    if (!options.numbers || (options.halfBooths && page.halfBooths !== null)) return
     context.textAlign = 'center'
     context.textBaseline = 'middle'
     for (const booth of page.booths) {

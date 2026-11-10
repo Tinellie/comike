@@ -15,7 +15,8 @@ const clientDirectory = fileURLToPath(new URL('../../client/dist/', import.meta.
 const recognitionDirectory = fileURLToPath(
   new URL('../../tools/booth-recognition/output/official-map/', import.meta.url),
 )
-const app = createApp({ checkDatabase, clientDirectory, recognitionDirectory })
+const osmFile = fileURLToPath(new URL('../../ref/osm-map.osm', import.meta.url))
+const app = createApp({ checkDatabase, clientDirectory, recognitionDirectory, osmFile })
 const server = app.listen(port, () => {
   console.info(`Server listening on http://localhost:${port}`)
 })

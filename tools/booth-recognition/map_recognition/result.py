@@ -1,4 +1,5 @@
 import json
+import logging
 from collections import Counter
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -12,6 +13,10 @@ from island_recognition.context import PageRefinement
 from island_assignment.models import AssignmentResult
 from .venue import Venue
 from .marker_alignment import MarkerAlignmentResult
+from .half_booths import HalfBoothResult
+from .final_data import save_final_result
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -27,6 +32,7 @@ class MapRecognitionResult:
     blocks: dict[int, BlockGroupingResult] | None = None
     venues: dict[int, Venue] | None = None
     marker_alignments: dict[int, MarkerAlignmentResult] | None = None
+    half_booths: dict[int, HalfBoothResult] | None = None
 
     def to_dict(self) -> dict[str, object]:
         data = self.booths.to_dict()
@@ -51,12 +57,14 @@ class MapRecognitionResult:
                 "booth_recognition", *(["booth_block_grouping"] if self.blocks is not None else []),
                 "island_recognition", *(["booth_island_assignment"] if self.assignments is not None else []),
                 *(["island_marker_alignment"] if self.marker_alignments is not None else []),
+                *(["half_booth_splitting"] if self.half_booths is not None else []),
             ]
             pages = []
             total_counts: Counter[str] = Counter()
             for page in self.booths.pages:
                 assignment = self.assignments[page.page] if self.assignments is not None else None
                 alignment = self.marker_alignments[page.page] if self.marker_alignments is not None else None
+                halves = self.half_booths[page.page] if self.half_booths is not None else None
                 if self.blocks is None:
                     raise ValueError("Normalized island export requires Block grouping")
                 blocks = self.blocks[page.page]
@@ -80,7 +88,8 @@ class MapRecognitionResult:
                 if assignment is not None:
                     features = {component.id: component for component in assignment.components}
                     block_records = [
-                        {**block.to_dict(), "axis": features[block.id].axis, "thin": features[block.id].thin}
+                        {**block.to_dict(), "axis": halves.axes[block.id] if halves else features[block.id].axis,
+                         "thin": features[block.id].thin}
                         for block in blocks.blocks
                     ]
                 pages.append({
@@ -98,6 +107,8 @@ class MapRecognitionResult:
                         for m in self.islands[page.page]
                     ],
                     **({"markerAlignment": alignment.to_dict()} if alignment else {}),
+                    **({"halfBooths": [h.to_dict() for h in halves.halves],
+                        "halfBoothSplitting": halves.to_dict()} if halves else {}),
                     "islandCounts": dict(Counter(m.status for m in self.islands[page.page])),
                     **({"islandInference": self.refinements[page.page].to_dict()} if self.refinements else {}),
                     **({"islandAssignment": assignment_data} if assignment_data is not None else {}),
@@ -199,4 +210,9 @@ class MapRecognitionResult:
         target.write_text(
             json.dumps(self.to_dict(), ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8",
         )
+        if self.assignments is not None and self.half_booths is not None:
+            final_target = save_final_result(target)
+            LOGGER.info("Final data: %s", final_target.resolve())
+        else:
+            LOGGER.warning("Final export skipped: completed Island assignment and half-booth splitting are required")
         return target

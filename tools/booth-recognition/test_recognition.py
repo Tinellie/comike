@@ -73,6 +73,8 @@ def main() -> int:
     for page in data["pages"]:
         if "blockGrouping" in page:
             print(f"Page {page['page']} Blocks: {page['blockGrouping']['counts']}")
+        if "halfBoothSplitting" in page:
+            print(f"Page {page['page']} Half-booths: {page['halfBoothSplitting']['counts']}")
     if not args.booths_only and not args.ocr_only:
         print(f"Step 1: {(args.output / 'step-1.json').resolve()}")
         for page in data["pages"]:

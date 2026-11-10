@@ -3,6 +3,7 @@ import { BackgroundLayer, NumberLayer, IslandLayer } from './layers'
 import { BlockLayer } from './BlockLayer'
 import { BlockFrameLayer, blockFrameMargin } from './BlockFrameLayer'
 import { AssignmentLayer, NumberGapLayer } from './assignmentLayers'
+import { HalfBoothLayer } from './HalfBoothLayer'
 import type { CanvasLayer, PreviewOptions } from './layers'
 
 export function previewMargin(page: PreviewPage, options: PreviewOptions): number {
@@ -22,7 +23,7 @@ export class MapPreviewRenderer {
     canvas: HTMLCanvasElement,
     layers: CanvasLayer[] = [
       new BackgroundLayer(), new AssignmentLayer(), new BlockLayer(), new BlockFrameLayer(),
-      new NumberLayer(), new IslandLayer(), new NumberGapLayer(),
+      new NumberLayer(), new HalfBoothLayer(), new IslandLayer(), new NumberGapLayer(),
     ],
   ) {
     const context = canvas.getContext('2d')

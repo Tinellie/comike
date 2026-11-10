@@ -13,6 +13,7 @@ from .ocr_step import BoothRecognitionStep, IslandRecognitionStep
 from .result import MapRecognitionResult
 from .venue import VenueRecognizer
 from .marker_alignment import IslandMarkerAligner
+from .half_booths import HalfBoothSplitter
 
 LOGGER = logging.getLogger(__name__)
 
@@ -30,13 +31,25 @@ class MapRecognizer:
         self.context_step = IslandContextRefiner() if refine else None
         self.assignment_step = BoothIslandAssigner(time_limit=assignment_time_limit) if assign else None
         self.marker_alignment_step = IslandMarkerAligner()
+        self.half_booth_step = HalfBoothSplitter()
 
-    def _align_markers(self, result: MapRecognitionResult) -> MapRecognitionResult:
+    def _postprocess(self, result: MapRecognitionResult) -> MapRecognitionResult:
         LOGGER.info("Step 5: Island marker center alignment")
-        return replace(result, marker_alignments={
+        alignments = {
             page.page: self.marker_alignment_step.align(
                 result.islands[page.page],
                 result.assignments[page.page] if result.assignments is not None else None,
+            )
+            for page in result.booths.pages
+        }
+        result = replace(result, marker_alignments=alignments)
+        if result.assignments is None or result.blocks is None:
+            LOGGER.warning("Step 6 skipped: half-booth splitting requires Island assignment")
+            return result
+        LOGGER.info("Step 6: splitting Booths into a/b halves")
+        return replace(result, half_booths={
+            page.page: self.half_booth_step.split(
+                result.blocks[page.page], result.assignments[page.page], alignments[page.page].layouts,
             )
             for page in result.booths.pages
         })
@@ -61,10 +74,10 @@ class MapRecognizer:
         stage2_data = result.to_dict()
         result = replace(result, blocks=blocks)
         if self.assignment_step is None:
-            return self._align_markers(result)
+            return self._postprocess(result)
         if self.booth_step.recognizer.detect_only or self.island_step.recognizer.detect_only:
             LOGGER.warning("Step 4 skipped: both booth and island OCR are required for assignment")
-            return self._align_markers(result)
+            return self._postprocess(result)
         LOGGER.info("Step 4: constrained Block-to-island assignment")
         assignments = {
             page.page: self.assignment_step.assign(
@@ -74,4 +87,4 @@ class MapRecognizer:
             )
             for page in result.booths.pages
         }
-        return self._align_markers(replace(result, assignments=assignments, stage2_data=stage2_data))
+        return self._postprocess(replace(result, assignments=assignments, stage2_data=stage2_data))

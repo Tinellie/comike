@@ -14,9 +14,9 @@
 8. 独立的划分模块以 Block 为不可拆分单位，结合排列/壁摊拓扑、标记位置及编号唯一性，
    用 OR-Tools CP-SAT 全局求解 Booth → Island 归属，记录真实缺号，不伪造格子。
 
-流水顺序为 **Booth 识别 → Block 分组 → Island 识别（含编号校正）→ Island 划分 → marker 中心点对齐**，
+流水顺序为 **Booth 识别 → Block 分组 → Island 识别（含编号校正）→ Island 划分 → marker 中心点对齐 → half-booth 分割**，
 分别封装为 `BoothRecognitionStep`、`BoothBlockGrouper`、`IslandRecognitionStep` / `IslandContextRefiner`、
-`BoothIslandAssigner`、`IslandMarkerAligner`。旧 `OcrRecognitionStep` 仍可单独调用，组合两个原始 OCR 模块。
+`BoothIslandAssigner`、`IslandMarkerAligner`、`HalfBoothSplitter`。旧 `OcrRecognitionStep` 仍可单独调用，组合两个原始 OCR 模块。
 
 另由独立的 [VenueRecognizer](./map_recognition/venue.py) 在原始 OCR 阶段识别页面左上角场馆标题。
 它与 Island OCR 共用文字识别模型，且不参与 Booth/Block/Island 分组。
@@ -68,7 +68,7 @@ VS Code 中也应选择 `tools\booth-recognition\.venv\Scripts\python.exe` 作�
 tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_recognition.py
 ```
 
-默认按上述五个阶段执行。只检测两类标记的坐标、不加载模型，
+默认按上述六个阶段执行。只检测两类标记的坐标、不加载模型，
 明确跳过文字校正及 Booth 划分：
 
 ```powershell
@@ -130,9 +130,52 @@ Booth 的 `--confidence` 默认 0.95。置信度是模型原始评分，不是�
 - `step-2.json`：编号校正后的 Booth/Island 结果，划分前快照（schema 3）。
 - `block-grouping.json`：独立 Block 分组快照，包含每页成员、包围框及矩阵行列数，不含 Island 归属或逐条边线。
 - `result.json`：最终结果，包含尺寸、格子/Island 坐标、文字、评分、问题和校正依据。
+- `final.json`：保存 `result.json` 后生成的精简业务数据，嵌套为 `halls → islands → blocks → booths`，不含统计、评分、推断或备用数据；字段见下文。
 - `page-001.png`：提取后的原始底图；坐标对应这张图。
 - `page-001-overlay.png`：Block 外轮廓/内分割线、Booth 数字与按最终状态着色的 Island 方框/出现位置 ID。
   PNG 使用 ASCII ID，避免依赖日文字体；网页 Preview 显示真正的 Island 文字。
+
+### 精简业务数据
+
+完整流水线保存 `result.json` 后，再由独立的 [final_data](./map_recognition/final_data.py) 读取已保存结果，
+生成 `final.json`；不更改原结果、阶段快照、Block 分组或 Preview 的输入。
+只保留以下字段：
+
+```text
+halls[]
+  name                         ← page.venue.label
+  islands[]
+    id, code                   ← Island ID、label
+    markers[]
+      id, pos: {x, y}          ← 已对齐的 marker 中心点
+    blocks[]
+      id, bbox
+      grid: {rows, columns}    ← 仅矩阵 Block 有此字段
+      booths[]
+        id, number, bbox
+        split: {a, b}
+```
+
+`number` 保留 `"01"` 这样的两位字符串。`split` 从实际 half-booth 坐标计算，
+`l/r/t/b` 分别表示左/右/上/下，例如 `{"a":"l","b":"r"}` 或 `{"a":"b","b":"t"}`；
+不重复保存 half-booth ID、坐标或切线方向。无法确定 a/b 时整个 `split` 为 `null`。
+场馆名或 Island 编号未知时也保留 `null`，不丢弃实体，并输出警告；详细原因仍查 `result.json`。
+归属引用损坏、遗漏实体、重复归属或 half-booth 不是等分时明确报错，不写入新的精简结果。
+
+每个原页面对应一个 hall，各自沿用该页原图坐标；即使场馆名相同也不合并页面。
+不规则 Block 原样保留其 Booth，省略 `grid`，不会在精简阶段重分组。
+`--detect-only`、`--ocr-only`、`--no-assignment` 和 `--booths-only` 不生成新的 `final.json`。
+输出目录中旧文件不会自动清除，精简导出失败时旧 `final.json` 也保持不变。
+
+已有完整结果可以不重跑 OCR/求解，单独重新导出（从仓库根目录执行）：
+
+```powershell
+Push-Location tools\booth-recognition
+.\.venv\Scripts\python.exe -m map_recognition.final_data output\official-map\result.json
+Pop-Location
+```
+
+文件写在输入结果旁，固定命名为 `final.json`。
 
 标注颜色：
 
@@ -295,7 +338,7 @@ JSON 不再保存 `outline` 或 `dividers` 数组，而是按需生成绘图几�
 
 最终输出为 `schemaVersion: 7`，Preview 兼容 schema 1–7：
 
-- `processingSteps`：`booth_recognition` → `booth_block_grouping` → `island_recognition` → `booth_island_assignment` → `island_marker_alignment`。
+- `processingSteps`：`booth_recognition` → `booth_block_grouping` → `island_recognition` → `booth_island_assignment` → `island_marker_alignment` → `half_booth_splitting`。
 - 每页 `booths`、`blocks`、`islands` 为独立对象数组，仅通过
   `islands[].blockIds` → `blocks[].boothIds` 表达归属。
 - 每个 Booth 仅保留原始 `id`、`number`、`rawText`、OCR 分数、坐标、旋转、状态和 OCR `issues`。
@@ -348,6 +391,55 @@ Preview 在 center 绘制半径 2.5 个原图像素的实心圆点，文字上�
 旧版 schema 1–6 的 bbox 标记仍可读取和绘制。PNG 导出以中心十字和 occurrence ID 标注。
 这些变化不改变 Booth 坐标、数字、Island 归属、OCR 问题或原始图片。
 
+### 步骤 6：Booth → a/b half-booth
+
+独立模块 [half_booths.py](./map_recognition/half_booths.py) 输入 Block、Island 归属和布局分类，
+不运行 OCR、不改变数字、不重新划分成员。只在已完成 Island 划分后执行。
+
+- 规则 Block 按 `grid.columns` 与 `grid.rows` 的比例决定 `axis`，不按单格像素长宽比判断。
+  方形 grid（正常为 1×1 或 2×2）参考同 Island 最近、同排／列的已知走向 Block；
+  壁摊也可从同 Island 的附近墙边 Booth 排列恢复局部墙向。
+  不规则 Block 用格子尺寸归一化后的几何跨度判定。
+  最终导出的 `blocks[].axis` 使用此步骤确定的走向；不修改前序求解和 marker 对齐结果。
+- 普通切线垂直 axis：横向 Block 的 Booth 左右等分，纵向则上下等分。
+  在同行／列中，a 靠近较小数字的一侧，b 靠近较大数字的一侧。
+  同 Block 内像素共边的阶梯壁摊格也可作为相邻证据。
+- 非壁摊的每条排列两端改用平行 axis 的切线：
+  横向 Block 两端上下等分，纵向 Block 两端左右等分。
+  外半是远离 Block 横截面中心的一半。
+  **相邻编号小于自己时，外半取 a；大于自己时，外半取 b；内半取相反字母。**
+  例如横向双排 Block 左上角编号 01、右邻 02，则上半为 b、下半为 a。
+- 局部缺乏编号证据或方向冲突时，参考同 Island、相同 axis、同行／列的最近 Booth；
+  不跨 Island，不使用已经推断的 a/b 作为新证据。
+  完全没有证据时仍几何等分，但 `suffix: null`、`status: "needs_review"`，
+  明确记录缺少方向／编号、外侧不明确或编号方向冲突等原因，并写日志。
+  布局分类为 `uncertain` 的结果也保持待复核，不擅自应用非壁摊端部规则。
+
+原 `booths` 数组保留，每页额外输出 `halfBooths`，每个原 Booth 恰好对应两个记录：
+
+```json
+{
+  "id": "p001-b00001-h1",
+  "boothId": "p001-b00001",
+  "suffix": "a",
+  "bbox": {"x": 28, "y": 40, "width": 10.5, "height": 30},
+  "status": "resolved",
+  "issues": []
+}
+```
+
+`h1` 稳定表示左半或上半，`h2` 表示右半或下半；ID 不根据推断出的 a/b 改变。
+半格 bbox 是连续区域 `[x, x + width) × [y, y + height)`，允许 `.5`，
+两半尺寸相同、无重叠、面积和边界精确覆盖父 Booth。
+`resolved` 仅表示几何和编号规则证据充分，不会清除原 Booth 的 OCR 或归属复核状态。
+每页 `halfBoothSplitting` 保存方法和 `booths` / `halfBooths` / `reviewBooths` 统计。
+这是 schema 7 的可选附加数据；旧结果不含该字段仍可预览。
+
+Preview 独立的 `HalfBoothLayer` 默认开启，可用 `Half-booth a/b` 开关关闭，
+显示每格唯一的切线，每个半格只标注 `a` 或 `b`，不重复数字，跟随 Island 筛选。
+half-booth 字母不受“识别编号”开关影响；关闭 half-booth 后恢复原 Booth 编号绘制。
+未解决的后缀显示 `?` 和橙色；此层不修改 PNG 原图或原有识别标注 PNG。
+
 结构示例（省略 OCR 和统计字段）：
 
 ```text
@@ -355,6 +447,7 @@ pages[]
   booths[]   { id, number, bbox, ... }
   blocks[]   { id, boothIds, bbox, grid, axis, thin }
   islands[]  { id, label, blockIds, markerIds, ... }
+  halfBooths[] { id, boothId, suffix, bbox, status, issues }
   blockGrouping     方法、容差、统计
   islandAssignment  求解状态、约束、统计、assignmentReviews
 ```
@@ -419,7 +512,7 @@ for marker in markers:
     print(marker.bbox, marker.label, marker.status, marker.issues)
 ```
 
-完整流水线依次执行五个独立阶段：
+完整流水线依次执行六个独立阶段：
 
 ```python
 from map_recognition.pipeline import MapRecognizer
@@ -499,7 +592,7 @@ Booth 划分排除上述 3 个未识别候选，将 5,601 个有效 Booth 全部
 东馆ア 89–92；西馆あ 16–21、62–65；西馆め 62–65。
 一个 Island 的官方文字仍不可靠，保留空标签和稳定逻辑 ID 供复核。
 额外测试覆盖过道、壁摊转角/多边/分区、重号冲突、相接不拆分、
-未知候选排除、真实缺号、全覆盖校验和完整五阶段导出；
+未知候选排除、真实缺号、全覆盖校验和完整六阶段导出；
 Block 测试覆盖严格像素接触/角点/单像素空隙、矩阵/L 形/空洞、
 部分共享边、显示对齐不改坐标、过道分离和 Block 结果失配拒绝。
 
