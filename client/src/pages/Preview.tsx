@@ -20,7 +20,7 @@ export default function Preview() {
   const [zoom, setZoom] = useState<number | 'fit'>('fit')
   const [options, setOptions] = useState<PreviewOptions>({
     background: true, boxes: true, blockFrames: true, numbers: true, islands: true,
-    groups: true, gaps: true, halfBooths: true, selectedIsland: null,
+    groups: true, gaps: true, halfBooths: true, hallOutline: true, selectedIsland: null,
   })
 
   useEffect(() => {
@@ -99,6 +99,7 @@ export default function Preview() {
               ['islands', 'Island 标记'],
               ['groups', '分组着色'], ['gaps', '缺号断点'],
               ['halfBooths', 'Half-booth a/b'],
+              ['hallOutline', 'Hall 边框'],
             ] as const).map(([key, label]) => (
               <FormControlLabel
                 key={key} label={label}
@@ -106,6 +107,7 @@ export default function Preview() {
                   (key === 'islands' && page.islandMarkers === null)
                   || (key === 'blockFrames' && page.blocks === null)
                   || (key === 'halfBooths' && page.halfBooths === null)
+                  || (key === 'hallOutline' && !page.hallOutline)
                   || ((key === 'groups' || key === 'gaps') && page.islandAssignment === null)
                 } onChange={(_, checked) =>
                   setOptions(previous => ({ ...previous, [key]: checked }))} />}
@@ -126,7 +128,15 @@ export default function Preview() {
               内部 Block 两端采用平行切线，端部外半：相邻编号小取 a，大取 b；壁摊不改变端部切线。
             </Typography>
           )}
+          {page.hallOutline && (
+            <Typography variant="body2" color="text.secondary">
+              Hall 边框：{page.hallOutline.method === 'closed_frame'
+                ? '原图连续闭合外框（红色实线）'
+                : '未检测到闭合外框，使用全部非白色像素的包围矩形（红色虚线）'}。
+            </Typography>
+          )}
           <Typography variant="body2" color="text.secondary">
+            {page.pdfPreview && `完整 PDF 页面：${page.pdfPreview.width} × ${page.pdfPreview.height} px · 识别图：`}
             {page.width} × {page.height} px · {page.booths.length} 个{page.islandAssignment ? ' Booth' : '候选图格'}
             {page.islandMarkers !== null && ` · ${page.islandMarkers.length} 个 Island 标记`}
             {page.blocks !== null && ` · ${page.blocks.length} 个 Block`}

@@ -4,14 +4,16 @@ import { BlockLayer } from './BlockLayer'
 import { BlockFrameLayer, blockFrameMargin } from './BlockFrameLayer'
 import { AssignmentLayer, NumberGapLayer } from './assignmentLayers'
 import { HalfBoothLayer } from './HalfBoothLayer'
+import { HallOutlineLayer } from './HallOutlineLayer'
 import type { CanvasLayer, PreviewOptions } from './layers'
+import { previewSurface } from './pdfPreview'
 
 export function previewMargin(page: PreviewPage, options: PreviewOptions): number {
   const markerMargin = options.islands
     ? Math.max(0, ...(page.islandMarkers ?? []).filter(marker => marker.bbox === null)
       .map(marker => Math.ceil(38 - marker.center.y)))
     : 0
-  return Math.max(blockFrameMargin(page, options), markerMargin)
+  return Math.max(blockFrameMargin(page, options), markerMargin, options.hallOutline && page.hallOutline ? 2 : 0)
 }
 
 export class MapPreviewRenderer {
@@ -24,6 +26,7 @@ export class MapPreviewRenderer {
     layers: CanvasLayer[] = [
       new BackgroundLayer(), new AssignmentLayer(), new BlockLayer(), new BlockFrameLayer(),
       new NumberLayer(), new HalfBoothLayer(), new IslandLayer(), new NumberGapLayer(),
+      new HallOutlineLayer(),
     ],
   ) {
     const context = canvas.getContext('2d')
@@ -35,8 +38,9 @@ export class MapPreviewRenderer {
 
   draw(page: PreviewPage, image: HTMLImageElement, options: PreviewOptions, displayWidth: number) {
     const margin = previewMargin(page, options)
-    const viewWidth = page.width + margin * 2
-    const viewHeight = page.height + margin * 2
+    const surface = previewSurface(page, margin)
+    const viewWidth = surface.width
+    const viewHeight = surface.height
     const displayHeight = displayWidth * viewHeight / viewWidth
     const ratio = window.devicePixelRatio || 1
     this.canvas.width = Math.round(displayWidth * ratio)
@@ -45,7 +49,10 @@ export class MapPreviewRenderer {
     this.canvas.style.height = `${displayHeight}px`
     const scaleX = this.canvas.width / viewWidth
     const scaleY = this.canvas.height / viewHeight
-    this.context.setTransform(scaleX, 0, 0, scaleY, margin * scaleX, margin * scaleY)
+    this.context.setTransform(scaleX, 0, 0, scaleY, -surface.x * scaleX, -surface.y * scaleY)
+    this.context.fillStyle = '#ffffff'
+    this.context.fillRect(surface.x, surface.y, viewWidth, viewHeight)
+    if (page.pdfPreview) this.context.transform(...page.pdfPreview.transform)
     for (const layer of this.layers) {
       this.context.save()
       layer.draw(this.context, { page, image, options })

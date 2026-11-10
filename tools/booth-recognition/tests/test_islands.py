@@ -225,6 +225,8 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(island["code"], "A")
             self.assertEqual(len(island["blocks"][0]["booths"]), 16)
             self.assertEqual(island["markers"][0]["pos"], page["islandMarkers"][0]["center"])
+            self.assertEqual(page["hallOutline"]["method"], "nonwhite_bbox")
+            self.assertEqual(final["halls"][0]["boundary"], page["hallOutline"]["polygon"])
 
     def test_assignment_can_be_disabled_without_losing_context_stage(self) -> None:
         image = Image.new("RGB", (420, 300), "white")

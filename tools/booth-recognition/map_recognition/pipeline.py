@@ -14,6 +14,8 @@ from .result import MapRecognitionResult
 from .venue import VenueRecognizer
 from .marker_alignment import IslandMarkerAligner
 from .half_booths import HalfBoothSplitter
+from .hall_outline import detect_hall_outline
+from .pdf_preview import render_pdf_previews
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,6 +36,11 @@ class MapRecognizer:
         self.half_booth_step = HalfBoothSplitter()
 
     def _postprocess(self, result: MapRecognitionResult) -> MapRecognitionResult:
+        LOGGER.info("Hall outline: closed source frame or nonwhite pixel bounds")
+        result = replace(result, hall_outlines={
+            page.page: detect_hall_outline(page.image, [b.bbox for b in page.booths])
+            for page in result.booths.pages
+        })
         LOGGER.info("Step 5: Island marker center alignment")
         alignments = {
             page.page: self.marker_alignment_step.align(
@@ -73,6 +80,11 @@ class MapRecognizer:
             )
         stage2_data = result.to_dict()
         result = replace(result, blocks=blocks)
+        if Path(source).suffix.lower() == ".pdf":
+            LOGGER.info("Rendering full PDF preview pages and map placement transforms")
+            result = replace(result, pdf_previews=render_pdf_previews(
+                source, {page.page: page.image for page in booths.pages},
+            ))
         if self.assignment_step is None:
             return self._postprocess(result)
         if self.booth_step.recognizer.detect_only or self.island_step.recognizer.detect_only:

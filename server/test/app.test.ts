@@ -17,6 +17,7 @@ test('Express APIs and SPA deep links', async (t) => {
     'base64',
   )
   await writeFile(join(directory, 'page-001.png'), png)
+  await writeFile(join(directory, 'page-001-pdf.png'), png)
   const osm = '<osm version="0.6"><node id="1" lat="35.63" lon="139.79"/></osm>'
   await writeFile(join(directory, 'osm-map.osm'), osm)
   let databaseAvailable = true
@@ -70,6 +71,10 @@ test('Express APIs and SPA deep links', async (t) => {
     assert.equal(image.status, 200)
     assert.match(image.headers.get('content-type') ?? '', /image\/png/)
     assert.deepEqual(Buffer.from(await image.arrayBuffer()), png)
+    const fullPage = await fetch(`${base}/api/preview/page-001-pdf.png`)
+    assert.equal(fullPage.status, 200)
+    assert.match(fullPage.headers.get('content-type') ?? '', /image\/png/)
+    assert.deepEqual(Buffer.from(await fullPage.arrayBuffer()), png)
   })
   await t.test('missing preview images return JSON errors', async () => {
     const response = await fetch(`${base}/api/preview/page-099.png`)

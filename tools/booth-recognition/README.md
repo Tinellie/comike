@@ -123,6 +123,56 @@ Booth 的 `--confidence` 默认 0.95。置信度是模型原始评分，不是�
 
 ## 输出怎么看
 
+### 完整 PDF 页面预览
+
+PDF 输入在识别后通过 [pdf_preview](./map_recognition/pdf_preview.py) 用 PDFium 栅格化完整页面，
+保存 `page-NNN-pdf.png` 及 `pages[].pdfPreview: {image, width, height, transform}`。
+`transform` 为 Canvas 格式 `[a,b,c,d,e,f]`：
+`pageX=a*x+c*y+e`、`pageY=b*x+d*y+f`，把识别图像素映射到完整页面像素。
+变换来自 PDF 嵌入图片的实际矩阵与页面旋转，不按大致包围框猜测。
+渲染分辨率匹配嵌入地图的像素密度，保留页眉、页码、标题及页面留白。
+无法匹配嵌入图片尺寸或定位矩阵无效时明确报错。
+
+Preview 使用完整页面作为背景，所有标注在原坐标基础上应用此变换，
+适应宽度及百分比缩放按完整页面尺寸计算。关闭背景仍保留完整页面画布和正确的标注位置。
+`page-NNN.png` 仍是识别和 Hall 检测依据；不会将 PDF 页眉计入 Hall 的非白色像素矩形。
+图片输入及无该字段的旧版结果仍按原图预览。此预览元数据不写入精简业务文件。
+
+### Hall 边框
+
+组合流水线在后处理中调用独立的 [detect_hall_outline](./map_recognition/hall_outline.py)，
+不依赖 OCR 重新运行或 Island 求解。使用提取后的原图像素坐标：
+
+- 优先从中性色深线中寻找具有大范围封闭内部、且外轮廓包含所有候选 Booth 完整矩形的外框。
+  检查真实轮廓层级，不能把普通 Booth 自身的闭合方格当作 Hall。
+  多个有效嵌套外框取最外侧；确认闭合后先以 2 px 容差清除栅格锯齿，
+  再忽略长度小于 120 个原图像素的支撑边（120 px 本身保留）。
+  长边方向差不超过 3°，且端点到较长边所在直线的距离不超过较短边长的 1%
+  （下限 3 px、上限 12 px）时，若端点间隔短于较短边，可跨过中间边段合并。
+  合并以较长边所在直线为准；延长相邻支撑线求交，组成连续闭合边界。
+  保留不能按以上条件合并的主要凹角，不使用凸包。
+  重建需保持在图内、无自交且包围全部 Booth；长边不足或校验失败时记录警告并保留原像素轮廓。
+  不做闭运算、膨胀、跨缺口连接或凸包补全，单像素贯穿缺口也不自动修复。
+- 没有这样的外框则使用全部非白色像素的最小轴对齐矩形，
+  包括文字、彩色标记、浅色像素、墙体和 Booth。
+  RGBA 图片先合成到白底，透明背景不算黑色；纯白图报错，不编造整图边界。
+
+完整结果新增 `pages[].hallOutline`：
+
+```json
+{
+  "method": "nonwhite_bbox",
+  "polygon": [{"x": 0, "y": 2}, {"x": 199, "y": 2}, {"x": 199, "y": 149}, {"x": 0, "y": 149}],
+  "bbox": {"x": 0, "y": 2, "width": 200, "height": 148}
+}
+```
+
+真实闭合外框的 `method` 为 `closed_frame`；矩形兜底为 `nonwhite_bbox`。
+顶点按顺序排列，末点到首点隐式闭合，包围框尺寸包含边框像素。
+此字段不改变原始 Booth/Block/Island/half-booth 坐标，也不进入 OCR 中间快照。
+精简导出为 `halls[].boundary`，仅保留顶点；旧结果没有边框时仍可精简导出。
+Preview 默认启用独立 `Hall 边框` 层：闭合原框红色实线，矩形兜底红色虚线。
+
 默认目录为本模块的 `output`，不纳入 Git。每次运行覆盖同名结果文件；
 如需对比，请使用不同 `--output` 目录。
 
@@ -132,6 +182,7 @@ Booth 的 `--confidence` 默认 0.95。置信度是模型原始评分，不是�
 - `result.json`：最终结果，包含尺寸、格子/Island 坐标、文字、评分、问题和校正依据。
 - `final.json`：保存 `result.json` 后生成的精简业务数据，嵌套为 `halls → islands → blocks → booths`，不含统计、评分、推断或备用数据；字段见下文。
 - `page-001.png`：提取后的原始底图；坐标对应这张图。
+- `page-001-pdf.png`：PDF 输入的完整页面；Preview 通过 `pdfPreview.transform` 对齐识别标注。
 - `page-001-overlay.png`：Block 外轮廓/内分割线、Booth 数字与按最终状态着色的 Island 方框/出现位置 ID。
   PNG 使用 ASCII ID，避免依赖日文字体；网页 Preview 显示真正的 Island 文字。
 

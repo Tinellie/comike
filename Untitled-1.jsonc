@@ -1,0 +1,57 @@
+{
+  "halls": [
+    {
+
+      "name": "東123",
+      "islands": [
+        {
+          "id": "xxxxxx",
+          "code": "ア",
+          "markers": [
+            {
+              "id": "xxxxxx",
+              "pos": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ],
+
+          "blocks": [
+            {
+              "id": "xxxxxx",
+              "bbox": {
+                "x": 28,
+                "y": 40,
+                "width": 57,
+                "height": 41
+              },
+              "grid": { // 如有
+                "rows": 1,
+                "columns": 2
+              },
+              "booths": [
+                {
+                  "id": "xxxxxx",
+                  "number": "01",
+                  "bbox": {
+                    "x": 1400,
+                    "y": 307,
+                    "width": 41,
+                    "height": 29
+                  },
+                  "split": { // 用 lr tb 表示分割方向，l和r/t和b分别表示ab的位置
+                    "a": "l",
+                    "b": "r"
+                  }
+                }
+              ]
+            }
+          ]
+
+        }
+      ]
+      
+    }
+  ]
+}

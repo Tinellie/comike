@@ -1,5 +1,6 @@
 import { statusColors } from './data'
 import type { PreviewPage } from './data'
+import { inverseTransform } from './pdfPreview'
 
 export interface PreviewOptions {
   background: boolean
@@ -10,6 +11,7 @@ export interface PreviewOptions {
   groups: boolean
   gaps: boolean
   halfBooths: boolean
+  hallOutline?: boolean
   selectedIsland: string | null
 }
 
@@ -25,6 +27,13 @@ export interface CanvasLayer {
 
 export class BackgroundLayer implements CanvasLayer {
   draw(context: CanvasRenderingContext2D, { page, image, options }: DrawingScene) {
+    if (page.pdfPreview) {
+      context.transform(...inverseTransform(page.pdfPreview.transform))
+      context.fillStyle = '#ffffff'
+      context.fillRect(0, 0, page.pdfPreview.width, page.pdfPreview.height)
+      if (options.background) context.drawImage(image, 0, 0, page.pdfPreview.width, page.pdfPreview.height)
+      return
+    }
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, page.width, page.height)
     if (options.background) context.drawImage(image, 0, 0, page.width, page.height)

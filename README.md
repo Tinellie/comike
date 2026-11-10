@@ -37,12 +37,17 @@ Map 页面读取本地 [osm-map.osm](./ref/osm-map.osm)，在 React 管理的原
 ## 地图预览
 
 运行 `npm run dev` 后打开 http://localhost:5173/preview。
-选择页数查看原 PDF 提取图、识别图格和 Island 标记叠加，
+选择页数查看完整 PDF 页面（含页眉、页码和页面留白）、识别图格和 Island 标记叠加，
 支持背景、边框、Block 外扩框、编号、Island 标记、分组着色和缺号断点独立开关，
 以及适应宽度和 50%–200% 缩放；放大后使用滚动条查看细节。
 
 预览读取 `tools/booth-recognition/output/official-map/result.json` 和对应的
-`page-NNN.png` 原图，不使用预生成的标注图。首次使用或重新生成数据：
+`page-NNN-pdf.png` 完整页面，不使用预生成的标注图。
+`pages[].pdfPreview` 保存完整页面尺寸及从识别图坐标到页面像素的仿射变换；
+Booth、Block、Island 和 Hall 的原坐标不改写，仅在绘制时统一对齐。
+图片输入及没有 `pdfPreview` 的旧版结果仍使用 `page-NNN.png`。
+完整 PDF 图片缺失或尺寸不匹配时明确报错，不偷偷退回裁切图。
+首次使用或重新生成数据：
 
 ```powershell
 tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_recognition.py --pages all --output tools\booth-recognition\output\official-map
@@ -51,6 +56,18 @@ tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_re
 只列出识别输出实际包含的页码；当前示例 PDF 保留了前四页。
 数据或图片缺失会显示错误，不会静默绘制空地图；生成后刷新预览页。
 颜色表示识别状态，不代表人工核验过的准确率。
+
+`Hall 边框` 开关显示每页场馆边界：原图连续闭合外框为红色实线；
+没有可靠闭合外框时，取原图**全部非白色像素**的轴对齐包围矩形，显示为红色虚线。
+后者包含文字、彩色标记、墙体和 Booth，不只按 Booth 包围框计算。
+独立 [Hall 边框识别](./tools/booth-recognition/map_recognition/hall_outline.py) 不补接缺口、
+不以凸包替代凹边界；闭合外框必须包含所有候选 Booth 的完整矩形，且具有大范围封闭内部。
+确认闭合后，忽略短于 120 个原图像素的支撑边；方向差不超过 3°、位置接近的长边，
+若端点间隔短于两者中较短的边，则跨过中间突出部分合并，延长相邻长边求交形成闭合边界。
+无法安全重建（例如截掉 Booth、自交或长边不足）时明确记录警告并保留原轮廓；矩形兜底不变。
+结果保存为 `pages[].hallOutline: {method, polygon, bbox}`；`polygon` 是原图像素顶点，
+末点到首点隐式闭合。精简输出仅保存 `halls[].boundary` 顶点，不复制检测元数据。
+旧版没有该字段的结果仍可预览；纯白图片无法确定边界时明确报错。
 
 React 使用原生 Canvas 2D，无需额外绘图库：
 [MapPreviewRenderer](./client/src/preview/MapPreviewRenderer.ts) 管理画布和坐标缩放，
@@ -72,7 +89,7 @@ Booth 编号按照原图方向绘制，Island 标签正向显示，所有层使�
 同岛允许真实缺号，但不允许重复编号；缺号后第一个 Booth 的编号在格外用橙色引线标注，
 例如缺 89–92 时在 93 格旁标注 `93`。此标注只由 Preview 推导绘制，
 不修改 Booth 93 的数字、坐标、OCR 或问题记录，也不补造不存在的格子。
-后端仅通过 `/api/preview/result.json` 和 `/api/preview/page-NNN.png`
+后端仅通过 `/api/preview/result.json`、`/api/preview/page-NNN.png` 和 `/api/preview/page-NNN-pdf.png`
 提供白名单文件，不暴露工具目录。
 
 ## 地图识别工具

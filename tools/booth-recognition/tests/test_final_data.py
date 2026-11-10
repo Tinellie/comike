@@ -39,6 +39,14 @@ def fixture() -> dict:
 
 
 class FinalDataTests(unittest.TestCase):
+    def test_hall_boundary_exports_vertices_without_detection_metadata(self) -> None:
+        source = fixture()
+        polygon = [{"x": 1, "y": 2}, {"x": 80, "y": 2}, {"x": 80, "y": 90}, {"x": 1, "y": 90}]
+        source["pages"][0]["hallOutline"] = {"method": "nonwhite_bbox", "polygon": polygon}
+        hall = simplify_result(source)["halls"][0]
+        self.assertEqual(hall["boundary"], polygon)
+        self.assertEqual(set(hall), {"name", "islands", "boundary"})
+
     def test_exact_nested_output_strips_diagnostics_without_mutating_source(self) -> None:
         source = fixture()
         original = copy.deepcopy(source)

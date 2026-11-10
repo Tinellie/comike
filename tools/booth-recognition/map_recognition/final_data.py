@@ -153,7 +153,14 @@ def simplify_result(data: dict[str, object]) -> dict[str, object]:
         if used_blocks != set(blocks) or used_booths != set(booths) or used_markers != set(markers):
             raise ValueError("Final export would omit unassigned Blocks, Booths or markers")
         venue = _object(page.get("venue"), "venue")
-        halls.append({"name": _text(venue.get("label"), f"Page {page.get('page')} hall name"), "islands": final_islands})
+        hall = {"name": _text(venue.get("label"), f"Page {page.get('page')} hall name"), "islands": final_islands}
+        if "hallOutline" in page:
+            outline = _object(page["hallOutline"], "hallOutline")
+            polygon = _records(outline.get("polygon"), "hallOutline.polygon")
+            if len(polygon) < 3:
+                raise ValueError("Hall outline must have at least three vertices")
+            hall["boundary"] = [_coordinates(point, ("x", "y"), "Hall boundary") for point in polygon]
+        halls.append(hall)
     return {"halls": halls}
 
 

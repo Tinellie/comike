@@ -1,6 +1,10 @@
 import { blockGeometry, inferMatrixGrid } from './blockGeometry'
 import { parseHalfBooths } from './halfBooths'
 import type { PreviewHalfBooth } from './halfBooths'
+import { parseHallOutline } from './hallOutline'
+import type { PreviewHallOutline } from './hallOutline'
+import { parsePdfPreview } from './pdfPreview'
+import type { PdfPreview } from './pdfPreview'
 
 export type BoothStatus = 'recognized' | 'needs_review' | 'unrecognized' | 'not_run'
 
@@ -73,6 +77,8 @@ export interface PreviewPage {
   venue: PreviewVenue | null
   markerAlignment: { status: 'aligned' | 'centers_only'; aligned: number; centered: number } | null
   halfBooths: PreviewHalfBooth[] | null
+  hallOutline?: PreviewHallOutline | null
+  pdfPreview?: PdfPreview | null
 }
 
 export interface PreviewVenue {
@@ -526,6 +532,8 @@ function parsePage(value: unknown, version: number): PreviewPage {
     venue: parseVenue(value.venue),
     markerAlignment,
     halfBooths: parseHalfBooths(value.halfBooths, value.halfBoothSplitting, booths, hasAssignment),
+    hallOutline: parseHallOutline(value.hallOutline, width, height),
+    pdfPreview: parsePdfPreview(value.pdfPreview, value.page),
   }
 }
 

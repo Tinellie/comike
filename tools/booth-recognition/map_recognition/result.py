@@ -15,6 +15,8 @@ from .venue import Venue
 from .marker_alignment import MarkerAlignmentResult
 from .half_booths import HalfBoothResult
 from .final_data import save_final_result
+from .hall_outline import HallOutline
+from .pdf_preview import PdfPreview
 
 LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +35,8 @@ class MapRecognitionResult:
     venues: dict[int, Venue] | None = None
     marker_alignments: dict[int, MarkerAlignmentResult] | None = None
     half_booths: dict[int, HalfBoothResult] | None = None
+    hall_outlines: dict[int, HallOutline] | None = None
+    pdf_previews: dict[int, PdfPreview] | None = None
 
     def to_dict(self) -> dict[str, object]:
         data = self.booths.to_dict()
@@ -116,6 +120,12 @@ class MapRecognitionResult:
                 })
             data["pages"] = pages
             data["counts"] = dict(total_counts)
+        if self.hall_outlines is not None:
+            for page in data["pages"]:
+                page["hallOutline"] = self.hall_outlines[page["page"]].to_dict()
+        if self.pdf_previews is not None:
+            for page in data["pages"]:
+                page["pdfPreview"] = self.pdf_previews[page["page"]].to_dict()
         return data
 
     def save(self, directory: str | Path) -> Path:
@@ -132,6 +142,9 @@ class MapRecognitionResult:
                 for page in self.booths.pages
             ])
         booths.save(directory)
+        if self.pdf_previews is not None:
+            for preview in self.pdf_previews.values():
+                preview.image.save(directory / preview.to_dict()["image"])
         colors = {
             "recognized": "#8b35d1", "needs_review": "#e08000",
             "unrecognized": "#df2020", "not_run": "#2275dd",

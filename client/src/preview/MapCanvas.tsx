@@ -3,6 +3,7 @@ import { Alert, Box, LinearProgress } from '@mui/material'
 import type { PreviewPage } from './data'
 import type { PreviewOptions } from './layers'
 import { MapPreviewRenderer, previewMargin } from './MapPreviewRenderer'
+import { previewSurface } from './pdfPreview'
 
 interface MapCanvasProps {
   page: PreviewPage
@@ -16,6 +17,7 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
   const [image, setImage] = useState<HTMLImageElement | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [availableWidth, setAvailableWidth] = useState(0)
+  const background = page.pdfPreview ?? page
 
   useEffect(() => {
     const container = containerRef.current
@@ -33,18 +35,18 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
     let objectUrl: string | undefined
     async function load() {
       try {
-        const response = await fetch(`/api/preview/${page.image}`, { signal: controller.signal })
+        const response = await fetch(`/api/preview/${background.image}`, { signal: controller.signal })
         if (!response.ok) throw new Error(`背景图片加载失败（HTTP ${response.status}）`)
         const blob = await response.blob()
         if (!active) return
         objectUrl = URL.createObjectURL(blob)
-        const background = new Image()
-        background.src = objectUrl
-        await background.decode()
-        if (background.naturalWidth !== page.width || background.naturalHeight !== page.height) {
+        const loaded = new Image()
+        loaded.src = objectUrl
+        await loaded.decode()
+        if (loaded.naturalWidth !== background.width || loaded.naturalHeight !== background.height) {
           throw new Error('背景图片尺寸与识别坐标不一致，请重新生成识别输出')
         }
-        if (active) setImage(background)
+        if (active) setImage(loaded)
       } catch (reason) {
         if (active) {
           console.error('Map image loading failed:', reason)
@@ -58,16 +60,17 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
       controller.abort()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [page.image, page.width, page.height])
+  }, [background.image, background.width, background.height])
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !image || availableWidth <= 0) return
+    if (image.naturalWidth !== background.width || image.naturalHeight !== background.height) return
     let renderer: MapPreviewRenderer | undefined
     const frame = requestAnimationFrame(() => {
       try {
         renderer = new MapPreviewRenderer(canvas)
-        const viewWidth = page.width + previewMargin(page, options) * 2
+        const viewWidth = previewSurface(page, previewMargin(page, options)).width
         renderer.draw(page, image, options, zoom === 'fit' ? availableWidth : viewWidth * zoom)
       } catch (reason) {
         console.error('Map rendering failed:', reason)
@@ -78,7 +81,7 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
       cancelAnimationFrame(frame)
       renderer?.dispose()
     }
-  }, [page, image, options, zoom, availableWidth])
+  }, [page, image, options, zoom, availableWidth, background.width, background.height])
 
   return (
     <Box ref={containerRef} sx={{ width: '100%', minWidth: 0 }}>
