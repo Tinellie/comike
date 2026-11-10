@@ -1,5 +1,5 @@
 import type { PreviewPage } from './data'
-import { BackgroundLayer, BoothLayer, NumberLayer } from './layers'
+import { BackgroundLayer, BoothLayer, NumberLayer, IslandLayer } from './layers'
 import type { CanvasLayer, PreviewOptions } from './layers'
 
 export class MapPreviewRenderer {
@@ -9,7 +9,7 @@ export class MapPreviewRenderer {
 
   constructor(
     canvas: HTMLCanvasElement,
-    layers: CanvasLayer[] = [new BackgroundLayer(), new BoothLayer(), new NumberLayer()],
+    layers: CanvasLayer[] = [new BackgroundLayer(), new BoothLayer(), new NumberLayer(), new IslandLayer()],
   ) {
     const context = canvas.getContext('2d')
     if (!context) throw new Error('浏览器不支持 Canvas 2D')

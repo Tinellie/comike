@@ -5,6 +5,7 @@ export interface PreviewOptions {
   background: boolean
   boxes: boolean
   numbers: boolean
+  islands: boolean
 }
 
 export interface DrawingScene {
@@ -61,5 +62,33 @@ export class NumberLayer implements CanvasLayer {
       context.fillText(text, 0, 0)
       context.restore()
     }
+  }
+}
+
+export class IslandLayer implements CanvasLayer {
+  draw(context: CanvasRenderingContext2D, { page, options }: DrawingScene) {
+    if (!options.islands || !page.islandMarkers) return
+    context.lineWidth = 2
+    context.textAlign = 'left'
+    context.textBaseline = 'top'
+    for (const marker of page.islandMarkers) {
+      const { x, y, width, height } = marker.bbox
+      const color = marker.status === 'recognized' ? '#8b35d1' : statusColors[marker.status]
+      context.strokeStyle = color
+      context.setLineDash(marker.status === 'recognized' ? [] : [4, 3])
+      context.strokeRect(x - 1, y - 1, width + 2, height + 2)
+      const fontSize = Math.max(14, Math.min(24, Math.max(width, height) * 0.6))
+      context.font = `bold ${fontSize}px "Yu Gothic", "Noto Sans JP", sans-serif`
+      const inferred = marker.inference?.outcome === 'corrected' || marker.inference?.outcome === 'confirmed'
+      const text = `${marker.label ?? '?'}${inferred ? '*' : ''}`
+      const textWidth = context.measureText(text).width + 6
+      const left = Math.max(0, Math.min(x, page.width - textWidth))
+      const top = y > fontSize + 6 ? y - fontSize - 6 : Math.min(page.height - fontSize - 4, y + height + 3)
+      context.fillStyle = 'rgba(255,255,255,0.96)'
+      context.fillRect(left, top, textWidth, fontSize + 4)
+      context.fillStyle = color
+      context.fillText(text, left + 3, top + 2)
+    }
+    context.setLineDash([])
   }
 }

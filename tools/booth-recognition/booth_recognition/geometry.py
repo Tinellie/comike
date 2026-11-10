@@ -4,24 +4,9 @@ from typing import Literal
 
 import cv2
 import numpy as np
-from numpy.typing import NDArray
+from map_recognition.common import Box, ImageArray
 
-ImageArray = NDArray[np.uint8]
 Side = Literal["left", "right", "top", "bottom"]
-
-
-@dataclass(frozen=True)
-class Box:
-    x: int
-    y: int
-    width: int
-    height: int
-
-    def to_dict(self) -> dict[str, int]:
-        return {
-            "x": self.x, "y": self.y,
-            "width": self.width, "height": self.height,
-        }
 
 
 @dataclass(frozen=True)

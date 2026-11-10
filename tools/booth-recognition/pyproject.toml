@@ -13,4 +13,4 @@ dynamic = ["dependencies"]
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.packages.find]
-include = ["booth_recognition*"]
+include = ["booth_recognition*", "island_recognition*", "map_recognition*"]

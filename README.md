@@ -10,7 +10,8 @@ MUI、MySQL 和 Drizzle ORM。
 ## 地图预览
 
 运行 `npm run dev` 后打开 http://localhost:5173/preview。
-选择页数查看原 PDF 提取图与识别图格叠加，支持背景、边框、编号独立开关，
+选择页数查看原 PDF 提取图、识别图格和 Island 标记叠加，
+支持背景、边框、编号、Island 标记独立开关，
 以及适应宽度和 50%–200% 缩放；放大后使用滚动条查看细节。
 
 预览读取 `tools/booth-recognition/output/official-map/result.json` 和对应的
@@ -20,23 +21,37 @@ MUI、MySQL 和 Drizzle ORM。
 tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_recognition.py --pages all --output tools\booth-recognition\output\official-map
 ```
 
-只列出识别输出实际包含的页码（示例第 13 页无地图，不显示）。
+只列出识别输出实际包含的页码；当前示例 PDF 保留了前四页。
 数据或图片缺失会显示错误，不会静默绘制空地图；生成后刷新预览页。
 颜色表示识别状态，不代表人工核验过的准确率。
 
 React 使用原生 Canvas 2D，无需额外绘图库：
 [MapPreviewRenderer](./client/src/preview/MapPreviewRenderer.ts) 管理画布和坐标缩放，
-[绘图层](./client/src/preview/layers.ts) 分别封装背景、方框、编号绘制，
+[绘图层](./client/src/preview/layers.ts) 分别封装背景、方框、编号和 Island 标记绘制，
 [MapCanvas](./client/src/preview/MapCanvas.tsx) 负责 React 生命周期、图片加载和尺寸变化。
-编号按照原图方向绘制，所有层使用原图像素坐标，适配高分屏。
+Booth 编号按照原图方向绘制，Island 标签正向显示，所有层使用原图像素坐标，
+适配高分屏。Island 已识别标记为紫色；不确定项保留橙色/红色状态。
+旧版 Booth-only 结果仍可预览，并明确提示尚无 Island 数据。
+步骤 2 的结果会显示页面编号类型、修正/确认数量；标签后的 `*` 表示上下文校正或确认。
+仍有边缘截断、方向问题的标记保持待复核，不会因为文字推断成功而清除其他问题。
 后端仅通过 `/api/preview/result.json` 和 `/api/preview/page-NNN.png`
 提供白名单文件，不暴露工具目录。
 
 ## 地图识别工具
 
-独立的 [Booth 地图识别模块](./tools/booth-recognition/README.md)
+独立的 [地图识别模块](./tools/booth-recognition/README.md)
 支持 PDF/图片输入，通过 OpenCV 定位方格、PaddleOCR 识别两位数字，
-提供测试脚本和 JSON / 标注图输出，不依赖启动网页或数据库。
+并通过单独的 Island 模块定位彩色编号、识别大小写英文字母及平/片假名。
+主脚本通过两个独立阶段流水执行：
+
+1. `OcrRecognitionStep`：调用 Booth 和 Island 模块，保留原始 OCR。
+2. `IslandContextRefiner`：统计页面字符，推断大写/小写/平假名/片假名类型，
+   根据局部排列和可靠邻居校正疑难项；证据不足时不强行改号。
+
+输出 `step-1.json`（原始结果）和 `result.json`（最终结果），同时保存原图/标注图。
+使用 `--ocr-only` 可跳过步骤 2。全程不依赖启动网页或数据库。
+当前只识别和校正 Island 标记的位置和文字，
+保留重复出现的标记，不自动分配 Booth 所属 Island。
 
 ## 开发
 
@@ -112,7 +127,8 @@ npm run lint
 npm test
 ```
 
-后端测试覆盖健康检查、数据库成功/失败、未知 API、SPA 深链接和非法 JSON。
+测试覆盖健康检查、数据库成功/失败、未知 API、SPA 深链接、非法 JSON，
+以及预览数据的新旧版本兼容、Island 字符区分与非法坐标/数据拒绝。
 
 当前运行依赖的 `npm audit --omit=dev` 检查无漏洞；开发工具的传递依赖
 仍有中等风险提示（Drizzle Kit 的旧 esbuild 和工具链中的 minimatch）。

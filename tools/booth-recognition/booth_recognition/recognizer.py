@@ -12,6 +12,7 @@ from pypdf import PdfReader
 
 from .geometry import Box, Cell, ImageArray, detect_cells
 from .ocr import DigitReader, PaddleDigitReader, Reading, digit_crop
+from map_recognition.common import opaque_rgb
 
 LOGGER = logging.getLogger(__name__)
 Status = Literal["recognized", "needs_review", "unrecognized", "not_run"]
@@ -198,9 +199,7 @@ class BoothRecognizer:
     def recognize_image(self, image: Image.Image, *, page: int = 1) -> MapPage:
         if page < 1:
             raise ValueError("page must be positive")
-        rgba = image.convert("RGBA")
-        background = Image.new("RGBA", rgba.size, "white")
-        image = Image.alpha_composite(background, rgba).convert("RGB")
+        image = opaque_rgb(image)
         rgb = np.asarray(image)
         cells = detect_cells(rgb)
         if not cells:

@@ -1,55 +1,21 @@
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, Sequence
 
 import cv2
 import numpy as np
 
 from .geometry import Box, ImageArray
+from map_recognition.common import PaddleTextReader
+from map_recognition.common import Reading as Reading, TextReader as DigitReader
 
 
-@dataclass(frozen=True)
-class Reading:
-    text: str
-    score: float
-
-
-class DigitReader(Protocol):
-    def read(self, images: Sequence[ImageArray]) -> list[Reading]: ...
-
-
-class PaddleDigitReader:
+class PaddleDigitReader(PaddleTextReader):
     def __init__(
         self,
         model_name: str = "en_PP-OCRv5_mobile_rec",
         model_dir: Path | None = None,
         batch_size: int = 32,
     ) -> None:
-        from paddleocr import TextRecognition
-
-        self.batch_size = batch_size
-        self.model = TextRecognition(
-            model_name=model_name,
-            model_dir=str(model_dir) if model_dir else None,
-            device="cpu",
-            cpu_threads=4,
-            enable_mkldnn=True,
-        )
-
-    def read(self, images: Sequence[ImageArray]) -> list[Reading]:
-        if not images:
-            return []
-        results = list(self.model.predict(input=list(images), batch_size=self.batch_size))
-        if len(results) != len(images):
-            raise RuntimeError(f"OCR returned {len(results)} results for {len(images)} crops")
-        readings = []
-        for result in results:
-            text = str(result["rec_text"]).strip()
-            score = float(result["rec_score"])
-            if not np.isfinite(score) or not 0 <= score <= 1:
-                raise RuntimeError(f"OCR returned an invalid score: {score}")
-            readings.append(Reading(text, score))
-        return readings
+        super().__init__(model_name, model_dir, batch_size)
 
 
 def digit_crop(rgb: ImageArray, box: Box, rotation: int, binary: bool = False) -> ImageArray:

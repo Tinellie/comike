@@ -86,7 +86,7 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
       <Box sx={{ overflow: 'auto', maxHeight: '75vh', bgcolor: '#eceff1', border: '1px solid', borderColor: 'divider' }}>
         <canvas
           ref={canvasRef}
-          aria-label={`第 ${page.page} 页地图，${page.booths.length} 个识别图格`}
+          aria-label={`第 ${page.page} 页地图，${page.booths.length} 个识别图格${page.islandMarkers === null ? '' : `，${page.islandMarkers.length} 个 Island 标记`}`}
           role="img"
           style={{ display: image && !error ? 'block' : 'none' }}
         />
