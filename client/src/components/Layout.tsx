@@ -13,6 +13,7 @@ export default function Layout() {
             {[
               { to: '/', label: 'Home' },
               { to: '/map', label: 'Map' },
+              { to: '/preview', label: 'Preview' },
             ].map(({ to, label }) => (
               <Button
                 key={to}

@@ -12,7 +12,10 @@ if (!pool) {
 }
 
 const clientDirectory = fileURLToPath(new URL('../../client/dist/', import.meta.url))
-const app = createApp({ checkDatabase, clientDirectory })
+const recognitionDirectory = fileURLToPath(
+  new URL('../../tools/booth-recognition/output/official-map/', import.meta.url),
+)
+const app = createApp({ checkDatabase, clientDirectory, recognitionDirectory })
 const server = app.listen(port, () => {
   console.info(`Server listening on http://localhost:${port}`)
 })

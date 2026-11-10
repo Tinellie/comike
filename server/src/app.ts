@@ -6,9 +6,10 @@ import { join } from 'node:path'
 interface AppOptions {
   checkDatabase: () => Promise<void>
   clientDirectory?: string
+  recognitionDirectory?: string
 }
 
-export function createApp({ checkDatabase, clientDirectory }: AppOptions) {
+export function createApp({ checkDatabase, clientDirectory, recognitionDirectory }: AppOptions) {
   const app = express()
   app.disable('x-powered-by')
   app.use(express.json())
@@ -25,6 +26,23 @@ export function createApp({ checkDatabase, clientDirectory }: AppOptions) {
       console.error('Database health check failed:', error)
       res.status(503).json({ status: 'error', message: 'Database unavailable' })
     }
+  })
+
+  app.get(/^\/api\/preview\/(result\.json|page-\d{3}\.png)$/, (req, res, next) => {
+    const name = req.params[0]
+    if (!recognitionDirectory || !name) {
+      res.status(404).json({ message: 'Recognition output is not configured' })
+      return
+    }
+    res.sendFile(join(recognitionDirectory, name), (error) => {
+      if (!error) return
+      if ('code' in error && error.code === 'ENOENT') {
+        console.warn(`Recognition asset missing: ${name}`)
+        res.status(404).json({ message: 'Recognition output not found. Run the recognition script first.' })
+        return
+      }
+      next(error)
+    })
   })
 
   app.use('/api', (_req, res) => {

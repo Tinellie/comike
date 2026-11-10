@@ -6,3 +6,9 @@ dist/
 *.local
 *.log
 .DS_Store
+.venv/
+__pycache__/
+*.pyc
+tools/booth-recognition/output/
+*.egg-info/
+tools/booth-recognition/build/

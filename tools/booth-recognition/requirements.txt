@@ -1,0 +1,6 @@
+numpy>=1.26,<3
+opencv-contrib-python>=4.10,<5
+Pillow>=11,<13
+pypdf>=6.21.4,<7
+paddleocr==3.7.0
+paddlepaddle==3.3.1
