@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Box, LinearProgress } from '@mui/material'
 import type { PreviewPage } from './data'
 import type { PreviewOptions } from './layers'
-import { MapPreviewRenderer } from './MapPreviewRenderer'
+import { MapPreviewRenderer, previewMargin } from './MapPreviewRenderer'
 
 interface MapCanvasProps {
   page: PreviewPage
@@ -67,7 +67,8 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
     const frame = requestAnimationFrame(() => {
       try {
         renderer = new MapPreviewRenderer(canvas)
-        renderer.draw(page, image, options, zoom === 'fit' ? availableWidth : page.width * zoom)
+        const viewWidth = page.width + previewMargin(page, options) * 2
+        renderer.draw(page, image, options, zoom === 'fit' ? availableWidth : viewWidth * zoom)
       } catch (reason) {
         console.error('Map rendering failed:', reason)
         setError(reason instanceof Error ? reason.message : '地图绘制失败')
@@ -86,7 +87,7 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
       <Box sx={{ overflow: 'auto', maxHeight: '75vh', bgcolor: '#eceff1', border: '1px solid', borderColor: 'divider' }}>
         <canvas
           ref={canvasRef}
-          aria-label={`第 ${page.page} 页地图，${page.booths.length} 个识别图格${page.islandMarkers === null ? '' : `，${page.islandMarkers.length} 个 Island 标记`}`}
+          aria-label={`第 ${page.page} 页地图，${page.booths.length} 个识别图格${page.blocks === null ? '' : `，${page.blocks.length} 个 Block`}${page.islandMarkers === null ? '' : `，${page.islandMarkers.length} 个 Island 标记`}${page.islandAssignment === null ? '' : `，${page.islandAssignment.islands.length} 个 Island 分组，${page.islandAssignment.gapCount} 处缺号`}`}
           role="img"
           style={{ display: image && !error ? 'block' : 'none' }}
         />

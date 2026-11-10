@@ -7,11 +7,41 @@
 3. 抽样确定整张图的数字方向，去边框、补白后批量调用 PaddleOCR 的
    `TextRecognition`，不使用整图文字检测器。
 4. 对疑难格使用二值化版本重试；保留低置信度、处理分歧及边框修复标记。
-5. 独立的 Island 模块通过彩色像素定位编号，合并字符的分离笔画，
+5. 独立 Block 模块将边框像素直接接触的 Booth 分组，并生成外轮廓和内部共享边。
+6. 独立的 Island 模块通过彩色像素定位编号，合并字符的分离笔画，
    裁切后调用 PaddleOCR 识别大小写英文字母、平假名和片假名。
-6. 以上 OCR 系统封装成步骤 1；独立步骤 2 推断页面编号类型，
-   使用可靠邻居的局部序列校正疑难 Island 字符。导出原始结果与最终结果，
-   保留修复依据；证据不足不强行补号，也不在此阶段分配 Booth 归属。
+7. Island 阶段推断页面编号类型，使用可靠邻居的局部序列校正疑难字符。
+8. 独立的划分模块以 Block 为不可拆分单位，结合排列/壁摊拓扑、标记位置及编号唯一性，
+   用 OR-Tools CP-SAT 全局求解 Booth → Island 归属，记录真实缺号，不伪造格子。
+
+流水顺序为 **Booth 识别 → Block 分组 → Island 识别（含编号校正）→ Island 划分 → marker 中心点对齐**，
+分别封装为 `BoothRecognitionStep`、`BoothBlockGrouper`、`IslandRecognitionStep` / `IslandContextRefiner`、
+`BoothIslandAssigner`、`IslandMarkerAligner`。旧 `OcrRecognitionStep` 仍可单独调用，组合两个原始 OCR 模块。
+
+另由独立的 [VenueRecognizer](./map_recognition/venue.py) 在原始 OCR 阶段识别页面左上角场馆标题。
+它与 Island OCR 共用文字识别模型，且不参与 Booth/Block/Island 分组。
+PDF 使用 PDFium 以 3 倍分辨率单独渲染左上方页眉（左侧 85%、顶部 12%），
+因为页眉通常不在提取出的嵌入地图图像内；图片输入使用左侧 85%、顶部 15%。
+只接受带“ホール”的方向及编号标题，避免将地图内“東3/E3”等入口标记当成整页场馆。
+归一化全角数字、兼容字形和 OCR 中“ホ－ル”的横线，但不根据页序猜测编号。
+
+`result.json` 及 OCR/校正快照每页新增：
+
+```json
+"venue": {
+  "label": "東123",
+  "rawText": "ComicMarket109 1日目 東123ホール",
+  "recognitionScore": 0.96,
+  "status": "recognized",
+  "issues": []
+}
+```
+
+`label` 不包含“ホール”；没有可靠文字或出现冲突时为 `null`，状态为 `unrecognized`，
+并记录 `no_header_text`、`venue_not_found` 或 `ambiguous_venue`。
+低于 0.90 置信度保留候选编号但标记 `needs_review` / `low_confidence`。
+`--detect-only` 输出 `not_run`；`--booths-only` 仍为独立的原始 Booth 结果，不执行场馆识别。
+字段属于附加页面元数据，不改变 Booth 像素坐标或归属；旧结果不含该字段也能预览。
 
 ## 安装
 
@@ -26,6 +56,9 @@ tools\booth-recognition\.venv\Scripts\python.exe -m pip install -r tools\booth-r
 使用 CPU PaddlePaddle，无需 CUDA。首次 OCR 会从 PaddleOCR 官方配置的
 模型源下载权重并缓存在用户目录下，可能需要等待；地图和裁切图片不会上传。
 模型不可用、依赖错误或推理异常会明确报错，不降级成“识别成功”。
+划分使用本地 OR-Tools 求解器。已有环境也需重新执行上述安装命令以添加依赖。
+VS Code 中也应选择 `tools\booth-recognition\.venv\Scripts\python.exe` 作为 Python 解释器；
+系统 Python 不共享该环境的依赖，可能仍提示无法解析 `ortools` 导入。
 
 ## 测试实际地图
 
@@ -35,8 +68,8 @@ tools\booth-recognition\.venv\Scripts\python.exe -m pip install -r tools\booth-r
 tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_recognition.py
 ```
 
-默认流水执行步骤 1（Booth → Island OCR）→ 步骤 2（页面类型/邻域校正）。
-只检测两类标记的坐标、不加载模型；步骤 2 明确记录为跳过：
+默认按上述五个阶段执行。只检测两类标记的坐标、不加载模型，
+明确跳过文字校正及 Booth 划分：
 
 ```powershell
 tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_recognition.py --detect-only --pages all
@@ -55,11 +88,22 @@ tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_re
 tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_recognition.py --booths-only --pages all
 ```
 
-仅执行步骤 1，输出 schema 2，不推断改号：
+执行 Booth/Island 原始 OCR 与几何 Block 分组，输出 schema 7，不校正或分配 Island，仅记录 marker 原始中心点：
 
 ```powershell
 tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_recognition.py --ocr-only --pages all
 ```
+
+保留 Block 和编号校正，只跳过 Island 划分，输出 schema 7，仅记录 marker 原始中心点：
+
+```powershell
+tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_recognition.py --no-assignment --pages all
+```
+
+`--assignment-time-limit` 为每页求解时限，默认 30 秒。找到可行解后仍可能继续优化至时限；
+输出明确区分 `feasible` 与已证明最优的 `optimal`，不把前者宣称为全局最优。
+未找到可行解、编号冲突或标记不足时，打印结构化错误，退出码为 2，不保存新的最终结果，
+旧输出不会自动删除。不会把最近标记当作失败后的静默兜底。
 
 指定输入、输出和置信度：
 
@@ -82,10 +126,12 @@ Booth 的 `--confidence` 默认 0.95。置信度是模型原始评分，不是�
 默认目录为本模块的 `output`，不纳入 Git。每次运行覆盖同名结果文件；
 如需对比，请使用不同 `--output` 目录。
 
-- `step-1.json`：步骤 1 的原始 Booth/Island 结果（完整流水线生成）。
+- `step-1.json`：原始 Booth/Island OCR（沿用旧命名，schema 2）。
+- `step-2.json`：编号校正后的 Booth/Island 结果，划分前快照（schema 3）。
+- `block-grouping.json`：独立 Block 分组快照，包含每页成员、包围框及矩阵行列数，不含 Island 归属或逐条边线。
 - `result.json`：最终结果，包含尺寸、格子/Island 坐标、文字、评分、问题和校正依据。
 - `page-001.png`：提取后的原始底图；坐标对应这张图。
-- `page-001-overlay.png`：Booth 方框/数字与按最终状态着色的 Island 方框/出现位置 ID。
+- `page-001-overlay.png`：Block 外轮廓/内分割线、Booth 数字与按最终状态着色的 Island 方框/出现位置 ID。
   PNG 使用 ASCII ID，避免依赖日文字体；网页 Preview 显示真正的 Island 文字。
 
 标注颜色：
@@ -154,11 +200,11 @@ JSON 中每个 booth 类似：
 - Preview 中已识别 Island 为紫色实线，待复核橙色虚线、未识别红色虚线、
   未执行 OCR 为蓝色。Booth 颜色保持上表定义。
 
-### 步骤 2：页面类型与邻域校正
+### Island 阶段：页面类型与邻域校正
 
-完整流水线最终输出 `schemaVersion: 3`，`processingSteps` 为
+划分前的输出为 `schemaVersion: 3`，`processingSteps` 为
 `["ocr", "island_context"]`。Booth 与原图完全不变，每页新增 `islandInference`，
-每个 Island 标记新增 `inference`。Preview 兼容 schema 1、2、3。
+每个 Island 标记新增 `inference`。Preview 兼容 schema 1–7。
 
 子步骤分别封装在 [context.py](./island_recognition/context.py)：
 
@@ -196,6 +242,127 @@ JSON 中每个 booth 类似：
 最终 `label` 是接受的修复结果；未接受的候选仅放在 `proposedLabel`。
 Preview 以最终结果绘图，显示类型和校正数量，修正/确认后的标签带 `*`。
 文字问题全部解除才将状态变为 `recognized`，其他问题不会被隐藏。
+
+### 步骤 2：像素接触 Block 分组
+
+独立模块位于 [booth_blocks](./booth_blocks)，只依赖 Booth 的几何/状态，不加载 OCR 或求解器。
+判定使用含边框的整数像素坐标：左右/上下边框在同一像素或相邻像素，
+且共享超过一个像素的边段，才连为同一 Block。只接触角点不连接；
+只要中间已有一个空白像素便不连接，不使用相对格子尺寸或“距离近”的容差。
+并查集处理传递连接，每个有效 Booth 恰好属于一个 Block，孤立 Booth 也是单格 Block。
+`unrecognized` 候选被保留在排除记录中，不可作为连接桥；`not_run` 可仅按几何生成 Block。
+
+JSON 不再保存 `outline` 或 `dividers` 数组，而是按需生成绘图几何：
+
+- 规则矩阵保存 `bbox` 和 `grid: {"rows": 2, "columns": 15}`，完整等距排列才会标为矩阵。
+  Preview 按边界宽高除以行列数，通过循环生成横竖边线，无需保存每条线的位置。
+- L 形、阶梯、缺格、部分共边或空洞等不规则 Block 保存 `grid: null`，
+  Preview 从 `boothIds` 引用的原始坐标重建真实外轮廓和去重的内分割线。
+  不强制用包围矩形均分，以免填上不存在的格子。
+- 同一矩阵内存在不同复核状态时，也从成员坐标生成边线，保留状态着色。
+- 相邻像素的共边仅在显示几何中对齐，原始坐标、数字、评分和问题不变。
+- Canvas `BlockLayer` 和 PNG 导出均先画外轮廓，再画分割线；共享边只绘一次。
+  边线保留识别状态颜色，共享边有待复核成员时采用待复核颜色。
+- 旧版无 Block 的输出仍按单个 Booth 描边，不静默猜测或改写旧数据。
+
+### 步骤 4：Block → Island 划分
+
+独立模块位于 [island_assignment](./island_assignment)。
+输入是 Booth 识别结果、步骤 2 的 Block、校正后的 Island 标记，以及可选的页面编号类型；
+无需原图或 OCR 模型。传入的 Block 会被校验，不能将过道两侧伪装成同一 Block。
+兼容未传 Block 的独立调用，此时使用同一个 `BoothBlockGrouper` 生成，不维护第二套接触算法。
+
+1. **Block 硬约束**：每个 Block 仅有一个 Island 选择变量。
+   绝不因最近标记或重复数字而拆开同一个 Block。
+2. **逻辑 Island 种子**：同页同名标记归并，保留所有出现位置。
+   大小写/平片假名不折叠；与已知页面类型冲突的未解决文字使用 `label: null`
+   的独立逻辑 ID，保留来源标记，不能把错误文字冒充官方编号。
+3. **布局证据**：同轴组件跨过道连接；单格宽组件可经转角连接。
+   多次标记在两轴上大范围分布时，给出环绕式壁摊先验，不预设具体编号或馆名。
+   单格宽以 Booth 数量与主轴跨度估算，避免把沿斜墙阶梯排列的单排误判为多排矩阵。
+   标记沿行/列方向的距离折扣处理，避免顶部/过道标记被误判给邻排。
+4. **全局求解**：每个组件只取一个 Island，同 Island 每个两位编号至多出现一次；
+   位置距离、切断布局链接的代价和编号跨度共同构成优化目标。
+   缺号是允许的软代价，不根据缺号制造 Booth，不要求从 01 开始。
+5. **独立校验**：重新计算相接关系，核对 Booth 全覆盖、同岛编号唯一、
+   组件/成员引用及缺号统计。只有验证通过的结果才返回。
+
+`unrecognized` 候选不视为 Booth 参与划分，原样保留在每页 `excludedCandidates`。
+有合法编号的 `needs_review` Booth 仍参与，不会以“待复核”为由丢格。
+数字尚未 OCR 的 `not_run` 数据不参与 Island 划分；`--detect-only` 明确跳过步骤 4，但保留 Block。
+相接组件出现重号、有效标记不足或求解无解时抛出 `AssignmentError`；
+不会改写 OCR 数字、拆分相接组件或创建额外虚构 Island 来凑出成功。
+
+最终输出为 `schemaVersion: 7`，Preview 兼容 schema 1–7：
+
+- `processingSteps`：`booth_recognition` → `booth_block_grouping` → `island_recognition` → `booth_island_assignment` → `island_marker_alignment`。
+- 每页 `booths`、`blocks`、`islands` 为独立对象数组，仅通过
+  `islands[].blockIds` → `blocks[].boothIds` 表达归属。
+- 每个 Booth 仅保留原始 `id`、`number`、`rawText`、OCR 分数、坐标、旋转、状态和 OCR `issues`。
+  不再写入 `blockId`、`islandId` 或包含反向引用的 `assignment`。
+- 每个 Block 含 `id`、`boothIds`、`bbox`、`grid`；完成划分后还有 `axis`、`thin` 布局特征。
+  不再保存 `islandId`、`outline`、`dividers`。
+- 每个 Island 含 `id`、`label`、`color`、`markerIds`、`blockIds`、排序后的 `numbers`、
+  `numberRange`、`numberGaps`、`status`、`issues`，不再重复保存 `boothIds`、`componentIds`。
+- 每页 `blockGrouping` 仅保留方法/容差和统计；`islandAssignment` 仅保留求解/约束/统计元数据，
+  不再包含 `components` 或 `islands`。其中 `assignmentReviews` 用 Booth ID 映射待复核问题数组，
+  只记录需要复核的项，保留精确问题依据，不记录成员归属。
+- 加载后再建立父级索引和绘图边线，供着色、筛选、缺号标注使用，不修改输入 JSON。
+  全部有效 Booth 恰好属于一个 Block；完成求解时每个 Block 恰好属于一个 Island。
+  重复引用、遗漏成员或矩阵约束不匹配均明确报错。
+- `numberGaps` 仅记录范围，例如 `[{"first":"89","last":"92"}]`；
+  不在 Booth 93 内添加缺号标记，不补造 89–92。
+- `counts` 统计参与划分的 Booth；`candidateCounts` 保留划分前候选统计。
+- `global_constraint_choice`、等距歧义、未确认 Island 编号或原始 OCR 问题均保留待复核。
+  满足数学约束不等于已人工确认所有归属。
+
+### 步骤 5：marker 中心点对齐
+
+独立模块位于 [marker_alignment.py](./map_recognition/marker_alignment.py)，
+输入原始 marker 与已完成的 Island 划分，不运行 OCR 或重新求解，也不修改输入。
+
+- 先取像素外框的中点 `x + (width - 1) / 2`、`y + (height - 1) / 2`。
+  后续计算仅用中点；最终 marker 删除 `bbox`，只保存 `center: {"x": ..., "y": ...}`。
+  `step-1.json`、`step-2.json` 保留原始 bbox，便于追溯。
+- 每个 Island 根据全部成员 Block 的单排证据输出 `layoutKind`：
+  全为单排且至少 4 个 Booth 时为 `wall`，全为非单排为 `interior`，混合或证据不足为 `uncertain`。
+  这是布局推断，不是人工确认的墙体检测；同一个 Island 只有一种分类。
+- 内部 Island 根据附近 Block 主轴寻找 marker 行／列：
+  同行对齐 y、同列对齐 x，取组内中位数；必须包含相邻的不同 Island。
+  组内法向偏差不超过 Booth 短边中位数的 0.4 倍，沿行列相邻距离不超过 14 倍。
+  对齐带限制整体宽度，不沿渐变偏差连锁吞并成对角线。
+- 已形成内部行／列时，沿另一轴尝试移动到**整个 Island 的 Booth 包围范围中点**，
+  不是 marker 外框或最近 Block 的中点。位移超过 2 个 Booth 短边、
+  目标侵入 Booth 或与另一 marker 碰撞时保留该轴原值。
+- 壁摊 marker 仅与附近同向、同侧壁摊 marker 对齐，绝不与内部 Island 混组，
+  不移动沿墙方向的坐标，也不移向 Island 中点。
+  转角按各 marker 最近的壁摊 Block 分方向；斜向阶梯壁摊不强制拉成水平／竖直线。
+  `uncertain` 布局保留原始中心，避免误居中。
+- 未执行 Island 划分时（包括 `--detect-only`），只记录原始中心，
+  `markerAlignment.status` 为 `centers_only`，不猜测归属来移动标记。
+
+每页 `markerAlignment` 保存方法、执行状态、参与对齐／居中数量及布局分类统计；
+统计为参与约束的 marker 数，不要求坐标实际产生非零位移。
+Preview 在 center 绘制半径 2.5 个原图像素的实心圆点，文字上移 24 个原图像素，
+并自动补足顶部留白；schema 7 不绘制 marker 外框，不改变记录的 center；
+旧版 schema 1–6 的 bbox 标记仍可读取和绘制。PNG 导出以中心十字和 occurrence ID 标注。
+这些变化不改变 Booth 坐标、数字、Island 归属、OCR 问题或原始图片。
+
+结构示例（省略 OCR 和统计字段）：
+
+```text
+pages[]
+  booths[]   { id, number, bbox, ... }
+  blocks[]   { id, boothIds, bbox, grid, axis, thin }
+  islands[]  { id, label, blockIds, markerIds, ... }
+  blockGrouping     方法、容差、统计
+  islandAssignment  求解状态、约束、统计、assignmentReviews
+```
+
+Preview 的独立 `NumberGapLayer` 根据每个 Island 的缺号范围，找到后续编号，
+在该格**外部**用橙色引线标注，例如缺 89–92 则标注 `93`。
+`AssignmentLayer` 提供分组着色和单 Island 筛选。
+断点绘制只存在于 Preview，不写回 Booth，不写入原图或 PNG 标注导出。
 
 ### 缺边格补检
 
@@ -252,7 +419,7 @@ for marker in markers:
     print(marker.bbox, marker.label, marker.status, marker.issues)
 ```
 
-完整流水线依次执行两个独立步骤：
+完整流水线依次执行五个独立阶段：
 
 ```python
 from map_recognition.pipeline import MapRecognizer
@@ -263,10 +430,12 @@ data = result.to_dict()
 ```
 
 可用 `MapRecognizer(booths=BoothRecognizer(...), islands=IslandRecognizer(...))`
-配置步骤 1 的两个识别器；它们仅共享基础坐标类型与 Paddle 推理适配器，
-不相互调用；同一实例复用已加载的模型。`MapRecognizer(refine=False)` 仅运行步骤 1。
+配置两个 OCR 识别器；它们仅共享基础坐标类型与 Paddle 推理适配器，
+不相互调用；同一实例复用已加载的模型。
+`MapRecognizer(assign=False)` 跳过划分；
+`MapRecognizer(refine=False, assign=False)` 执行原始 OCR 和几何 Block 分组。
 
-各个步骤也可单独调用，步骤 2 不加载 OCR 模型，不修改输入：
+原始 OCR 与 Island 上下文校正也可单独调用；后者不加载 OCR 模型，不修改输入：
 
 ```python
 from map_recognition.ocr_step import OcrRecognitionStep
@@ -279,7 +448,26 @@ for marker in page_result.markers:
     print(marker.label, marker.inference.to_dict())
 ```
 
-不要把步骤 2 的结果再次输入校正器；应使用步骤 1 的标记，重复校正会明确报错。
+不要把上下文校正结果再次输入校正器；应使用原始 OCR 标记，重复校正会明确报错。
+
+独立复用 Block 分组和 Island 划分模块：
+
+```python
+from island_assignment import BoothIslandAssigner, validate_assignment
+from booth_blocks import BoothBlockGrouper, validate_blocks
+
+blocks = BoothBlockGrouper().group(raw.booths.pages[0].booths, page=1)
+validate_blocks(raw.booths.pages[0].booths, blocks)
+print(blocks.to_dict())
+
+assignment = BoothIslandAssigner(time_limit=30).assign(
+    raw.booths.pages[0].booths, page_result.markers,
+    page=1, page_type=page_result.page_type.label_type, blocks=blocks,
+)
+validate_assignment(raw.booths.pages[0].booths, assignment)
+print(assignment.to_dict())
+print(assignment.memberships)
+```
 
 ## 自动化测试
 
@@ -294,9 +482,9 @@ Set-Location tools\booth-recognition
 验证少量边缘裁切不产生越界坐标，并保留复核标记。
 真实模型的端到端测试使用上面的 `test_recognition.py`。
 
-61 项单元测试还覆盖彩色/灰度分离、非固定颜色、分离笔画、点状附属笔画、
+94 项单元测试还覆盖彩色/灰度分离、非固定颜色、分离笔画、点状附属笔画、
 细小注音、透明背景、字符类别和 NFC、方向/模型分歧、错误结果数量及合并导出。
-当前四页示例的 CPU 完整运行约 3 分钟，结果为：
+当前四页示例的 OCR 约 3 分钟，划分每页至多再优化 30 秒，结果为：
 
 | 类型 | 候选数 | recognized | needs_review | unrecognized |
 | --- | ---: | ---: | ---: | ---: |
@@ -304,7 +492,18 @@ Set-Location tools\booth-recognition
 | Island 步骤 1 | 191 | 146 | 42 | 3 |
 | Island 步骤 2 | 191 | 164 | 27 | 0 |
 
-步骤 2 修正 19 个编号、确认 12 个编号；21 个项未获得充分的局部推断依据。
+Booth 划分排除上述 3 个未识别候选，将 5,601 个有效 Booth 全部分配到
+440 个 Block（四页分别为 177、54、128、81 个），再划分至
+114 个逻辑 Island（四页分别为 37、23、34、20 个）。
+同岛无重复编号，相接格没有被拆分。记录 4 处缺号范围：
+东馆ア 89–92；西馆あ 16–21、62–65；西馆め 62–65。
+一个 Island 的官方文字仍不可靠，保留空标签和稳定逻辑 ID 供复核。
+额外测试覆盖过道、壁摊转角/多边/分区、重号冲突、相接不拆分、
+未知候选排除、真实缺号、全覆盖校验和完整五阶段导出；
+Block 测试覆盖严格像素接触/角点/单像素空隙、矩阵/L 形/空洞、
+部分共享边、显示对齐不改坐标、过道分离和 Block 结果失配拒绝。
+
+Island 上下文校正修正 19 个编号、确认 12 个编号；21 个项未获得充分的局部推断依据。
 其中一些修正/确认项仍有方向或几何问题，所以仍保留待复核状态。
 四页类型依次为片假名、大写字母、平假名、小写字母。
 测试同时覆盖类别证据不足、重复壁摊票数限制、正反/横纵序列、
@@ -331,7 +530,8 @@ Set-Location tools\booth-recognition
 - Island 检测以“只有编号是彩色”为前提；彩色图例或装饰可能误检，
   低饱和度字符、极小字符可能漏检。OCR 会混淆形近字、大小写及不同字符类别，
   无法仅凭模型分数保证纠正；须人工复核，不能把高评分当作正确性证明。
-- 尚未实现行列/壁摊拓扑推断及 Booth → Island 归属。
-- 步骤 2 以同页只有一种编号类型为前提；不处理混合类型页的自动改号。
+- 划分采用几何和编号约束，不保证复杂展馆或错误 OCR 下的归属一定正确。
+  会明确报告冲突或复核状态；不根据结果反向改写 Booth 数字。
+- Island 上下文校正以同页只有一种编号类型为前提；不处理混合类型页的自动改号。
   局部序列是保守的横纵对齐启发式，不是完整场馆拓扑；斜排、折线、历史假名
   或特殊编号顺序可能无法校正。残留错误和不确定项仍需人工核验。

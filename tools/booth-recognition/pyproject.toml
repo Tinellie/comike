@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "comike-booth-recognition"
 version = "0.1.0"
-description = "Local rectangular booth detection and two-digit OCR"
+description = "Local booth/island OCR and constrained booth-to-island assignment"
 requires-python = ">=3.10,<3.13"
 dynamic = ["dependencies"]
 
@@ -13,4 +13,4 @@ dynamic = ["dependencies"]
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.packages.find]
-include = ["booth_recognition*", "island_recognition*", "map_recognition*"]
+include = ["booth_recognition*", "booth_blocks*", "island_recognition*", "island_assignment*", "map_recognition*"]

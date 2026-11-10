@@ -11,7 +11,7 @@ MUI、MySQL 和 Drizzle ORM。
 
 运行 `npm run dev` 后打开 http://localhost:5173/preview。
 选择页数查看原 PDF 提取图、识别图格和 Island 标记叠加，
-支持背景、边框、编号、Island 标记独立开关，
+支持背景、边框、Block 外扩框、编号、Island 标记、分组着色和缺号断点独立开关，
 以及适应宽度和 50%–200% 缩放；放大后使用滚动条查看细节。
 
 预览读取 `tools/booth-recognition/output/official-map/result.json` 和对应的
@@ -28,12 +28,23 @@ tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_re
 React 使用原生 Canvas 2D，无需额外绘图库：
 [MapPreviewRenderer](./client/src/preview/MapPreviewRenderer.ts) 管理画布和坐标缩放，
 [绘图层](./client/src/preview/layers.ts) 分别封装背景、方框、编号和 Island 标记绘制，
+[BlockLayer](./client/src/preview/BlockLayer.ts) 先绘制 Block 的真实外轮廓，再绘制去重后的内部横竖线，
+[blockGeometry](./client/src/preview/blockGeometry.ts) 按矩阵行列数推导等距边线；不规则 Block 从成员坐标临时重建，
+[BlockFrameLayer](./client/src/preview/BlockFrameLayer.ts) 另用蓝色虚线绘制向外扩展 6 个原图像素的矩形包围框，
+[分组绘图层](./client/src/preview/assignmentLayers.ts) 独立绘制分组颜色和缺号断点，
 [MapCanvas](./client/src/preview/MapCanvas.tsx) 负责 React 生命周期、图片加载和尺寸变化。
 Booth 编号按照原图方向绘制，Island 标签正向显示，所有层使用原图像素坐标，
 适配高分屏。Island 已识别标记为紫色；不确定项保留橙色/红色状态。
 旧版 Booth-only 结果仍可预览，并明确提示尚无 Island 数据。
-步骤 2 的结果会显示页面编号类型、修正/确认数量；标签后的 `*` 表示上下文校正或确认。
+步骤 3 的结果会显示页面编号类型、修正/确认数量；标签后的 `*` 表示上下文校正或确认。
 仍有边缘截断、方向问题的标记保持待复核，不会因为文字推断成功而清除其他问题。
+步骤 2 显示像素接触的 Block 数量，不跨过道；L 形、缺格和空洞不会被补成整块矩形。
+额外的 Block 外扩框仅用于 Preview 标注，可独立开关，并随 Island 筛选；
+不替代真实轮廓，不修改识别结果或 PNG 导出。开启时画布增加留白，避免贴地图边缘的外扩框被裁切。
+步骤 4 显示 Booth 归属，支持选择某一个 Island 查看着色范围。
+同岛允许真实缺号，但不允许重复编号；缺号后第一个 Booth 的编号在格外用橙色引线标注，
+例如缺 89–92 时在 93 格旁标注 `93`。此标注只由 Preview 推导绘制，
+不修改 Booth 93 的数字、坐标、OCR 或问题记录，也不补造不存在的格子。
 后端仅通过 `/api/preview/result.json` 和 `/api/preview/page-NNN.png`
 提供白名单文件，不暴露工具目录。
 
@@ -42,16 +53,44 @@ Booth 编号按照原图方向绘制，Island 标签正向显示，所有层使�
 独立的 [地图识别模块](./tools/booth-recognition/README.md)
 支持 PDF/图片输入，通过 OpenCV 定位方格、PaddleOCR 识别两位数字，
 并通过单独的 Island 模块定位彩色编号、识别大小写英文字母及平/片假名。
-主脚本通过两个独立阶段流水执行：
+主脚本通过五个独立阶段流水执行：
 
-1. `OcrRecognitionStep`：调用 Booth 和 Island 模块，保留原始 OCR。
-2. `IslandContextRefiner`：统计页面字符，推断大写/小写/平假名/片假名类型，
-   根据局部排列和可靠邻居校正疑难项；证据不足时不强行改号。
+1. `BoothRecognitionStep`：定位 Booth、识别两位数字。
+2. 独立的 [BoothBlockGrouper](./tools/booth-recognition/booth_blocks/grouping.py)：
+   仅按边框像素接触生成 Block，输出成员、包围框和矩阵行列数，不改写 Booth 坐标或保存逐条边线。
+3. `IslandRecognitionStep` + `IslandContextRefiner`：识别彩色编号，
+   推断页面类型并结合可靠邻居校正疑难项。
+4. 独立的 [BoothIslandAssigner](./tools/booth-recognition/island_assignment/assigner.py)：
+   以 Block 为不可拆分单位，结合过道排列、壁摊转角、重复标记和编号唯一性，
+   使用本地 OR-Tools CP-SAT 全局划分；硬约束冲突时明确报错，不降级成错误归属。
+5. 独立的 [IslandMarkerAligner](./tools/booth-recognition/map_recognition/marker_alignment.py)：
+   仅用 marker 中点对齐附近行列，内部 Island 再尝试沿另一轴居中；
+   壁摊只与附近同向、同侧壁摊标记对齐，不参与内部 Island 居中。
 
-输出 `step-1.json`（原始结果）和 `result.json`（最终结果），同时保存原图/标注图。
-使用 `--ocr-only` 可跳过步骤 2。全程不依赖启动网页或数据库。
-当前只识别和校正 Island 标记的位置和文字，
-保留重复出现的标记，不自动分配 Booth 所属 Island。
+输出 `step-1.json`（原始 Booth/Island OCR，沿用旧命名）、
+`step-2.json`（编号校正后、划分前）、`block-grouping.json`（独立 Block 结果）
+和 `result.json`（schema 7，带 Block、归属、缺号和 marker 中心点的最终结果）。
+最终 `islandMarkers[]` 仅保存 `center: {x, y}`，不再保存 `bbox`；
+原始 OCR 外框仍保留在阶段快照中。Preview 在中心点绘制半径 2.5 px 的圆点，
+文字在中心上方 24 px，不再描 marker 外框；画布自动补足顶部留白以避免文字裁切。
+每页使用 `islands[].blockIds` → `blocks[].boothIds` 单向映射：
+不在 Booth/Block 中重复保存父级 ID，也不再导出 `islandAssignment.components` 或 Island 的完整 Booth 列表。
+规则 Block 以 `bbox` + `grid: {rows, columns}` 表示；不规则 Block 的 `grid` 为 `null`，
+Preview 从已有 Booth 坐标重建真实形状。`outline`、`dividers` 只在内存中生成，不写入 JSON。
+求解元数据仍保留于 `islandAssignment`，逐 Booth 的待复核依据集中保存在 `assignmentReviews`，
+它只记录复核问题，不重复记录归属关系。Preview 仍兼容旧版 schema 1–6。
+未识别候选不视为 Booth 参与划分，保留在 `excludedCandidates`，不丢弃原始记录。
+重复标记按同页同编号合并为逻辑 Island；编号仍不可靠的 Island 可以保留 `label: null`，
+其 Booth 有稳定的逻辑 Island ID，但官方文字仍需复核。
+使用 `--no-assignment` 仅跳过划分，`--ocr-only` 同时跳过编号校正与划分。
+这两种模式仍生成几何 Block；`--booths-only` 保留旧版纯 Booth 输出。
+全程不依赖启动网页或数据库；已有 Python 环境需重新安装工具的 requirements 以加入 OR-Tools。
+
+独立的 [VenueRecognizer](./tools/booth-recognition/map_recognition/venue.py) 识别左上角的场馆编号，
+写入 `pages[].venue`，例如 `label: "東123"`，并保留 OCR 原文、置信度、状态和复核问题。
+PDF 页眉不在嵌入的地图图像内，因此使用本地 PDFium 单独栅格化页眉；不改变 Booth 的原图坐标。
+图片输入则识别图片左上方区域。检测模式不运行场馆 OCR；旧结果缺少该字段仍可预览。
+Preview 在页数选项及页面说明中显示场馆编号，低置信度标记为待复核。
 
 ## 开发
 

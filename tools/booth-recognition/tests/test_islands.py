@@ -12,6 +12,7 @@ from island_recognition.recognizer import detect_markers, marker_crop, valid_lab
 from map_recognition.common import Reading
 from map_recognition.ocr_step import OcrRecognitionStep
 from map_recognition.pipeline import MapRecognizer
+from map_recognition.venue import VenueRecognizer
 from test_recognizer import grid
 
 
@@ -167,11 +168,79 @@ class IslandRecognitionTests(unittest.TestCase):
 
 
 class PipelineTests(unittest.TestCase):
+    def test_complete_three_phase_pipeline_exports_memberships_and_pre_assignment_snapshot(self) -> None:
+        class SequentialReader:
+            def read(self, images: list[np.ndarray]) -> list[Reading]:
+                return [Reading(f"{index + 1:02}", 0.99) for index in range(len(images))]
+
+        image = Image.new("RGB", (420, 300), "white")
+        image.paste(grid(), (0, 0))
+        image.paste(colored_markers(1).crop((0, 0, 100, 100)), (250, 0))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "map.png"
+            image.save(path)
+            result = MapRecognizer(
+                venues=VenueRecognizer(detect_only=True),
+                booths=BoothRecognizer(reader=SequentialReader()),
+                islands=IslandRecognizer(reader=MarkerReader(["A"]), kana_model_name=None),
+                assignment_time_limit=3,
+            ).recognize(path)
+            data = result.to_dict()
+            self.assertEqual(data["schemaVersion"], 7)
+            self.assertEqual(data["processingSteps"], [
+                "booth_recognition", "booth_block_grouping", "island_recognition", "booth_island_assignment",
+                "island_marker_alignment",
+            ])
+            self.assertEqual(data["pages"][0]["islandAssignment"]["counts"]["assignedBooths"], 16)
+            self.assertEqual(len(data["pages"][0]["islands"]), 1)
+            self.assertTrue(all(b["number"] is not None for b in data["pages"][0]["booths"]))
+            page = data["pages"][0]
+            self.assertEqual(len(page["blocks"]), 1)
+            self.assertEqual(page["islands"][0]["blockIds"], [page["blocks"][0]["id"]])
+            self.assertEqual(set(page["blocks"][0]["boothIds"]), {b["id"] for b in page["booths"]})
+            self.assertEqual(page["blocks"][0]["grid"], {"rows": 4, "columns": 4})
+            self.assertFalse({"outline", "dividers", "islandId"} & page["blocks"][0].keys())
+            self.assertNotIn("components", page["islandAssignment"])
+            self.assertNotIn("boothIds", page["islands"][0])
+            self.assertNotIn("componentIds", page["islands"][0])
+            self.assertTrue(all(not {"blockId", "islandId", "assignment"} & b.keys() for b in page["booths"]))
+            target = result.save(Path(directory) / "result")
+            stage2 = json.loads((target.parent / "step-2.json").read_text(encoding="utf-8"))
+            self.assertEqual(stage2["schemaVersion"], 3)
+            self.assertEqual(stage2["pages"][0]["venue"]["status"], "not_run")
+            self.assertEqual(page["venue"]["status"], "not_run")
+            self.assertNotIn("islandId", stage2["pages"][0]["booths"][0])
+            self.assertIn("bbox", stage2["pages"][0]["islandMarkers"][0])
+            self.assertNotIn("bbox", page["islandMarkers"][0])
+            self.assertIn("center", page["islandMarkers"][0])
+            self.assertTrue((target.parent / "block-grouping.json").is_file())
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8")), data)
+
+    def test_assignment_can_be_disabled_without_losing_context_stage(self) -> None:
+        image = Image.new("RGB", (420, 300), "white")
+        image.paste(grid(), (0, 0))
+        image.paste(colored_markers(1).crop((0, 0, 100, 100)), (250, 0))
+        from test_recognizer import StubReader
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "map.png"
+            image.save(path)
+            result = MapRecognizer(
+                venues=VenueRecognizer(detect_only=True),
+                booths=BoothRecognizer(reader=StubReader()),
+                islands=IslandRecognizer(reader=MarkerReader(["A"]), kana_model_name=None),
+                assign=False,
+            ).recognize(path)
+            self.assertEqual(result.to_dict()["schemaVersion"], 7)
+            self.assertIsNone(result.assignments)
+            self.assertIsNotNone(result.refinements)
+
     def test_step_one_runs_independently_and_can_bypass_context(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "map.png"
             colored_markers().save(path)
             step = OcrRecognitionStep(
+                venues=VenueRecognizer(detect_only=True),
                 booths=BoothRecognizer(detect_only=True),
                 islands=IslandRecognizer(reader=MarkerReader(), kana_model_name=None),
             )
@@ -180,21 +249,25 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual([m.label for m in raw.islands[1]], ["A", "a", "あ", "ア"])
             self.assertTrue(all(m.inference is None for m in raw.islands[1]))
             pipeline = MapRecognizer(
+                venues=VenueRecognizer(detect_only=True),
                 booths=BoothRecognizer(detect_only=True),
                 islands=IslandRecognizer(detect_only=True), refine=False,
             )
             output = pipeline.recognize(path)
             self.assertIsNone(output.refinements)
-            self.assertEqual(output.to_dict()["processingSteps"], ["ocr"])
+            self.assertEqual(output.to_dict()["processingSteps"], [
+                "booth_recognition", "booth_block_grouping", "island_recognition", "island_marker_alignment",
+            ])
 
     def test_detect_only_skips_all_context_changes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "map.png"
             colored_markers().save(path)
             result = MapRecognizer(
+                venues=VenueRecognizer(detect_only=True),
                 booths=BoothRecognizer(detect_only=True), islands=IslandRecognizer(detect_only=True),
             ).recognize(path)
-            self.assertEqual(result.to_dict()["schemaVersion"], 3)
+            self.assertEqual(result.to_dict()["schemaVersion"], 7)
             self.assertTrue(all(m.status == "not_run" and m.label is None for m in result.islands[1]))
             self.assertEqual(result.refinements[1].to_dict()["outcomes"], {"skipped": 4})
 
@@ -206,12 +279,13 @@ class PipelineTests(unittest.TestCase):
             path = Path(directory) / "map.png"
             image.save(path)
             pipeline = MapRecognizer(
+                venues=VenueRecognizer(detect_only=True),
                 booths=BoothRecognizer(detect_only=True),
                 islands=IslandRecognizer(reader=MarkerReader(["あ"]), kana_model_name=None),
             )
             result = pipeline.recognize(path)
             data = result.to_dict()
-            self.assertEqual(data["schemaVersion"], 3)
+            self.assertEqual(data["schemaVersion"], 7)
             self.assertEqual(len(data["pages"][0]["booths"]), 16)
             self.assertEqual(len(data["pages"][0]["islandMarkers"]), 1)
             self.assertEqual(data["pages"][0]["islandMarkers"][0]["label"], "あ")
@@ -222,7 +296,9 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(raw["schemaVersion"], 2)
             self.assertEqual(raw["processingSteps"], ["ocr"])
             self.assertNotIn("inference", raw["pages"][0]["islandMarkers"][0])
-            self.assertEqual(data["processingSteps"], ["ocr", "island_context"])
+            self.assertEqual(data["processingSteps"], [
+                "booth_recognition", "booth_block_grouping", "island_recognition", "island_marker_alignment",
+            ])
             self.assertEqual(result.booths.to_dict()["schemaVersion"], 1)
 
 
