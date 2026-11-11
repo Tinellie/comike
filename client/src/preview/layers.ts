@@ -12,6 +12,7 @@ export interface PreviewOptions {
   gaps: boolean
   halfBooths: boolean
   hallOutline?: boolean
+  hallLabels?: boolean
   selectedIsland: string | null
 }
 

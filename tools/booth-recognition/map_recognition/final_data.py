@@ -154,6 +154,15 @@ def simplify_result(data: dict[str, object]) -> dict[str, object]:
             raise ValueError("Final export would omit unassigned Blocks, Booths or markers")
         venue = _object(page.get("venue"), "venue")
         hall = {"name": _text(venue.get("label"), f"Page {page.get('page')} hall name"), "islands": final_islands}
+        if "hallLabels" in page:
+            hall["labels"] = [
+                {
+                    "id": label["id"], "text": _text(label.get("text"), "Hall label text"),
+                    "code": _text(label.get("code"), "Hall label code"),
+                    "pos": _coordinates(label.get("center"), ("x", "y"), "Hall label position"),
+                }
+                for label in _index(page["hallLabels"], "hallLabels").values()
+            ]
         if "hallOutline" in page:
             outline = _object(page["hallOutline"], "hallOutline")
             polygon = _records(outline.get("polygon"), "hallOutline.polygon")

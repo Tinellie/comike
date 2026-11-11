@@ -5,6 +5,7 @@ import { BlockFrameLayer, blockFrameMargin } from './BlockFrameLayer'
 import { AssignmentLayer, NumberGapLayer } from './assignmentLayers'
 import { HalfBoothLayer } from './HalfBoothLayer'
 import { HallOutlineLayer } from './HallOutlineLayer'
+import { HallLabelLayer } from './hallLabels'
 import type { CanvasLayer, PreviewOptions } from './layers'
 import { previewSurface } from './pdfPreview'
 
@@ -26,7 +27,7 @@ export class MapPreviewRenderer {
     layers: CanvasLayer[] = [
       new BackgroundLayer(), new AssignmentLayer(), new BlockLayer(), new BlockFrameLayer(),
       new NumberLayer(), new HalfBoothLayer(), new IslandLayer(), new NumberGapLayer(),
-      new HallOutlineLayer(),
+      new HallOutlineLayer(), new HallLabelLayer(),
     ],
   ) {
     const context = canvas.getContext('2d')

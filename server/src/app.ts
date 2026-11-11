@@ -2,15 +2,22 @@ import express from 'express'
 import type { ErrorRequestHandler } from 'express'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { readFile, writeFile, rename, unlink } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { validHallTransforms } from './hallTransforms.js'
 
 interface AppOptions {
   checkDatabase: () => Promise<void>
   clientDirectory?: string
   recognitionDirectory?: string
   osmFile?: string
+  hallTransformsFile?: string
+  hallEditorOrigin?: string
 }
 
-export function createApp({ checkDatabase, clientDirectory, recognitionDirectory, osmFile }: AppOptions) {
+export function createApp({
+  checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
+}: AppOptions) {
   const app = express()
   app.disable('x-powered-by')
   app.use(express.json())
@@ -62,6 +69,63 @@ export function createApp({ checkDatabase, clientDirectory, recognitionDirectory
       res.removeHeader('Content-Type')
       next(error)
     })
+  })
+
+  app.get(/^\/api\/map\/(final\.json|hall-transforms\.json)$/, (req, res, next) => {
+    const file = req.params[0] === 'final.json'
+      ? recognitionDirectory && join(recognitionDirectory, 'final.json')
+      : hallTransformsFile
+    if (!file) {
+      res.status(404).json({ message: 'Hall data is not configured' })
+      return
+    }
+    res.set('Cache-Control', 'no-store')
+    res.sendFile(file, error => {
+      if (!error) return
+      if ('code' in error && error.code === 'ENOENT') {
+        console.warn('Hall asset missing:', file)
+        res.status(404).json({ message: 'Hall data file not found' })
+        return
+      }
+      next(error)
+    })
+  })
+
+  app.put('/api/map/hall-transforms.json', async (req, res, next) => {
+    if (!hallTransformsFile || !recognitionDirectory) {
+      res.status(404).json({ message: 'Hall data is not configured' })
+      return
+    }
+    const origin = req.get('origin')
+    if ((origin && origin !== `${req.protocol}://${req.get('host')}` && origin !== hallEditorOrigin)
+      || req.get('sec-fetch-site') === 'cross-site') {
+      console.warn('Rejected cross-origin Hall transform write')
+      res.status(403).json({ message: 'Cross-origin writes are not allowed' })
+      return
+    }
+    try {
+      const final: { halls?: { name?: unknown }[] } = JSON.parse(
+        await readFile(join(recognitionDirectory, 'final.json'), 'utf8'),
+      )
+      if (!Array.isArray(final.halls)) throw new Error('Invalid final Hall data')
+      if (!validHallTransforms(req.body, final.halls.map(h => h.name))) {
+        console.warn('Rejected invalid Hall transforms')
+        res.status(400).json({ message: 'Invalid Hall transforms or mismatched final data' })
+        return
+      }
+      const temporary = `${hallTransformsFile}.${randomUUID()}.tmp`
+      try {
+        await writeFile(temporary, JSON.stringify(req.body, null, 2) + '\n', 'utf8')
+        await rename(temporary, hallTransformsFile)
+      } finally {
+        await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error
+        })
+      }
+      res.json({ status: 'ok' })
+    } catch (error) {
+      next(error)
+    }
   })
 
   app.use('/api', (_req, res) => {

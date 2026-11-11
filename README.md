@@ -12,7 +12,7 @@ MUI、MySQL 和 Drizzle ORM。
 运行 `npm run dev` 后打开 http://localhost:5173/map。
 Map 页面读取本地 [osm-map.osm](./ref/osm-map.osm)，在 React 管理的原生 Canvas 2D 上绘制，
 不需要在线地图服务、瓦片或 API Key，也不会上传地图文件。
-后端仅通过 `/api/map/osm-map.osm` 提供该固定文件，不开放其他参考文件。
+后端通过 `/api/map/osm-map.osm` 提供该固定 OSM 文件，不开放任意文件路径。
 
 - 使用 Web Mercator 投影；配色与绘制规则参考原项目的 OSM 页面：
   东馆红色、西馆蓝色、南馆绿色，普通建筑暖橙色，步行区青色，步道绿色，铁路蓝色；
@@ -32,7 +32,39 @@ Map 页面读取本地 [osm-map.osm](./ref/osm-map.osm)，在 React 管理的原
 
 绘图使用本地矢量样式，并非完整的 OSM 官方地图样式；非多边形关系只提供成员的绘制标签，不额外叠绘，避免重复道路/线路。
 本页没有移植参考项目的编辑器、楼层筛选、路径高亮选择或车站 HTML 徽标。
-此页面与识图 Preview、展位精简数据相互独立。
+
+### Hall 图层和变换
+
+Map 同时读取识别输出的 `final.json` 和独立的 [hall-transforms.json](./ref/hall-transforms.json)，
+将每页 Hall 作为一个整体绘制到 OSM 坐标中；不读取详细 `result.json`，也不加载 PDF 背景。
+重用 Preview 的 Block 格线、Booth 编号、Half-booth 分割/a/b 和 Island 标记绘制，
+另外绘制 Hall 边界及最终数据中的场馆标签中心。没有分组着色、Block 外扩虚线或缺号提示。
+默认启用 a/b 时与 Preview 一样不叠加数字编号，关闭 a/b 可显示编号。
+精简数据未保留 Booth OCR 旋转，数字方向按格子宽高推导；场馆标签没有文字框，按中心标注。
+
+每个配置项包含：
+
+- `hallIndex`：`final.halls` 的零基下标，配合 `name` 校验，不按名称合并同名 Hall。
+- `anchor.latitude/longitude`：WGS84 经纬度锚点。
+- `offset.x/y`：相对锚点的地面米数，X 向东、Y 向南。
+- `rotation`：顺时针角度；`scale`：每个识别图像素对应的地面米数（允许 0.001–10）。
+
+以源 Hall 边界包围框中心为旋转/缩放基点，先转到当地米坐标，再补偿 Mercator 纬度比例，
+最后使用地图视口统一平移缩放。初始四个 Hall 放在对应场馆附近，使用已固定在配置文件中的
+随机示例位移、角度和比例，**不是精确地理配准，也不会每次刷新重新随机**。
+重新排序或增删最终 Hall 后需同步修改配置，缺失/重复/名称不匹配均会报错。
+
+在「编辑 Hall」中选择场馆，可实时修改位移、角度、比例；「定位 Hall」可放大查看。
+勾选「拖动选中 Hall」后，在画布上拖动只移动选中的 Hall，否则拖动地图；滚轮始终缩放地图。
+「适应地图」包含当前 Hall 范围；Hall 图层可整体隐藏，各内容也可独立开关。
+点击「保存 Hall 变换」通过 `PUT /api/map/hall-transforms.json` 将配置原子写回该独立文件，
+刷新页面即可恢复。未保存改动只在当前页面生效；原始识别数据和 OSM 文件不会被修改。
+部署时需允许服务器写入该配置及其所在目录；保存失败会明确提示，不显示虚假成功。
+保存接口只允许同源请求及 `HALL_EDITOR_ORIGIN` 指定的编辑器来源（默认 `http://localhost:5173`，用于 Vite 代理）。
+这是本地编辑接口，未提供多用户权限/版本冲突管理，不应直接暴露到公开网络。
+
+固定 Hall 读取接口为 `/api/map/final.json` 和 `/api/map/hall-transforms.json`；
+缺失文件或无效数据会显示错误与重试入口，不静默省略 Hall。
 
 ## 地图预览
 
@@ -68,6 +100,13 @@ tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_re
 结果保存为 `pages[].hallOutline: {method, polygon, bbox}`；`polygon` 是原图像素顶点，
 末点到首点隐式闭合。精简输出仅保存 `halls[].boundary` 顶点，不复制检测元数据。
 旧版没有该字段的结果仍可预览；纯白图片无法确定边界时明确报错。
+
+`场馆标签` 开关显示图内「東1/E1」「西2/W2」等深底白字或浅底深字标签及其文字范围，
+与页面左上角的场馆名称 `venue` 分开记录。每页 `hallLabels` 保留实际 OCR 文本、
+规范场馆名及代码、原图 `bbox` 和 `center`、旋转方向、置信度与复核状态。
+支持四向和分行识别，相邻日文/英文同号配对；不同位置的重复标签分别保留。
+完整 PDF 预览沿用同一坐标变换；精简输出为 `halls[].labels: [{id,text,code,pos}]`，
+其中 `pos` 为原识别图中的文字中心，而非完整 PDF 页面的坐标。
 
 React 使用原生 Canvas 2D，无需额外绘图库：
 [MapPreviewRenderer](./client/src/preview/MapPreviewRenderer.ts) 管理画布和坐标缩放，

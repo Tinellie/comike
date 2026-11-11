@@ -17,6 +17,7 @@ from .half_booths import HalfBoothResult
 from .final_data import save_final_result
 from .hall_outline import HallOutline
 from .pdf_preview import PdfPreview
+from .hall_labels import HallLabel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class MapRecognitionResult:
     half_booths: dict[int, HalfBoothResult] | None = None
     hall_outlines: dict[int, HallOutline] | None = None
     pdf_previews: dict[int, PdfPreview] | None = None
+    hall_labels: dict[int, list[HallLabel]] | None = None
 
     def to_dict(self) -> dict[str, object]:
         data = self.booths.to_dict()
@@ -126,6 +128,9 @@ class MapRecognitionResult:
         if self.pdf_previews is not None:
             for page in data["pages"]:
                 page["pdfPreview"] = self.pdf_previews[page["page"]].to_dict()
+        if self.hall_labels is not None:
+            for page in data["pages"]:
+                page["hallLabels"] = [label.to_dict() for label in self.hall_labels[page["page"]]]
         return data
 
     def save(self, directory: str | Path) -> Path:

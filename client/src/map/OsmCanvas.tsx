@@ -2,25 +2,49 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Box, Button, Stack, Typography } from '@mui/material'
 import type { OsmMapData } from './osm'
 import { OsmMapRenderer } from './OsmMapRenderer'
+import type { HallPlacement, HallTransforms, MapHall } from './halls'
+import type { HallDisplay } from './HallMapLayer'
+import type { Point } from './viewport'
 
-export default function OsmCanvas({ data }: { data: OsmMapData }) {
+interface OsmCanvasProps {
+  data: OsmMapData
+  halls: MapHall[]
+  transforms: HallTransforms
+  display: HallDisplay
+  selectedHall: number | null
+  dragHall: boolean
+  onPlacement: (placement: HallPlacement) => void
+}
+
+export default function OsmCanvas({ data, halls, transforms, display, selectedHall, dragHall, onPlacement }: OsmCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<OsmMapRenderer | null>(null)
   const [zoom, setZoom] = useState(100)
   const [error, setError] = useState<string | null>(null)
+  const hallState = useRef({ halls, transforms, display, selectedHall, dragHall, onPlacement })
+
+  useEffect(() => {
+    hallState.current = { halls, transforms, display, selectedHall, dragHall, onPlacement }
+    rendererRef.current?.setHalls(halls, transforms, display, selectedHall)
+  }, [halls, transforms, display, selectedHall, dragHall, onPlacement])
 
   useEffect(() => {
     const canvas = canvasRef.current
     const container = containerRef.current
     if (!canvas || !container) return
     let renderer: OsmMapRenderer | null = null
-    let drag: { id: number; x: number; y: number } | null = null
+    let drag: {
+      id: number; x: number; y: number; startX: number; startY: number
+      hallIndex: number | null; offset: Point | null
+    } | null = null
     const observer = new ResizeObserver(resize)
     function resize() {
       if (!canvas || !container) return
       try {
         renderer ??= new OsmMapRenderer(canvas, data, setZoom)
+        const state = hallState.current
+        renderer.setHalls(state.halls, state.transforms, state.display, state.selectedHall)
         rendererRef.current = renderer
         const bounds = canvas.getBoundingClientRect()
         renderer.resize(bounds.width, bounds.height, window.devicePixelRatio || 1)
@@ -33,13 +57,33 @@ export default function OsmCanvas({ data }: { data: OsmMapData }) {
       if (event.button !== 0 || drag || !canvas) return
       canvas.focus({ preventScroll: true })
       canvas.setPointerCapture(event.pointerId)
-      drag = { id: event.pointerId, x: event.clientX, y: event.clientY }
+      const state = hallState.current
+      const placement = state.dragHall && state.display.visible
+        ? state.transforms.placements.find(p => p.hallIndex === state.selectedHall) : undefined
+      drag = {
+        id: event.pointerId, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY,
+        hallIndex: placement?.hallIndex ?? null, offset: placement ? { ...placement.offset } : null,
+      }
       canvas.style.cursor = 'grabbing'
     }
     function pointerMove(event: PointerEvent) {
       if (!drag || drag.id !== event.pointerId) return
-      renderer?.pan(event.clientX - drag.x, event.clientY - drag.y)
-      drag = { id: event.pointerId, x: event.clientX, y: event.clientY }
+      const dx = event.clientX - drag.x, dy = event.clientY - drag.y
+      const state = hallState.current
+      if (drag.hallIndex !== null && drag.offset && renderer) {
+        const placement = state.transforms.placements.find(p => p.hallIndex === drag?.hallIndex)
+        if (placement) {
+          state.onPlacement({
+            ...placement, offset: renderer.hallDragOffset(
+              placement.hallIndex, event.clientX - drag.startX, event.clientY - drag.startY, drag.offset,
+            ),
+          })
+        }
+      } else {
+        renderer?.pan(dx, dy)
+      }
+      drag.x = event.clientX
+      drag.y = event.clientY
     }
     function pointerEnd(event: PointerEvent) {
       if (!drag || drag.id !== event.pointerId || !canvas) return
@@ -99,6 +143,10 @@ export default function OsmCanvas({ data }: { data: OsmMapData }) {
         <Button variant="outlined" aria-label="放大地图" onClick={() => rendererRef.current?.zoom(1.4)}>+</Button>
         <Button variant="outlined" aria-label="缩小地图" onClick={() => rendererRef.current?.zoom(1 / 1.4)}>−</Button>
         <Button variant="outlined" onClick={() => rendererRef.current?.fit()}>适应地图</Button>
+        <Button variant="outlined" disabled={selectedHall === null || !display.visible}
+          onClick={() => {
+            if (selectedHall !== null) rendererRef.current?.fitHall(selectedHall)
+          }}>定位 Hall</Button>
         <Typography component="output" aria-label="地图缩放比例">{zoom}%</Typography>
       </Stack>
       <Box

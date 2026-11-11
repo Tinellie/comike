@@ -5,6 +5,8 @@ import { parseHallOutline } from './hallOutline'
 import type { PreviewHallOutline } from './hallOutline'
 import { parsePdfPreview } from './pdfPreview'
 import type { PdfPreview } from './pdfPreview'
+import { parseHallLabels } from './hallLabels'
+import type { PreviewHallLabel } from './hallLabels'
 
 export type BoothStatus = 'recognized' | 'needs_review' | 'unrecognized' | 'not_run'
 
@@ -79,6 +81,7 @@ export interface PreviewPage {
   halfBooths: PreviewHalfBooth[] | null
   hallOutline?: PreviewHallOutline | null
   pdfPreview?: PdfPreview | null
+  hallLabels?: PreviewHallLabel[] | null
 }
 
 export interface PreviewVenue {
@@ -534,6 +537,7 @@ function parsePage(value: unknown, version: number): PreviewPage {
     halfBooths: parseHalfBooths(value.halfBooths, value.halfBoothSplitting, booths, hasAssignment),
     hallOutline: parseHallOutline(value.hallOutline, width, height),
     pdfPreview: parsePdfPreview(value.pdfPreview, value.page),
+    hallLabels: parseHallLabels(value.hallLabels, width, height),
   }
 }
 

@@ -16,6 +16,7 @@ from .marker_alignment import IslandMarkerAligner
 from .half_booths import HalfBoothSplitter
 from .hall_outline import detect_hall_outline
 from .pdf_preview import render_pdf_previews
+from .hall_labels import HallLabelRecognizer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class MapRecognizer:
         refine: bool = True,
         assign: bool = True, assignment_time_limit: float = 30,
         venues: VenueRecognizer | None = None,
+        hall_labels: HallLabelRecognizer | None = None,
     ) -> None:
         self.booth_step = BoothRecognitionStep(booths)
         self.block_step = BoothBlockGrouper()
@@ -34,8 +36,22 @@ class MapRecognizer:
         self.assignment_step = BoothIslandAssigner(time_limit=assignment_time_limit) if assign else None
         self.marker_alignment_step = IslandMarkerAligner()
         self.half_booth_step = HalfBoothSplitter()
+        self.hall_label_step = hall_labels
 
     def _postprocess(self, result: MapRecognitionResult) -> MapRecognitionResult:
+        LOGGER.info("Map metadata: hall label text and position recognition")
+        recognizer = self.hall_label_step
+        if recognizer is None:
+            detect_only = self.island_step.recognizer.detect_only
+            recognizer = HallLabelRecognizer(
+                detect_only=detect_only, reader=None if detect_only else self.island_step.recognizer.reader,
+            )
+        result = replace(result, hall_labels={
+            page.page: recognizer.recognize_image(
+                page.image, page=page.page, booths=[b.bbox for b in page.booths],
+            )
+            for page in result.booths.pages
+        })
         LOGGER.info("Hall outline: closed source frame or nonwhite pixel bounds")
         result = replace(result, hall_outlines={
             page.page: detect_hall_outline(page.image, [b.bbox for b in page.booths])

@@ -16,7 +16,11 @@ const recognitionDirectory = fileURLToPath(
   new URL('../../tools/booth-recognition/output/official-map/', import.meta.url),
 )
 const osmFile = fileURLToPath(new URL('../../ref/osm-map.osm', import.meta.url))
-const app = createApp({ checkDatabase, clientDirectory, recognitionDirectory, osmFile })
+const hallTransformsFile = fileURLToPath(new URL('../../ref/hall-transforms.json', import.meta.url))
+const hallEditorOrigin = process.env.HALL_EDITOR_ORIGIN ?? 'http://localhost:5173'
+const app = createApp({
+  checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
+})
 const server = app.listen(port, () => {
   console.info(`Server listening on http://localhost:${port}`)
 })

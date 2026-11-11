@@ -39,6 +39,17 @@ def fixture() -> dict:
 
 
 class FinalDataTests(unittest.TestCase):
+    def test_hall_labels_export_text_code_and_source_center_only(self) -> None:
+        source = fixture()
+        source["pages"][0]["hallLabels"] = [{
+            "id": "p001-hall-001", "text": "西2/W2", "code": "W2", "label": "西2",
+            "center": {"x": 40.5, "y": 15}, "bbox": {"x": 20, "y": 5, "width": 41, "height": 20},
+            "recognitionScore": 0.99, "rotation": 270, "status": "recognized", "issues": [],
+        }]
+        self.assertEqual(simplify_result(source)["halls"][0]["labels"], [{
+            "id": "p001-hall-001", "text": "西2/W2", "code": "W2", "pos": {"x": 40.5, "y": 15},
+        }])
+
     def test_hall_boundary_exports_vertices_without_detection_metadata(self) -> None:
         source = fixture()
         polygon = [{"x": 1, "y": 2}, {"x": 80, "y": 2}, {"x": 80, "y": 90}, {"x": 1, "y": 90}]

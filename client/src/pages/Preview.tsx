@@ -20,7 +20,7 @@ export default function Preview() {
   const [zoom, setZoom] = useState<number | 'fit'>('fit')
   const [options, setOptions] = useState<PreviewOptions>({
     background: true, boxes: true, blockFrames: true, numbers: true, islands: true,
-    groups: true, gaps: true, halfBooths: true, hallOutline: true, selectedIsland: null,
+    groups: true, gaps: true, halfBooths: true, hallOutline: true, hallLabels: true, selectedIsland: null,
   })
 
   useEffect(() => {
@@ -100,6 +100,7 @@ export default function Preview() {
               ['groups', '分组着色'], ['gaps', '缺号断点'],
               ['halfBooths', 'Half-booth a/b'],
               ['hallOutline', 'Hall 边框'],
+              ['hallLabels', '场馆标签'],
             ] as const).map(([key, label]) => (
               <FormControlLabel
                 key={key} label={label}
@@ -108,6 +109,7 @@ export default function Preview() {
                   || (key === 'blockFrames' && page.blocks === null)
                   || (key === 'halfBooths' && page.halfBooths === null)
                   || (key === 'hallOutline' && !page.hallOutline)
+                  || (key === 'hallLabels' && !page.hallLabels?.length)
                   || ((key === 'groups' || key === 'gaps') && page.islandAssignment === null)
                 } onChange={(_, checked) =>
                   setOptions(previous => ({ ...previous, [key]: checked }))} />}
@@ -133,6 +135,14 @@ export default function Preview() {
               Hall 边框：{page.hallOutline.method === 'closed_frame'
                 ? '原图连续闭合外框（红色实线）'
                 : '未检测到闭合外框，使用全部非白色像素的包围矩形（红色虚线）'}。
+            </Typography>
+          )}
+          {page.hallLabels && (
+            <Typography variant="body2" color="text.secondary">
+              场馆标签：{page.hallLabels.length} 处，蓝色框标出文字范围；
+              {page.hallLabels.filter(label => label.status === 'needs_review').length} 处待复核，
+              {page.hallLabels.filter(label => label.status === 'not_run').length} 处未执行 OCR。
+              同一场馆的重复标签按位置分别保留。
             </Typography>
           )}
           <Typography variant="body2" color="text.secondary">

@@ -3,6 +3,11 @@ import { fitViewport, panViewport, screenToWorld, worldToScreen, zoomViewport } 
 import type { Point, Size, Viewport } from './viewport'
 import { compareMapStyles, gridColor, mapBackground, mapStyle, onewayTriangles } from './style'
 import type { MapStyle } from './style'
+import { HallMapLayer, defaultHallDisplay } from './HallMapLayer'
+import type { HallDisplay } from './HallMapLayer'
+import { hallWorldBounds } from './halls'
+import type { HallTransforms, MapHall } from './halls'
+import type { Bounds } from './viewport'
 
 interface StyledFeature {
   feature: OsmFeature
@@ -35,6 +40,11 @@ export class OsmMapRenderer {
   private view: Viewport | null = null
   private pixelRatio = 1
   private frame: number | null = null
+  private halls: MapHall[] = []
+  private transforms: HallTransforms = { schemaVersion: 1, placements: [] }
+  private hallDisplay: HallDisplay = defaultHallDisplay
+  private selectedHall: number | null = null
+  private readonly hallLayer = new HallMapLayer()
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -67,13 +77,56 @@ export class OsmMapRenderer {
     this.pixelRatio = Math.max(1, pixelRatio)
     this.canvas.width = Math.round(width * this.pixelRatio)
     this.canvas.height = Math.round(height * this.pixelRatio)
-    if (!this.view) this.view = fitViewport(this.data.bounds, this.size)
+    if (!this.view) this.view = fitViewport(this.sceneBounds(), this.size)
     this.requestDraw()
   }
 
   fit() {
-    this.view = fitViewport(this.data.bounds, this.size)
+    this.view = fitViewport(this.sceneBounds(), this.size)
     this.requestDraw()
+  }
+
+  setHalls(halls: MapHall[], transforms: HallTransforms, display: HallDisplay, selected: number | null) {
+    this.halls = halls
+    this.transforms = transforms
+    this.hallDisplay = display
+    this.selectedHall = selected
+    this.requestDraw()
+  }
+
+  fitHall(index: number) {
+    const hall = this.halls.find(h => h.index === index)
+    const placement = this.transforms.placements.find(p => p.hallIndex === index)
+    if (!hall || !placement) throw new Error('找不到 Hall 定位数据')
+    this.view = fitViewport(hallWorldBounds(hall, placement), this.size)
+    this.requestDraw()
+  }
+
+  private sceneBounds(): Bounds {
+    const bounds = { ...this.data.bounds }
+    if (this.hallDisplay.visible) {
+      for (const placement of this.transforms.placements) {
+        const hall = this.halls.find(h => h.index === placement.hallIndex)
+        if (!hall) continue
+        const b = hallWorldBounds(hall, placement)
+        bounds.minX = Math.min(bounds.minX, b.minX)
+        bounds.minY = Math.min(bounds.minY, b.minY)
+        bounds.maxX = Math.max(bounds.maxX, b.maxX)
+        bounds.maxY = Math.max(bounds.maxY, b.maxY)
+      }
+    }
+    return bounds
+  }
+
+  hallDragOffset(index: number, dx: number, dy: number, startOffset?: Point): Point {
+    const placement = this.transforms.placements.find(p => p.hallIndex === index)
+    if (!placement || !this.view) throw new Error('Hall 视口未就绪')
+    const metersPerUnit = Math.cos(placement.anchor.latitude * Math.PI / 180)
+    const offset = startOffset ?? placement.offset
+    return {
+      x: offset.x + dx / this.view.scale * metersPerUnit,
+      y: offset.y + dy / this.view.scale * metersPerUnit,
+    }
   }
 
   pan(dx: number, dy: number) {
@@ -135,6 +188,14 @@ export class OsmMapRenderer {
     for (const item of visible) {
       ctx.fillStyle = item.style.stroke ?? 'rgba(41, 65, 73, 0.78)'
       ctx.fill(item.arrows)
+    }
+    for (const placement of this.transforms.placements) {
+      const hall = this.halls.find(h => h.index === placement.hallIndex)
+      if (!hall) continue
+      const bounds = hallWorldBounds(hall, placement)
+      if (bounds.maxX < topLeft.x || bounds.minX > bottomRight.x
+        || bounds.maxY < topLeft.y || bounds.minY > bottomRight.y) continue
+      this.hallLayer.draw(ctx, hall, placement, this.origin, this.hallDisplay, hall.index === this.selectedHall)
     }
     this.drawLabels(visible)
     this.onZoom(Math.round(view.scale / fitViewport(this.data.bounds, size).scale * 100))
