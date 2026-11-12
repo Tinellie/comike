@@ -1,0 +1,19 @@
+{
+    "halls": [
+        {
+            "name": "東",
+            "code": "E",
+            "marker-color": "#B43A3A"
+        },
+        {
+            "name": "西",
+            "code": "W",
+            "marker-color": "#2A57AD"
+        },
+        {
+            "name": "南",
+            "code": "S",
+            "marker-color": "#2F8A4D"
+        }
+    ]
+}

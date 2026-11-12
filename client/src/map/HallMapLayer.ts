@@ -1,10 +1,31 @@
 import { BlockLayer } from '../preview/BlockLayer'
 import { HalfBoothLayer } from '../preview/HalfBoothLayer'
-import { IslandLayer, NumberLayer } from '../preview/layers'
+import { NumberLayer } from '../preview/layers'
 import type { CanvasLayer, PreviewOptions } from '../preview/layers'
 import type { Point } from './viewport'
 import type { HallPlacement, MapHall } from './halls'
-import { hallMatrix } from './halls'
+import { hallMatrix, object } from './halls'
+import hallMetaSource from '../../../ref/hall-meta.json?raw'
+
+const hallMeta = object(JSON.parse(hallMetaSource))
+if (!Array.isArray(hallMeta.halls)) throw new Error('Hall marker 元数据列表无效')
+const markerColors = hallMeta.halls.map(value => {
+  const entry = object(value)
+  if (typeof entry.name !== 'string' || !entry.name
+    || typeof entry.code !== 'string' || !/^[EWSN]$/.test(entry.code)
+    || typeof entry['marker-color'] !== 'string' || !/^#[0-9a-f]{6}$/i.test(entry['marker-color'])) {
+    throw new Error('Hall marker 名称、编号或颜色无效')
+  }
+  return { name: entry.name, code: entry.code, color: entry['marker-color'] }
+})
+
+export function hallMarkerColor(hall: MapHall): string {
+  const codes = new Set(hall.labels.flatMap(label => label.code ? [label.code[0]] : []))
+  const matches = markerColors.filter(entry => codes.size > 0
+    ? codes.has(entry.code) : hall.name?.startsWith(entry.name))
+  if (matches.length !== 1) throw new Error(`Hall ${hall.name ?? hall.index + 1} 缺少唯一 marker-color 配置`)
+  return matches[0].color
+}
 
 export interface HallDisplay {
   visible: boolean
@@ -21,7 +42,7 @@ export const defaultHallDisplay: HallDisplay = {
 
 export class HallMapLayer {
   private readonly layers: CanvasLayer[] = [
-    new BlockLayer(), new NumberLayer(), new HalfBoothLayer(), new IslandLayer(),
+    new BlockLayer(), new NumberLayer(), new HalfBoothLayer(),
   ]
   private readonly image = new Image()
 
@@ -30,6 +51,7 @@ export class HallMapLayer {
     origin: Point, display: HallDisplay, selected: boolean,
   ) {
     if (!display.visible || !hall.page.hallOutline) return
+    const markerColor = hallMarkerColor(hall)
     const [a, b, c, d, e, f] = hallMatrix(hall, placement)
     context.save()
     context.transform(a, b, c, d, e - origin.x, f - origin.y)
@@ -60,19 +82,26 @@ export class HallMapLayer {
       layer.draw(context, { page: hall.page, image: this.image, options, drawText })
       context.restore()
     }
-    if (display.labels) {
+    const drawMarker = (text: string, center: Point, fontSize: number, rotation = 0) => {
       context.textAlign = 'center'
       context.textBaseline = 'middle'
-      context.font = 'bold 22px "Yu Gothic", "Noto Sans JP", sans-serif'
+      context.font = `bold ${fontSize}px "Yu Gothic", "Noto Sans JP", sans-serif`
+      drawText(center.x, center.y, () => {
+        context.translate(center.x, center.y)
+        context.rotate(rotation * Math.PI / 180)
+        context.fillStyle = markerColor
+        context.fillText(text, 0, 0)
+      })
+    }
+    if (display.islands) {
+      const rotation = -Math.round(placement.rotation / 90) * 90
+      for (const marker of hall.page.islandMarkers ?? []) {
+        drawMarker(marker.label ?? '?', marker.center, 20, rotation)
+      }
+    }
+    if (display.labels) {
       for (const label of hall.labels) {
-        const text = label.text ?? label.code ?? '?'
-        const width = context.measureText(text).width + 8
-        drawText(label.center.x, label.center.y, () => {
-          context.fillStyle = 'rgba(255,255,255,0.96)'
-          context.fillRect(label.center.x - width / 2, label.center.y - 14, width, 28)
-          context.fillStyle = '#006d91'
-          context.fillText(text, label.center.x, label.center.y)
-        })
+        drawMarker(label.text ?? label.code ?? '?', label.center, 22)
       }
     }
     context.restore()

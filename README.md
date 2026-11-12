@@ -40,6 +40,12 @@ Map 同时读取识别输出的 `final.json` 和独立的 [hall-transforms.json]
 Hall 边界内部保持透明，不绘制白色底面；保留边框、摊位和文字标签。
 重用 Preview 的 Block 格线、Booth 编号、Half-booth 分割/a/b 和 Island 标记绘制，
 另外绘制 Hall 边界及最终数据中的场馆标签中心。没有分组着色、Block 外扩虚线或缺号提示。
+Map 的 Island marker 文字直接以 `pos` 为中心绘制，无偏移、圆点或白色底板；
+相对 Hall 以 90° 为步长旋转，使文字在屏幕上的方向最接近正向（偏角不超过 45°）。
+Hall marker 同样仅绘制文字、无白色底板。两类 marker 均使用
+[`ref/hall-meta.json`](./ref/hall-meta.json) 中对应场馆的 `marker-color`，
+优先按场馆标签的 E/W/S/N 编号匹配，无编号时按场馆名称前缀匹配；缺失或歧义配置明确报错。
+此元数据随前端构建加载，部署后修改需重新构建；Preview 的诊断绘制保持不变。
 默认启用 a/b 时与 Preview 一样不叠加数字编号。
 精简数据未保留 Booth OCR 旋转，数字方向按格子宽高推导；场馆标签没有文字框，按中心标注。
 
