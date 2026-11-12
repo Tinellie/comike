@@ -1,12 +1,13 @@
 import type { OsmFeature, OsmMapData } from './osm'
 import { featureLevels } from './osm'
-import { fitViewport, panViewport, rotatePoint, viewportBounds, worldToScreen, zoomViewport } from './viewport'
+import { fitViewport, panViewport, rotatePoint, screenToWorld, viewportBounds, worldToScreen, zoomViewport } from './viewport'
 import type { Point, Size, Viewport } from './viewport'
 import { compareMapStyles, filteredLevelStyle, gridColor, hallLabel, mapBackground, mapStyle, matchesLevels, onewayTriangles } from './style'
 import type { MapStyle } from './style'
 import { HallMapLayer, defaultHallDisplay, hallMetadata } from './HallMapLayer'
 import type { HallDisplay } from './HallMapLayer'
-import { hallWorldBounds } from './halls'
+import { hallMatrix, hallWorldBounds } from './halls'
+import { HallVisibility, intersectsBounds } from './hallVisibility'
 import type { HallTransforms, MapHall } from './halls'
 import type { Bounds } from './viewport'
 import type { HallRegistrationReport } from './hallRegistration'
@@ -51,17 +52,24 @@ export class OsmMapRenderer {
   private registrationReports: HallRegistrationReport[] = []
   private readonly hallLayer = new HallMapLayer()
   private selectedLevels = new Set<number>()
+  private pointer: Point | null = null
+  private readonly hitIndexes = new WeakMap<MapHall, HallVisibility>()
+  private readonly onHover: (label: string) => void
+  private hoverLabel = ''
+  private hoverFrame: number | null = null
 
   constructor(
     canvas: HTMLCanvasElement,
     data: OsmMapData,
     onZoom: (percent: number) => void,
     onRotation: (degrees: number) => void = () => {},
+    onHover: (label: string) => void = () => {},
   ) {
     this.canvas = canvas
     this.data = data
     this.onZoom = onZoom
     this.onRotation = onRotation
+    this.onHover = onHover
     this.origin = {
       x: (data.bounds.minX + data.bounds.maxX) / 2,
       y: (data.bounds.minY + data.bounds.maxY) / 2,
@@ -135,6 +143,54 @@ export class OsmMapRenderer {
     this.requestDraw()
   }
 
+  setPointer(point: Point | null) {
+    this.pointer = point
+    if (this.hoverFrame !== null) return
+    this.hoverFrame = requestAnimationFrame(() => {
+      this.hoverFrame = null
+      this.updateHover()
+    })
+  }
+
+  private updateHover() {
+    let label = ''
+    if (this.pointer && this.view && this.hallDisplay.visible && this.hallDisplay.boxes
+      && this.pointer.x >= 0 && this.pointer.y >= 0
+      && this.pointer.x <= this.size.width && this.pointer.y <= this.size.height) {
+      const world = screenToWorld(this.pointer, this.view, this.size)
+      const query = { minX: world.x, maxX: world.x, minY: world.y, maxY: world.y }
+      const candidates = this.transforms.placements.flatMap(placement => {
+        const hall = this.halls.find(item => item.index === placement.hallIndex)
+        if (!hall || !hall.page.hallOutline) return []
+        const level = hallMetadata(hall).level
+        if (!matchesLevels([level], this.selectedLevels)
+          || !intersectsBounds(query, hallWorldBounds(hall, placement))) return []
+        return [{ hall, placement, level }]
+      }).sort((a, b) => a.level - b.level).reverse()
+      for (const { hall, placement } of candidates) {
+        const [a, b, c, d, e, f] = hallMatrix(hall, placement)
+        const determinant = a * d - b * c
+        const dx = world.x - e, dy = world.y - f
+        let index = this.hitIndexes.get(hall)
+        if (!index) {
+          index = new HallVisibility(hall.page)
+          this.hitIndexes.set(hall, index)
+        }
+        const hit = index.hitTest({
+          x: (d * dx - c * dy) / determinant, y: (a * dy - b * dx) / determinant,
+        })
+        if (!hit) continue
+        const islandCode = hit.block.islandId === null ? null : hall.islandCodes.get(hit.block.islandId)
+        label = `${hall.name ?? `Hall ${hall.index + 1}`} / ${islandCode ?? hit.block.islandId ?? '?'} / ${hit.booth.number ?? '?'}${hit.half.suffix ?? '?'}`
+        break
+      }
+    }
+    if (label !== this.hoverLabel) {
+      this.hoverLabel = label
+      this.onHover(label)
+    }
+  }
+
   private sceneBounds(): Bounds {
     const bounds = { ...this.data.bounds }
     if (this.hallDisplay.visible) {
@@ -186,6 +242,7 @@ export class OsmMapRenderer {
 
   private draw() {
     if (!this.view) return
+    this.updateHover()
     const { context: ctx, size, view, pixelRatio: dpr } = this
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.fillStyle = mapBackground
@@ -334,6 +391,8 @@ export class OsmMapRenderer {
   }
 
   dispose() {
+    if (this.hoverFrame !== null) cancelAnimationFrame(this.hoverFrame)
+    this.hoverFrame = null
     if (this.frame !== null) cancelAnimationFrame(this.frame)
     this.frame = null
   }

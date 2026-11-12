@@ -23,6 +23,7 @@ export interface MapHall {
   index: number
   name: string | null
   textRotation: number
+  islandCodes: Map<string, string | null>
   page: PreviewPage
   pivot: Point
   bounds: Bounds
@@ -92,9 +93,11 @@ export function parseHalls(value: unknown): MapHall[] {
     const bounds = pointsBounds(boundary)
     if (bounds.maxX <= bounds.minX || bounds.maxY <= bounds.minY) throw new Error('Hall 边界尺寸无效')
     const booths: PreviewBooth[] = [], blocks: PreviewBlock[] = []
+    const islandCodes = new Map<string, string | null>()
     const halves: PreviewHalfBooth[] = [], markers: PreviewIslandMarker[] = []
     for (const rawIsland of list(hall.islands)) {
       const island = object(rawIsland), islandId = identifier(island.id, ids), label = text(island.code)
+      islandCodes.set(islandId, label)
       for (const rawMarker of list(island.markers)) {
         const marker = object(rawMarker)
         markers.push({
@@ -170,7 +173,7 @@ export function parseHalls(value: unknown): MapHall[] {
       throw new Error('Hall 标签编号无效')
     }
     return {
-      index, name, textRotation, page, bounds: extent, labels,
+      index, name, textRotation, islandCodes, page, bounds: extent, labels,
       pivot: { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 },
     }
   })

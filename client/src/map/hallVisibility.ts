@@ -1,6 +1,6 @@
 import type { PreviewBlock, PreviewBooth, PreviewPage } from '../preview/data'
 import type { PreviewHalfBooth } from '../preview/halfBooths'
-import type { Bounds } from './viewport'
+import type { Bounds, Point } from './viewport'
 
 export function intersectsBounds(left: Bounds, right: Bounds): boolean {
   return left.minX <= right.maxX && left.maxX >= right.minX
@@ -69,6 +69,27 @@ export class HallVisibility {
     this.islands = [...islands.values()].map(blocks => ({
       bounds: unionBounds(blocks.map(block => block.bounds)), blocks,
     }))
+  }
+
+  hitTest(point: Point): { block: PreviewBlock; booth: PreviewBooth; half: PreviewHalfBooth } | null {
+    const query = { minX: point.x, maxX: point.x, minY: point.y, maxY: point.y }
+    let hit: { block: PreviewBlock; booth: PreviewBooth; half: PreviewHalfBooth } | null = null
+    let order = -1
+    for (const island of this.islands) {
+      if (!intersectsBounds(query, island.bounds)) continue
+      for (const node of island.blocks) {
+        if (node.order < order || !intersectsBounds(query, node.bounds)) continue
+        for (const cell of node.booths) {
+          if (!intersectsBounds(query, cell.bounds)) continue
+          for (const half of cell.halves) {
+            if (!intersectsBounds(query, boxBounds(half.bbox))) continue
+            hit = { block: node.block, booth: cell.booth, half }
+            order = node.order
+          }
+        }
+      }
+    }
+    return hit
   }
 
   visiblePage(view: Bounds, padding: number): PreviewPage {
