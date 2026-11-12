@@ -8,6 +8,7 @@ import type { HallDisplay } from './HallMapLayer'
 import { hallWorldBounds } from './halls'
 import type { HallTransforms, MapHall } from './halls'
 import type { Bounds } from './viewport'
+import type { HallRegistrationReport } from './hallRegistration'
 
 interface StyledFeature {
   feature: OsmFeature
@@ -44,6 +45,7 @@ export class OsmMapRenderer {
   private transforms: HallTransforms = { schemaVersion: 1, placements: [] }
   private hallDisplay: HallDisplay = defaultHallDisplay
   private selectedHall: number | null = null
+  private registrationReports: HallRegistrationReport[] = []
   private readonly hallLayer = new HallMapLayer()
 
   constructor(
@@ -99,6 +101,11 @@ export class OsmMapRenderer {
     const placement = this.transforms.placements.find(p => p.hallIndex === index)
     if (!hall || !placement) throw new Error('找不到 Hall 定位数据')
     this.view = fitViewport(hallWorldBounds(hall, placement), this.size)
+    this.requestDraw()
+  }
+
+  setRegistrationReports(reports: HallRegistrationReport[]) {
+    this.registrationReports = reports
     this.requestDraw()
   }
 
@@ -196,6 +203,24 @@ export class OsmMapRenderer {
       if (bounds.maxX < topLeft.x || bounds.minX > bottomRight.x
         || bounds.maxY < topLeft.y || bounds.minY > bottomRight.y) continue
       this.hallLayer.draw(ctx, hall, placement, this.origin, this.hallDisplay, hall.index === this.selectedHall)
+    }
+    const report = this.hallDisplay.visible ? this.registrationReports.find(report => report.hallIndex === this.selectedHall) : undefined
+    if (report) {
+      ctx.save()
+      ctx.lineWidth = 1.5 / view.scale
+      ctx.strokeStyle = '#7b1fa2'
+      ctx.setLineDash([6 / view.scale, 4 / view.scale])
+      ctx.stroke(localPath([report.envelope], this.origin, true))
+      if (report.alignment) {
+        ctx.setLineDash([])
+        ctx.strokeStyle = '#00a6bd'
+        ctx.lineWidth = 3 / view.scale
+        ctx.stroke(localPath([[report.alignment.target.start, report.alignment.target.end]], this.origin, false))
+        ctx.strokeStyle = '#ef6c00'
+        ctx.lineWidth = 2 / view.scale
+        ctx.stroke(localPath([[report.alignment.source.start, report.alignment.source.end]], this.origin, false))
+      }
+      ctx.restore()
     }
     this.drawLabels(visible)
     this.onZoom(Math.round(view.scale / fitViewport(this.data.bounds, size).scale * 100))

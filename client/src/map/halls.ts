@@ -11,6 +11,7 @@ export interface HallPlacement {
   offset: Point
   rotation: number
   scale: number
+  aspectRatio: number
 }
 
 export interface HallTransforms {
@@ -185,10 +186,12 @@ export function parseHallTransforms(value: unknown, halls: MapHall[]): HallTrans
     const latitude = number(anchor.latitude), longitude = number(anchor.longitude)
     if (Math.abs(latitude) > 85 || Math.abs(longitude) > 180) throw new Error('Hall 定位经纬度无效')
     const scale = number(p.scale), rotation = number(p.rotation)
-    if (scale < 0.001 || scale > 10 || Math.abs(rotation) > 36000) throw new Error('Hall 缩放或旋转超出范围')
+    const aspectRatio = p.aspectRatio === undefined ? 1 : number(p.aspectRatio)
+    if (scale < 0.001 || scale > 10 || Math.abs(rotation) > 36000
+      || aspectRatio < 0.01 || aspectRatio > 100) throw new Error('Hall 缩放、长宽比或旋转超出范围')
     return {
       hallIndex, name: hall.name, anchor: { latitude, longitude },
-      offset: { x: number(offset.x), y: number(offset.y) }, scale, rotation,
+      offset: { x: number(offset.x), y: number(offset.y) }, scale, rotation, aspectRatio,
     }
   })
   if (used.size !== halls.length) throw new Error('Hall 变换配置缺少场馆')
@@ -200,7 +203,8 @@ export function hallMatrix(hall: MapHall, placement: HallPlacement): [number, nu
   const metersPerUnit = Math.cos(placement.anchor.latitude * Math.PI / 180)
   const scale = placement.scale / metersPerUnit
   const angle = placement.rotation * Math.PI / 180
-  const a = scale * Math.cos(angle), b = scale * Math.sin(angle), c = -b, d = a
+  const cosine = scale * Math.cos(angle), sine = scale * Math.sin(angle)
+  const a = cosine * placement.aspectRatio, b = sine * placement.aspectRatio, c = -sine, d = cosine
   return [
     a, b, c, d,
     anchor.x + placement.offset.x / metersPerUnit - a * hall.pivot.x - c * hall.pivot.y,

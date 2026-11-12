@@ -14,7 +14,7 @@ test('Hall files are whitelisted and transform writes persist only validated con
     schemaVersion: 1,
     placements: [{
       hallIndex: 0, name: 'East', anchor: { latitude: 35.63, longitude: 139.79 },
-      offset: { x: 20, y: -30 }, rotation: 90, scale: 0.1,
+      offset: { x: 20, y: -30 }, rotation: 90, scale: 0.1, aspectRatio: 1,
     }],
   }
   const file = join(directory, 'hall-transforms.json')
@@ -50,12 +50,15 @@ test('Hall files are whitelisted and transform writes persist only validated con
     { ...initial, placements: [{ ...initial.placements[0], scale: -1 }] },
     { ...initial, placements: [{ ...initial.placements[0], name: 'Wrong' }] },
     { ...initial, placements: [{ ...initial.placements[0], file: 'arbitrary.json' }] },
+    ...[0, -1, 101, null, '1'].map(aspectRatio =>
+      ({ ...initial, placements: [{ ...initial.placements[0], aspectRatio }] })),
   ]) assert.equal((await put(value)).status, 400)
   assert.equal((await put(initial, 'https://other.invalid')).status, 403)
   assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), initial)
   const updated = structuredClone(initial)
   updated.placements[0].rotation = -45
   updated.placements[0].offset.x = 82
+  updated.placements[0].aspectRatio = 0.625
   assert.equal((await put(updated, base)).status, 200)
   assert.equal((await put(updated, 'http://localhost:5173')).status, 200)
   assert.deepEqual(await (await fetch(`${base}/api/map/hall-transforms.json`)).json(), updated)

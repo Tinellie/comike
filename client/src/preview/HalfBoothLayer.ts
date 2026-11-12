@@ -1,10 +1,12 @@
 import type { DrawingScene } from './layers'
+import { drawSceneText } from './layers'
 
 export class HalfBoothLayer {
   draw(context: Pick<CanvasRenderingContext2D,
     'lineWidth' | 'strokeStyle' | 'fillStyle' | 'font' | 'textAlign' | 'textBaseline'
     | 'beginPath' | 'moveTo' | 'lineTo' | 'stroke' | 'setLineDash' | 'fillText'>,
-  { page, options }: Pick<DrawingScene, 'page' | 'options'>) {
+  scene: Pick<DrawingScene, 'page' | 'options' | 'drawText'>) {
+    const { page, options } = scene
     if (!options.halfBooths || page.halfBooths === null) return
     const parents = new Map(page.booths.map(b => [b.id, b]))
     context.lineWidth = 0.9
@@ -34,7 +36,9 @@ export class HalfBoothLayer {
       const fontSize = Math.max(4, Math.min(10, b.height * 0.5, b.width / Math.max(1, text.length) * 1.4))
       context.font = `bold ${fontSize}px sans-serif`
       context.fillStyle = color
-      context.fillText(text, b.x + b.width / 2, b.y + b.height / 2)
+      drawSceneText(scene, b.x + b.width / 2, b.y + b.height / 2, () => {
+        context.fillText(text, b.x + b.width / 2, b.y + b.height / 2)
+      })
     }
   }
 }

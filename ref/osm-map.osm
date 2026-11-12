@@ -225,7 +225,6 @@
   <node id='-58704' action='modify' visible='true' lat='35.6290484' lon='139.7957706' />
   <node id='-58706' action='modify' visible='true' lat='35.6279857' lon='139.794919' />
   <node id='-58709' action='modify' visible='true' lat='35.62970878957' lon='139.79522348773' />
-  <node id='-58710' action='modify' visible='true' lat='35.6290484' lon='139.7957706' />
   <node id='-58714' action='modify' visible='true' lat='35.6286448' lon='139.7946386' />
   <node id='-58717' action='modify' visible='true' lat='35.6285963' lon='139.7949456' />
   <node id='-58718' action='modify' visible='true' lat='35.6288959' lon='139.7950969' />
@@ -252,7 +251,6 @@
   <node id='-58767' action='modify' visible='true' lat='35.6277597' lon='139.7945065' />
   <node id='-58810' action='modify' visible='true' lat='35.627835' lon='139.794644' />
   <node id='-58811' action='modify' visible='true' lat='35.6277848' lon='139.7945523' />
-  <node id='-58812' action='modify' visible='true' lat='35.6285963' lon='139.7949456' />
   <node id='-58813' action='modify' visible='true' lat='35.6289781' lon='139.7939617' />
   <node id='-58814' action='modify' visible='true' lat='35.6288023' lon='139.7936409' />
   <node id='-58815' action='modify' visible='true' lat='35.6288777' lon='139.7937784' />
@@ -260,7 +258,6 @@
   <node id='-58818' action='modify' visible='true' lat='35.6279857' lon='139.794919' />
   <node id='-58819' action='modify' visible='true' lat='35.6278602' lon='139.7946898' />
   <node id='-58820' action='modify' visible='true' lat='35.6277597' lon='139.7945065' />
-  <node id='-58821' action='modify' visible='true' lat='35.6281867' lon='139.7952856' />
   <node id='-58971' action='modify' visible='true' lat='35.628992' lon='139.7942836' />
   <node id='-58972' action='modify' visible='true' lat='35.6290925' lon='139.7944669' />
   <node id='-58973' action='modify' visible='true' lat='35.6290024' lon='139.7938082' />
@@ -359,8 +356,6 @@
   <node id='-59821' action='modify' visible='true' lat='35.62748229717' lon='139.79460328534' />
   <node id='-59822' action='modify' visible='true' lat='35.62592169354' lon='139.79589892093' />
   <node id='-59823' action='modify' visible='true' lat='35.6264244' lon='139.7968154' />
-  <node id='-59828' action='modify' visible='true' lat='35.62717007138' lon='139.79619633216' />
-  <node id='-59829' action='modify' visible='true' lat='35.62673068783' lon='139.79539528867' />
   <node id='-59830' action='modify' visible='true' lat='35.62598501236' lon='139.79601435652' />
   <node id='-59831' action='modify' visible='true' lat='35.6264244' lon='139.7968154' />
   <node id='-59905' action='modify' visible='true' lat='35.62869378464' lon='139.79413210809' />
@@ -403,10 +398,6 @@
   <node id='-60106' action='modify' visible='true' lat='35.6277372' lon='139.7950586' />
   <node id='-60148' action='modify' visible='true' lat='35.62792290946' lon='139.79557130855' />
   <node id='-60149' action='modify' visible='true' lat='35.62748353005' lon='139.79477026506' />
-  <node id='-60150' action='modify' visible='true' lat='35.6267309543' lon='139.79539506745' />
-  <node id='-60151' action='modify' visible='true' lat='35.62717033784' lon='139.79619611093' />
-  <node id='-60152' action='modify' visible='true' lat='35.62717007138' lon='139.79619633216' />
-  <node id='-60153' action='modify' visible='true' lat='35.62673068783' lon='139.79539528867' />
   <node id='-60154' action='modify' visible='true' lat='35.62598501236' lon='139.79601435652' />
   <node id='-60155' action='modify' visible='true' lat='35.6264244' lon='139.7968154' />
   <node id='-60160' action='modify' visible='true' lat='35.62682103403' lon='139.79523181647' />
@@ -433,8 +424,8 @@
   <node id='-60259' action='modify' visible='true' lat='35.62792290946' lon='139.79557130855' />
   <node id='-60262' action='modify' visible='true' lat='35.63278740763' lon='139.79959643841' />
   <node id='-60268' action='modify' visible='true' lat='35.63121442448' lon='139.79674879894' />
-  <node id='-60273' action='modify' visible='true' lat='35.63303865147' lon='139.79954480857' />
-  <node id='-60274' action='modify' visible='true' lat='35.6325001883' lon='139.79963600367' />
+  <node id='-60273' action='modify' visible='true' lat='35.63291003104' lon='139.79955553741' />
+  <node id='-60274' action='modify' visible='true' lat='35.63261354927' lon='139.799614546' />
   <node id='-60278' action='modify' visible='true' lat='35.6314119173' lon='139.79710629438' />
   <node id='-60279' action='modify' visible='true' lat='35.63159375871' lon='139.79695521823' />
   <node id='-60280' action='modify' visible='true' lat='35.6310594697' lon='139.79687001118' />
@@ -955,8 +946,8 @@
   <node id='1621507623' timestamp='2012-10-07T16:15:26Z' uid='618878' user='nakanao' visible='true' version='2' changeset='13400509' lat='35.6308641' lon='139.7893951' />
   <node id='1621507624' timestamp='2025-09-04T10:27:07Z' uid='2929244' user='penguin_the_dawn' visible='true' version='2' changeset='171445317' lat='35.630908' lon='139.7852241' />
   <node id='1621507632' timestamp='2025-09-04T10:27:07Z' uid='2929244' user='penguin_the_dawn' visible='true' version='2' changeset='171445317' lat='35.6310587' lon='139.7854991' />
-  <node id='1621507656' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='3' changeset='156187174' lat='35.6320149' lon='139.7876394' />
-  <node id='1621507664' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='2' changeset='156187174' lat='35.6318417' lon='139.7879166' />
+  <node id='1621507656' action='modify' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='3' changeset='156187174' lat='35.63207158085' lon='139.78785665893' />
+  <node id='1621507664' action='modify' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='2' changeset='156187174' lat='35.63189838097' lon='139.78813385893' />
   <node id='1621507672' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='2' changeset='156187174' lat='35.6327684' lon='139.7890144' />
   <node id='1621507697' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='2' changeset='156187174' lat='35.632545' lon='139.7891999' />
   <node id='1621507710' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='2' changeset='156187174' lat='35.6325822' lon='139.789169' />
@@ -1713,9 +1704,9 @@
   <node id='1951020921' timestamp='2012-10-07T16:14:50Z' uid='618878' user='nakanao' visible='true' version='1' changeset='13400509' lat='35.6316973' lon='139.7919042' />
   <node id='1951020963' timestamp='2012-10-07T16:14:51Z' uid='618878' user='nakanao' visible='true' version='1' changeset='13400509' lat='35.6317224' lon='139.7919501' />
   <node id='1951021073' timestamp='2012-10-07T16:14:52Z' uid='618878' user='nakanao' visible='true' version='1' changeset='13400509' lat='35.6317691' lon='139.7912444' />
-  <node id='1951021127' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='2' changeset='156187174' lat='35.6318789' lon='139.7878857' />
+  <node id='1951021127' action='modify' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='2' changeset='156187174' lat='35.63193558094' lon='139.78810295893' />
   <node id='1951021133' timestamp='2022-12-31T02:56:46Z' uid='17764886' user='Neckstack' visible='true' version='2' changeset='130708258' lat='35.6318322' lon='139.7885913' />
-  <node id='1951021145' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='2' changeset='156187174' lat='35.6318287' lon='139.787794' />
+  <node id='1951021145' action='modify' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='2' changeset='156187174' lat='35.63188538098' lon='139.78801125893' />
   <node id='1951021151' timestamp='2025-08-20T15:12:10Z' uid='2929244' user='penguin_the_dawn' visible='true' version='4' changeset='170732647' lat='35.6318851' lon='139.789281' />
   <node id='1951021194' timestamp='2012-10-07T16:14:53Z' uid='618878' user='nakanao' visible='true' version='1' changeset='13400509' lat='35.6318835' lon='139.7917497' />
   <node id='1951021202' timestamp='2012-10-07T16:14:53Z' uid='618878' user='nakanao' visible='true' version='1' changeset='13400509' lat='35.6319086' lon='139.7917955' />
@@ -3140,7 +3131,7 @@
   <node id='3850713012' action='modify' timestamp='2015-11-22T03:36:48Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160' lat='35.6305231' lon='139.7940127' />
   <node id='3850713013' action='modify' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='3' changeset='130814326' lat='35.63128315321' lon='139.79526593808' />
   <node id='3850713015' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='2' changeset='130814326' lat='35.6302433' lon='139.7927113' />
-  <node id='3850713016' action='modify' timestamp='2015-11-22T03:36:48Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160' lat='35.63087668414' lon='139.79484995135' />
+  <node id='3850713016' action='modify' timestamp='2015-11-22T03:36:48Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160' lat='35.63087777417' lon='139.79484995135' />
   <node id='3850713017' action='modify' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='2' changeset='130814326' lat='35.63039836016' lon='139.79299568773' />
   <node id='3850713018' timestamp='2015-11-22T03:36:48Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160' lat='35.6302858' lon='139.7938763' />
   <node id='3850713019' action='modify' timestamp='2017-11-27T07:12:47Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54113801' lat='35.6310133' lon='139.7950061'>
@@ -3199,7 +3190,7 @@
     <tag k='tokyo-big-sight' v='yes' />
   </node>
   <node id='3850713038' action='modify' timestamp='2018-04-07T20:17:11Z' uid='3385340' user='Lombroso' visible='true' version='2' changeset='57899972' lat='35.63169464989' lon='139.79535887116' />
-  <node id='3850713039' action='modify' timestamp='2015-11-22T03:36:48Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160' lat='35.63086442505' lon='139.79492320039' />
+  <node id='3850713039' action='modify' timestamp='2015-11-22T03:36:48Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160' lat='35.63086769515' lon='139.79491783597' />
   <node id='3850713041' action='modify' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='2' changeset='130814326' lat='35.63082303056' lon='139.79283074785' />
   <node id='3850713042' action='delete' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='2' changeset='130814326' lat='35.6302624' lon='139.7942291'>
     <tag k='amenity' v='smoking_area' />
@@ -3248,7 +3239,7 @@
     <tag k='amenity' v='taxi' />
     <tag k='tokyo-big-sight' v='yes' />
   </node>
-  <node id='3850714275' action='modify' timestamp='2015-11-22T03:36:49Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160' lat='35.6307135708' lon='139.79482106994' />
+  <node id='3850714275' action='modify' timestamp='2015-11-22T03:36:49Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160' lat='35.63072338111' lon='139.79481436442' />
   <node id='3850714276' action='modify' timestamp='2015-11-22T03:36:49Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160' lat='35.63090835527' lon='139.79466071388' />
   <node id='3850714279' timestamp='2015-11-22T03:36:49Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160' lat='35.6307214' lon='139.7937814' />
   <node id='3850714280' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='2' changeset='130814326' lat='35.6302624' lon='139.7942291' />
@@ -5492,9 +5483,9 @@
   <node id='12155447887' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='1' changeset='156187174' lat='35.6330663' lon='139.7887671' />
   <node id='12155447888' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='1' changeset='156187174' lat='35.632467' lon='139.7884644' />
   <node id='12155447889' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='1' changeset='156187174' lat='35.6322436' lon='139.7886499' />
-  <node id='12155447890' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='1' changeset='156187174' lat='35.6321682' lon='139.7885124' />
-  <node id='12155447891' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='1' changeset='156187174' lat='35.6323916' lon='139.7883269' />
-  <node id='12155447892' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='1' changeset='156187174' lat='35.6320902' lon='139.7877769' />
+  <node id='12155447890' action='modify' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='1' changeset='156187174' lat='35.63222488074' lon='139.78872965893' />
+  <node id='12155447891' action='modify' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='1' changeset='156187174' lat='35.63244828058' lon='139.78854415893' />
+  <node id='12155447892' action='modify' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='1' changeset='156187174' lat='35.6321468808' lon='139.78799415893' />
   <node id='12155447893' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='1' changeset='156187174' lat='35.6318754' lon='139.7870883' />
   <node id='12155447894' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='1' changeset='156187174' lat='35.6315776' lon='139.7873357' />
   <node id='12155447895' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='1' changeset='156187174' lat='35.6316529' lon='139.7874732' />
@@ -7015,7 +7006,7 @@
     <nd ref='-59212' />
     <tag k='building' v='yes' />
     <tag k='hall' v='s' />
-    <tag k='hall:s' v='1' />
+    <tag k='hall-s' v='1' />
     <tag k='level' v='1' />
     <tag k='name' v='南1ホール' />
     <tag k='tokyo-big-sight' v='yes' />
@@ -7131,7 +7122,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='-39352' action='modify' visible='true'>
     <nd ref='-59707' />
@@ -7154,14 +7144,14 @@
     <tag k='tokyo-big-sight' v='yes' />
   </way>
   <way id='-39788' action='modify' visible='true'>
-    <nd ref='-59828' />
-    <nd ref='-59829' />
+    <nd ref='-59211' />
+    <nd ref='-59279' />
     <nd ref='-59830' />
     <nd ref='-59831' />
-    <nd ref='-59828' />
+    <nd ref='-59211' />
     <tag k='building' v='yes' />
     <tag k='hall' v='s' />
-    <tag k='hall:s' v='2' />
+    <tag k='hall-s' v='2' />
     <tag k='level' v='1' />
     <tag k='name' v='南2ホール' />
     <tag k='tokyo-big-sight' v='yes' />
@@ -7247,25 +7237,25 @@
   <way id='-40706' action='modify' visible='true'>
     <nd ref='-60148' />
     <nd ref='-60149' />
-    <nd ref='-60150' />
-    <nd ref='-60151' />
+    <nd ref='-59279' />
+    <nd ref='-59211' />
     <nd ref='-60148' />
     <tag k='building' v='yes' />
     <tag k='hall' v='s' />
-    <tag k='hall:s' v='3' />
+    <tag k='hall-s' v='3' />
     <tag k='level' v='4' />
     <tag k='name' v='南3ホール' />
     <tag k='tokyo-big-sight' v='yes' />
   </way>
   <way id='-40707' action='modify' visible='true'>
-    <nd ref='-60152' />
-    <nd ref='-60153' />
+    <nd ref='-59211' />
+    <nd ref='-59279' />
     <nd ref='-60154' />
     <nd ref='-60155' />
-    <nd ref='-60152' />
+    <nd ref='-59211' />
     <tag k='building' v='yes' />
     <tag k='hall' v='s' />
-    <tag k='hall:s' v='4' />
+    <tag k='hall-s' v='4' />
     <tag k='level' v='4' />
     <tag k='name' v='南4ホール' />
     <tag k='tokyo-big-sight' v='yes' />
@@ -7349,7 +7339,6 @@
     <tag k='oneway' v='yes' />
     <tag k='path:e-to-s' v='yes' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='-40871' action='modify' visible='true'>
     <nd ref='-60280' />
@@ -7360,7 +7349,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='-40878' action='modify' visible='true'>
     <nd ref='-60273' />
@@ -7372,7 +7360,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='-40883' action='modify' visible='true'>
     <nd ref='-60278' />
@@ -7383,7 +7370,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='-40901' action='modify' visible='true'>
     <nd ref='-60281' />
@@ -7394,7 +7380,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='-40909' action='modify' visible='true'>
     <nd ref='-60283' />
@@ -7405,7 +7390,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='-40917' action='modify' visible='true'>
     <nd ref='-60285' />
@@ -7416,7 +7400,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='-40928' action='modify' visible='true'>
     <nd ref='-60287' />
@@ -7427,7 +7410,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='-40977' action='modify' visible='true'>
     <nd ref='-59308' />
@@ -8871,8 +8853,8 @@
     <tag k='covered' v='yes' />
     <tag k='highway' v='tertiary' />
     <tag k='layer' v='-1' />
+    <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='59254391' action='delete' timestamp='2023-01-01T17:06:24Z' uid='12272282' user='近場行き' visible='true' version='6' changeset='130756730'>
     <tag k='highway' v='tertiary' />
@@ -9593,7 +9575,7 @@
     <nd ref='1666786648' />
     <nd ref='1666786656' />
     <tag k='hall' v='e' />
-    <tag k='hall:e' v='5' />
+    <tag k='hall-e' v='5' />
     <tag k='indoor' v='area' />
     <tag k='level' v='1' />
     <tag k='name' v='東5ホール' />
@@ -9627,7 +9609,7 @@
     <nd ref='-60282' />
     <nd ref='1666786635' />
     <tag k='hall' v='e' />
-    <tag k='hall:e' v='2' />
+    <tag k='hall-e' v='2' />
     <tag k='indoor' v='area' />
     <tag k='level' v='1' />
     <tag k='name' v='東2ホール' />
@@ -9709,7 +9691,7 @@
     <nd ref='-60286' />
     <nd ref='1666786641' />
     <tag k='hall' v='e' />
-    <tag k='hall:e' v='3' />
+    <tag k='hall-e' v='3' />
     <tag k='indoor' v='area' />
     <tag k='level' v='1' />
     <tag k='name' v='東3ホール' />
@@ -9727,7 +9709,7 @@
     <nd ref='-60280' />
     <nd ref='1666786620' />
     <tag k='hall' v='e' />
-    <tag k='hall:e' v='1' />
+    <tag k='hall-e' v='1' />
     <tag k='indoor' v='area' />
     <tag k='level' v='1' />
     <tag k='name' v='東1ホール' />
@@ -9741,7 +9723,7 @@
     <nd ref='1666786657' />
     <nd ref='1666786653' />
     <tag k='hall' v='e' />
-    <tag k='hall:e' v='6' />
+    <tag k='hall-e' v='6' />
     <tag k='indoor' v='area' />
     <tag k='level' v='1' />
     <tag k='name' v='東6ホール' />
@@ -9756,7 +9738,7 @@
     <nd ref='1666786639' />
     <nd ref='1666786648' />
     <tag k='hall' v='e' />
-    <tag k='hall:e' v='4' />
+    <tag k='hall-e' v='4' />
     <tag k='indoor' v='area' />
     <tag k='level' v='1' />
     <tag k='name' v='東4ホール' />
@@ -10129,8 +10111,8 @@
     <tag k='covered' v='yes' />
     <tag k='highway' v='tertiary' />
     <tag k='layer' v='-1' />
+    <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='174407854' action='modify' timestamp='2012-08-04T06:02:56Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='12605441'>
     <nd ref='1851042300' />
@@ -10769,8 +10751,8 @@
     <tag k='covered' v='yes' />
     <tag k='highway' v='tertiary' />
     <tag k='layer' v='-1' />
+    <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='198900389' action='modify' timestamp='2023-01-03T14:43:29Z' uid='17764886' user='Neckstack' visible='true' version='6' changeset='130829694'>
     <nd ref='-56318' />
@@ -11219,8 +11201,8 @@
     <tag k='covered' v='yes' />
     <tag k='highway' v='tertiary' />
     <tag k='layer' v='-1' />
+    <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='257239019' action='delete' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='10' changeset='130814326'>
     <tag k='highway' v='tertiary' />
@@ -11500,8 +11482,8 @@
     <tag k='covered' v='yes' />
     <tag k='highway' v='tertiary' />
     <tag k='layer' v='-1' />
+    <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='350217575' action='delete' timestamp='2025-01-26T02:19:32Z' uid='21931672' user='setomaps' visible='true' version='17' changeset='161766905'>
     <tag k='highway' v='tertiary' />
@@ -11613,8 +11595,8 @@
     <tag k='covered' v='yes' />
     <tag k='highway' v='tertiary' />
     <tag k='layer' v='-1' />
+    <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='354858504' action='modify' timestamp='2022-02-08T12:22:41Z' uid='2352862' user='Netzach' visible='true' version='7' changeset='117158684'>
     <nd ref='-56286' />
@@ -11634,8 +11616,8 @@
     <tag k='covered' v='yes' />
     <tag k='highway' v='tertiary' />
     <tag k='layer' v='-1' />
+    <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='354858508' action='delete' timestamp='2025-08-17T01:43:36Z' uid='2352862' user='Netzach' visible='true' version='5' changeset='170546391'>
     <tag k='highway' v='tertiary' />
@@ -11991,7 +11973,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='381873491' action='delete' timestamp='2015-11-22T03:36:50Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160'>
     <tag k='highway' v='footway' />
@@ -12012,7 +11993,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='381873494' action='modify' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='3' changeset='130814326'>
     <nd ref='3848447098' />
@@ -12023,7 +12003,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='381873495' action='modify' timestamp='2015-11-22T03:36:50Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160'>
     <nd ref='3850714275' />
@@ -12085,7 +12064,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='381873503' action='modify' timestamp='2015-11-22T03:36:50Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='35501160'>
     <nd ref='3848447082' />
@@ -12111,8 +12089,8 @@
     <nd ref='13294265830' />
     <tag k='highway' v='tertiary' />
     <tag k='layer' v='-1' />
+    <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='381873506' action='delete' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='3' changeset='130814326'>
     <tag k='highway' v='footway' />
@@ -12136,7 +12114,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='381873509' action='delete' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='3' changeset='130814326'>
     <tag k='highway' v='footway' />
@@ -12154,7 +12131,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='381873511' action='modify' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='2' changeset='130814326'>
     <nd ref='3850713000' />
@@ -12185,7 +12161,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='381873514' action='delete' timestamp='2022-12-09T14:41:55Z' uid='17764886' user='Neckstack' visible='true' version='3' changeset='129903755'>
     <tag k='landuse' v='grass' />
@@ -12212,7 +12187,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='381908099' action='delete' timestamp='2023-11-04T07:47:34Z' uid='2861034' user='Aromur' visible='true' version='2' changeset='143601782'>
     <tag k='footway' v='sidewalk' />
@@ -12728,7 +12702,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='395023337' action='modify' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='2' changeset='130814326'>
     <nd ref='3850714272' />
@@ -12740,7 +12713,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='395023338' action='modify' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='3' changeset='130814326'>
     <nd ref='10301958184' />
@@ -12751,7 +12723,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='395023340' action='modify' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='2' changeset='130814326'>
     <nd ref='3179749229' />
@@ -12778,7 +12749,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='395023347' action='delete' timestamp='2025-09-18T11:03:25Z' uid='2929244' user='penguin_the_dawn' visible='true' version='12' changeset='172106595'>
     <tag k='footway' v='sidewalk' />
@@ -12999,7 +12969,7 @@
     <nd ref='4359478263' />
     <tag k='building' v='yes' />
     <tag k='hall' v='w' />
-    <tag k='hall:w' v='4' />
+    <tag k='hall-w' v='4' />
     <tag k='indoor' v='area' />
     <tag k='level' v='4' />
     <tag k='name' v='西4ホール' />
@@ -14096,7 +14066,7 @@
     <nd ref='5249897583' />
     <tag k='building' v='yes' />
     <tag k='hall' v='w' />
-    <tag k='hall:w' v='1' />
+    <tag k='hall-w' v='1' />
     <tag k='indoor' v='area' />
     <tag k='level' v='1' />
     <tag k='name' v='西1ホール' />
@@ -14113,13 +14083,13 @@
     <nd ref='-58810' />
     <nd ref='-58819' />
     <nd ref='-58818' />
-    <nd ref='-58821' />
-    <nd ref='-58812' />
+    <nd ref='5249897584' />
+    <nd ref='5249897583' />
     <nd ref='4359478263' />
     <nd ref='1666786521' />
     <tag k='building' v='yes' />
     <tag k='hall' v='w' />
-    <tag k='hall:w' v='2' />
+    <tag k='hall-w' v='2' />
     <tag k='indoor' v='area' />
     <tag k='level' v='1' />
     <tag k='name' v='西2ホール' />
@@ -14140,13 +14110,13 @@
   </way>
   <way id='543043572' action='modify' timestamp='2017-11-27T06:58:12Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54113587'>
     <nd ref='5249897582' />
-    <nd ref='-58710' />
+    <nd ref='5249897585' />
     <nd ref='-58709' />
     <nd ref='1666786539' />
     <nd ref='5249897582' />
     <tag k='building' v='yes' />
     <tag k='hall' v='w' />
-    <tag k='hall:w' v='3' />
+    <tag k='hall-w' v='3' />
     <tag k='indoor' v='area' />
     <tag k='level' v='4' />
     <tag k='name' v='西3ホール' />
@@ -14562,7 +14532,7 @@
     <tag k='building:levels' v='1' />
     <tag k='building:part' v='yes' />
     <tag k='hall' v='e' />
-    <tag k='hall:e' v='7' />
+    <tag k='hall-e' v='7' />
     <tag k='indoor' v='area' />
     <tag k='level' v='1' />
     <tag k='name' v='東7ホール' />
@@ -14577,7 +14547,7 @@
     <tag k='building:levels' v='1' />
     <tag k='building:part' v='yes' />
     <tag k='hall' v='e' />
-    <tag k='hall:e' v='8' />
+    <tag k='hall-e' v='8' />
     <tag k='indoor' v='area' />
     <tag k='level' v='1' />
     <tag k='name' v='東8ホール' />
@@ -16414,8 +16384,8 @@
     <tag k='covered' v='yes' />
     <tag k='highway' v='tertiary' />
     <tag k='layer' v='-1' />
+    <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='1029279499' action='delete' timestamp='2022-03-18T19:14:52Z' uid='681085' user='Masaru Okaya' visible='true' version='2' changeset='118645021'>
     <tag k='highway' v='service' />
@@ -17518,7 +17488,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='1126633882' action='modify' timestamp='2025-11-10T11:25:11Z' uid='14727398' user='Nar_ach' visible='true' version='3' changeset='174458063'>
     <nd ref='3605112493' />
@@ -17527,8 +17496,8 @@
     <nd ref='10301958185' />
     <tag k='highway' v='tertiary' />
     <tag k='layer' v='-1' />
+    <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='1126633883' action='modify' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='1' changeset='130814326'>
     <nd ref='10301958186' />
@@ -17539,7 +17508,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='1126633884' action='modify' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='1' changeset='130814326'>
     <nd ref='10301958187' />
@@ -17552,7 +17520,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='1126633885' action='delete' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='1' changeset='130814326'>
     <tag k='highway' v='footway' />
@@ -17624,7 +17591,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='1126633901' action='delete' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='1' changeset='130814326'>
     <tag k='highway' v='footway' />
@@ -17635,8 +17601,8 @@
     <tag k='covered' v='yes' />
     <tag k='highway' v='tertiary' />
     <tag k='layer' v='-1' />
+    <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='1126633903' action='delete' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='1' changeset='130814326'>
     <tag k='highway' v='footway' />
@@ -17650,7 +17616,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='1126633905' action='modify' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='1' changeset='130814326'>
     <nd ref='1798174086' />
@@ -17676,7 +17641,6 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='tokyo-big-sight' v='yes' />
-    <tag k='tunnel' v='yes' />
   </way>
   <way id='1126701007' action='modify' timestamp='2023-01-03T14:43:29Z' uid='17764886' user='Neckstack' visible='true' version='1' changeset='130829694'>
     <nd ref='10302545818' />

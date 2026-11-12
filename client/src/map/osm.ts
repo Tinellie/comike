@@ -8,6 +8,16 @@ export function tagValues(tags: Tags, key: string): string[] {
   return value === undefined ? [] : Array.isArray(value) ? value : [value]
 }
 
+export function hallCodes(tags: Tags): string[] {
+  return [...new Set(['e', 'w', 's', 'n'].flatMap(direction =>
+    [`hall:${direction}`, `hall-${direction}`].flatMap(key =>
+      tagValues(tags, key).flatMap(value => value.normalize('NFKC').split(/[;,]/))
+        .map(value => value.trim()).filter(value => /^[1-9][0-9]?$/.test(value))
+        .map(value => direction.toUpperCase() + value),
+    ),
+  ))]
+}
+
 export function mergeTags(...sources: Tags[]): Tags {
   const result: Tags = {}
   for (const source of sources) {
@@ -75,7 +85,7 @@ function isArea(tags: Tags, closed: boolean): boolean {
     || tags.landuse || tags.leisure && !has('leisure', 'track')
     || tagValues(tags, 'natural').some(value => ['water', 'wood', 'grassland', 'heath', 'scrub', 'beach'].includes(value))
     || has('amenity', 'parking') || has('railway', 'platform') || has('railway', 'station')
-    || has('highway', 'pedestrian') || tags['tokyo-big-sight'],
+    || has('highway', 'pedestrian') || tags['tokyo-big-sight'] || hallCodes(tags).length,
   )
 }
 

@@ -13,7 +13,8 @@ export function validHallTransforms(value: unknown, names: unknown[]): boolean {
       || !finite(p.offset.x) || !finite(p.offset.y)
       || !finite(p.rotation) || Math.abs(p.rotation) > 36000
       || !finite(p.scale) || p.scale < 0.001 || p.scale > 10
-      || Object.keys(p).some(key => !['hallIndex', 'name', 'anchor', 'offset', 'rotation', 'scale'].includes(key))
+      || (p.aspectRatio !== undefined && (!finite(p.aspectRatio) || p.aspectRatio < 0.01 || p.aspectRatio > 100))
+      || Object.keys(p).some(key => !['hallIndex', 'name', 'anchor', 'offset', 'rotation', 'scale', 'aspectRatio'].includes(key))
       || Object.keys(p.anchor).some(key => !['latitude', 'longitude'].includes(key))
       || Object.keys(p.offset).some(key => !['x', 'y'].includes(key))) return false
     indices.add(p.hallIndex)

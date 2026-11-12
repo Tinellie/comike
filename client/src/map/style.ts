@@ -1,4 +1,4 @@
-import { tagValues } from './osm'
+import { hallCodes, tagValues } from './osm'
 import type { OsmFeature, Tags } from './osm'
 import type { Point } from './viewport'
 
@@ -21,11 +21,12 @@ function has(tags: Tags, key: string, value?: string): boolean {
 }
 
 export function hallLabel(tags: Tags): MapStyle['hallLabel'] {
-  for (const [key, prefix, color] of [
-    ['hall:e', '東', '#b43a3a'], ['hall:w', '西', '#2a57ad'], ['hall:s', '南', '#2f8a4d'],
+  const codes = hallCodes(tags)
+  for (const [direction, prefix, color] of [
+    ['E', '東', '#b43a3a'], ['W', '西', '#2a57ad'], ['S', '南', '#2f8a4d'], ['N', '北', '#ad7132'],
   ]) {
-    const value = tagValues(tags, key).find(item => item.trim())
-    if (value) return { text: prefix + value.trim(), color }
+    const code = codes.find(value => value.startsWith(direction))
+    if (code) return { text: prefix + code.slice(1), color }
   }
   return null
 }
@@ -36,7 +37,8 @@ export function mapStyle(feature: OsmFeature): MapStyle {
   const level = levelValue === 0 ? 1 : levelValue
   const building = has(tags, 'building') || has(tags, 'building:part')
   const indoor = has(tags, 'indoor')
-  const label = building || indoor ? hallLabel(tags) : null
+  const codes = hallCodes(tags)
+  const label = hallLabel(tags)
   const style: MapStyle = {
     stroke: 'rgba(117, 121, 126, 0.5)',
     fill: has(tags, 'tokyo-big-sight') && feature.area ? 'rgba(224, 104, 170, 0.24)' : null,
@@ -63,21 +65,21 @@ export function mapStyle(feature: OsmFeature): MapStyle {
     Object.assign(style, { stroke: '#aa8a4c', fill: 'rgba(236, 215, 166, 0.74)', strokeWidth: 1.2, layer: 1 })
   } else if (has(tags, 'railway', 'platform')) {
     Object.assign(style, { stroke: null, fill: 'rgba(120, 128, 136, 0.28)', strokeWidth: 0, layer: 1 })
-  } else if (building || indoor) {
+  } else if (building || indoor || codes.length) {
     let stroke = 'rgba(174, 94, 42, 0.54)'
     let fill = 'rgba(226, 132, 67, 0.14)'
-    if (has(tags, 'hall', 'e')) {
+    if (has(tags, 'hall', 'e') || codes.some(code => code.startsWith('E'))) {
       stroke = 'rgba(192, 104, 104, 0.54)'
       fill = 'rgba(238, 137, 137, 0.57)'
-    } else if (has(tags, 'hall', 'w')) {
+    } else if (has(tags, 'hall', 'w') || codes.some(code => code.startsWith('W'))) {
       stroke = 'rgba(88, 126, 188, 0.54)'
       fill = 'rgba(136, 183, 248, 0.38)'
-    } else if (has(tags, 'hall', 's')) {
+    } else if (has(tags, 'hall', 's') || codes.some(code => code.startsWith('S'))) {
       stroke = 'rgba(93, 156, 122, 0.54)'
       fill = 'rgba(127, 228, 162, 0.32)'
     }
     Object.assign(style, {
-      stroke, fill: building ? fill : null, strokeWidth: label ? 1.05 : 0.85,
+      stroke, fill: building || codes.length ? fill : null, strokeWidth: label ? 1.05 : 0.85,
       layer: label ? 20 : 0, hallLabel: feature.polygonMember ? null : label,
     })
   } else if (has(tags, 'boundary')) {

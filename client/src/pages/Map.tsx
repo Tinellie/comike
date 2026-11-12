@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, CircularProgress, Stack, Typography } from '@mui/material'
+import { Box, Button } from '@mui/material'
 import OsmCanvas from '../map/OsmCanvas'
 import { parseOsm } from '../map/osm'
 import type { OsmMapData } from '../map/osm'
-import HallControls from '../map/HallControls'
 import { parseHalls, parseHallTransforms } from '../map/halls'
-import type { HallPlacement, HallTransforms, MapHall } from '../map/halls'
-import { defaultHallDisplay } from '../map/HallMapLayer'
-import type { HallDisplay } from '../map/HallMapLayer'
+import type { HallTransforms, MapHall } from '../map/halls'
+import { recalculateHallTransforms } from '../map/hallPreparation'
 
 export default function Map() {
   const [data, setData] = useState<OsmMapData | null>(null)
@@ -15,35 +13,30 @@ export default function Map() {
   const [attempt, setAttempt] = useState(0)
   const [halls, setHalls] = useState<MapHall[]>([])
   const [transforms, setTransforms] = useState<HallTransforms | null>(null)
-  const [savedSnapshot, setSavedSnapshot] = useState('')
-  const [selected, setSelected] = useState<number | null>(null)
-  const [dragging, setDragging] = useState(false)
-  const [display, setDisplay] = useState<HallDisplay>(defaultHallDisplay)
   const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
 
-  function changePlacement(placement: HallPlacement) {
-    setTransforms(previous => previous && ({
-      ...previous, placements: previous.placements.map(p => p.hallIndex === placement.hallIndex ? placement : p),
-    }))
-  }
-
-  async function saveTransforms() {
-    if (!transforms || saving) return
-    const snapshot = JSON.stringify(transforms)
+  async function recalculateTransforms() {
+    if (saving) return
+    if (!data) {
+      setError(null)
+      setAttempt(value => value + 1)
+      return
+    }
+    if (!transforms) return
     setSaving(true)
-    setSaveError(null)
     try {
+      const recalculated = recalculateHallTransforms(halls, transforms, data)
       const response = await fetch('/api/map/hall-transforms.json', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: snapshot,
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(recalculated.transforms),
       })
       if (!response.ok) throw new Error(`Hall 变换保存失败（HTTP ${response.status}）`)
-      setSavedSnapshot(snapshot)
-      setSaved(true)
+      setTransforms(recalculated.transforms)
+      setError(null)
     } catch (reason) {
-      console.error('Hall transform save failed:', reason)
-      setSaveError(reason instanceof Error ? reason.message : 'Hall 变换保存失败')
+      console.error('Hall transform recalculation/save failed:', reason)
+      setError(reason instanceof Error ? reason.message : 'Hall 变换重新计算或保存失败')
     } finally {
       setSaving(false)
     }
@@ -73,7 +66,6 @@ export default function Map() {
           setData(map)
           setHalls(loadedHalls)
           setTransforms(loadedTransforms)
-          setSavedSnapshot(JSON.stringify(loadedTransforms))
         }
       } catch (reason) {
         if (active) {
@@ -90,38 +82,20 @@ export default function Map() {
   }, [attempt])
 
   return (
-    <Stack spacing={2} sx={{
-      p: { xs: 2, md: 3 }, boxSizing: 'border-box', minHeight: 440,
+    <Box sx={{
+      position: 'relative', display: 'flex', flexDirection: 'column',
       height: { xs: 'calc(100dvh - 56px)', sm: 'calc(100dvh - 64px)' },
     }}>
-      <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-        <Typography variant="h5" component="h1">OSM 地图</Typography>
-        <Typography variant="body2" color="text.secondary">
-          按住鼠标左键拖动 · 滚轮以鼠标位置为中心缩放
-        </Typography>
-      </Stack>
-      {error && (
-        <Alert severity="error" action={<Button color="inherit" onClick={() => {
-          setError(null)
-          setAttempt(value => value + 1)
-        }}>重试</Button>}>{error}</Alert>
-      )}
-      {!data && !error && <CircularProgress aria-label="加载 OSM 地图" />}
+      <Button variant="contained" onClick={() => { void recalculateTransforms() }}
+        disabled={saving || (!data && !error)} color={error ? 'error' : 'primary'}
+        aria-busy={saving}
+        title={error ?? undefined} aria-label={error ? `重新计算全部 Hall：${error}，点击重试` : undefined}
+        sx={{ position: 'absolute', top: 16, right: 16, zIndex: 1 }}>
+        {saving ? '计算并保存中…' : error ? '重新计算全部 Hall（失败，重试）' : '重新计算全部 Hall'}
+      </Button>
       {data && transforms && (
-        <>
-          {data.warnings.length > 0 && <Alert severity="warning">{data.warnings.join(' ')}</Alert>}
-          {saveError && <Alert severity="error">{saveError}</Alert>}
-          <HallControls
-            halls={halls} transforms={transforms} selected={selected}
-            onSelect={index => { setSelected(index); setDragging(false) }} onChange={changePlacement}
-            display={display} onDisplay={setDisplay} dragging={dragging} onDragging={setDragging}
-            onSave={() => { void saveTransforms() }} saving={saving}
-            dirty={JSON.stringify(transforms) !== savedSnapshot} saved={saved}
-          />
-          <OsmCanvas data={data} halls={halls} transforms={transforms} display={display}
-            selectedHall={selected} dragHall={dragging && display.visible} onPlacement={changePlacement} />
-        </>
+        <OsmCanvas data={data} halls={halls} transforms={transforms} onError={setError} />
       )}
-    </Stack>
+    </Box>
   )
 }

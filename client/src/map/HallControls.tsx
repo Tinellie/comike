@@ -27,16 +27,26 @@ function NumberControl({ label, value, minimum, maximum, onChange }: {
 }
 
 export default function HallControls({ halls, transforms, selected, onSelect, onChange, display, onDisplay,
-  dragging, onDragging, onSave, saving, dirty, saved }: {
+  dragging, onDragging, onSave, onRecalculate, saving, dirty, saved }: {
   halls: MapHall[]; transforms: HallTransforms; selected: number | null
   onSelect: (index: number | null) => void; onChange: (placement: HallPlacement) => void
   display: HallDisplay; onDisplay: (display: HallDisplay) => void
   dragging: boolean; onDragging: (value: boolean) => void
   onSave: () => void; saving: boolean; dirty: boolean; saved: boolean
+  onRecalculate: () => void
 }) {
   const placement = transforms.placements.find(p => p.hallIndex === selected)
   return (
     <Stack component="form" spacing={1} onSubmit={event => { event.preventDefault(); onSave() }}>
+      <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+        <Typography variant="subtitle2">数据整理</Typography>
+        <Button type="button" variant="outlined" disabled={saving} onClick={onRecalculate}>
+          重新计算全部 Hall
+        </Button>
+        <Typography variant="caption" color="text.secondary">
+          子馆合成凹形套索（填补中庭、缝隙，保留外侧凹口）；PDF 主垂直边锁定 OSM 长边方向，并完整放入套索内，核对后保存。
+        </Typography>
+      </Stack>
       <Stack direction="row" spacing={1} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
         <TextField
           select label="编辑 Hall" value={selected ?? ''} size="small" sx={{ minWidth: 150 }}
@@ -64,6 +74,8 @@ export default function HallControls({ halls, transforms, selected, onSelect, on
             onChange={rotation => onChange({ ...placement, rotation })} />
           <NumberControl label="缩放（米/像素）" value={placement.scale} minimum={0.001} maximum={10}
             onChange={scale => onChange({ ...placement, scale })} />
+          <NumberControl label="长宽比（横向系数）" value={placement.aspectRatio} minimum={0.01} maximum={100}
+            onChange={aspectRatio => onChange({ ...placement, aspectRatio })} />
         </Stack>
       )}
       <Stack direction="row" useFlexGap sx={{ flexWrap: 'wrap' }}>
@@ -75,7 +87,7 @@ export default function HallControls({ halls, transforms, selected, onSelect, on
         />)}
       </Stack>
       <Typography variant="caption" color="text.secondary">
-        初始布局是示例随机变换，并非精确地理配准。旋转和缩放以 Hall 边界中心为基点；
+        初始布局是示例随机变换，并非精确地理配准。先横向调整长宽比，再等比缩放和旋转，均以 Hall 边界中心为基点；文字保持等比。
         勾选拖动模式后，拖动画布只移动选中的 Hall，滚轮仍缩放地图。
       </Typography>
     </Stack>

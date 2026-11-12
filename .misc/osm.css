@@ -1,0 +1,140 @@
+
+
+area[building]{
+    color: #5a5a5a;
+    width: 2px;
+    fill-color: #5a5a5a;
+    fill-opacity: 0.2;
+}
+area[barrier] {
+    fill-opacity: 0;
+}
+area[leisure=park] {
+    fill-color: #5a654f;
+    fill-opacity: 0;
+}
+
+
+area[tokyo-big-sight]:closed {
+    color: #9b4f7a;
+    fill-color: #9b4f7a;
+    fill-opacity: 0.1;
+}
+area[public_transport]:closed {
+    color: #c5c260;
+    fill-color: #c5c260;
+    fill-opacity: 0.1;
+}
+
+way {
+    z-index: 0;
+}
+way[tunnel]::*,
+way::core_bridge {
+    width: 0;
+    opacity: 0;
+    casing-width: 0;
+    casing-opacity: 0;
+}
+
+way[highway=footway] {
+    color: #5b6427;
+    width: 1px;
+}
+way[highway=footway] {
+    color: #276429;
+    width: 1px;
+}
+way[highway=steps] {
+    color: #276429;
+    width: 5px;
+    dashes: 1,2;
+}
+way[highway=pedestrian][tokyo-big-sight] {
+    color: #6c6c6c;
+    width: 2px;
+}
+way[highway=footway][tokyo-big-sight][level=4] {
+    color: #295d79;
+    width: 1px;
+}
+way[highway=steps][tokyo-big-sight][level=4] {
+    color: #295d79;
+}
+way[highway=footway][tokyo-big-sight][level=3] {
+    color: #276364;
+    width: 1px;
+}
+way[highway=steps][tokyo-big-sight][level=3] {
+    color: #276364;
+}
+way[highway=footway][tokyo-big-sight][level=2] {
+    color: #276429;
+    width: 1px;
+}
+way[highway=steps][tokyo-big-sight][level=2] {
+    color: #276429;
+}
+way[highway=footway][tokyo-big-sight][level=1] {
+    color: #5b6427;
+    /* color: #e40808; */
+    width: 1px;
+    opacity: 0.6;
+    z-index: 10;
+}
+
+/* way[tunnel]::* {
+    width: 0;
+    opacity: 0;
+} */
+
+
+
+
+area[hall=e] {
+    color: #e17a7a;
+    width: 2px;
+    fill-color: #e17a7a;
+    fill-opacity: 0.05;
+}
+area[hall-e] {
+    fill-color: #e17a7a;
+    fill-opacity: 0.3;
+}
+
+area[hall=w] {
+    color: #5995f4;
+    width: 2px;
+    fill-color: #5995f4;
+    fill-opacity: 0.05;
+}
+area[hall-w] {
+    fill-color: #5995f4;
+    fill-opacity: 0.2;
+}
+
+area[hall=s] {
+    color: #49d170;
+    width: 2px;
+    fill-color: #49d170;
+    fill-opacity: 0.05;
+}
+area[hall-s] {
+    fill-color: #49d170;
+    fill-opacity: 0.2;
+}
+
+area[tokyo-big-sight][boundary] {
+    fill-opacity: 0.1;
+}
+
+area[man_made=island] {
+    color: #3b3b3b;
+    width: 1px;    
+    fill-opacity: 0;
+}
+
+way[railway] {
+    color: #c5c260;
+    width: 2px;
+}

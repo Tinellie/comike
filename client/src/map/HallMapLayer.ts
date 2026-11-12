@@ -39,8 +39,6 @@ export class HallMapLayer {
     context.moveTo(first.x, first.y)
     for (const point of rest) context.lineTo(point.x, point.y)
     context.closePath()
-    context.fillStyle = 'rgba(255,255,255,0.93)'
-    context.fill()
     context.strokeStyle = selected ? '#f07800' : '#d32f2f'
     context.lineWidth = selected ? 6 : 3
     context.stroke()
@@ -48,9 +46,18 @@ export class HallMapLayer {
       background: false, boxes: display.boxes, numbers: display.numbers, halfBooths: display.halfBooths,
       islands: display.islands, groups: false, gaps: false, blockFrames: false, selectedIsland: null,
     }
+    const drawText = (x: number, y: number, draw: () => void) => {
+      context.save()
+      context.translate(x, y)
+      // Cancel anisotropy around the label anchor, before its own text rotation.
+      context.scale(1 / placement.aspectRatio, 1)
+      context.translate(-x, -y)
+      draw()
+      context.restore()
+    }
     for (const layer of this.layers) {
       context.save()
-      layer.draw(context, { page: hall.page, image: this.image, options })
+      layer.draw(context, { page: hall.page, image: this.image, options, drawText })
       context.restore()
     }
     if (display.labels) {
@@ -60,10 +67,12 @@ export class HallMapLayer {
       for (const label of hall.labels) {
         const text = label.text ?? label.code ?? '?'
         const width = context.measureText(text).width + 8
-        context.fillStyle = 'rgba(255,255,255,0.96)'
-        context.fillRect(label.center.x - width / 2, label.center.y - 14, width, 28)
-        context.fillStyle = '#006d91'
-        context.fillText(text, label.center.x, label.center.y)
+        drawText(label.center.x, label.center.y, () => {
+          context.fillStyle = 'rgba(255,255,255,0.96)'
+          context.fillRect(label.center.x - width / 2, label.center.y - 14, width, 28)
+          context.fillStyle = '#006d91'
+          context.fillText(text, label.center.x, label.center.y)
+        })
       }
     }
     context.restore()

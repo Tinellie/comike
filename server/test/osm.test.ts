@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildOsmMap, mergeTags, stitchRings, tagValues } from '../../client/src/map/osm.ts'
+import { buildOsmMap, hallCodes, mergeTags, stitchRings, tagValues } from '../../client/src/map/osm.ts'
 import type { OsmFeature, OsmNode, OsmWay, Tags } from '../../client/src/map/osm.ts'
 import { compareMapStyles, mapBackground, mapStyle, onewayTriangles } from '../../client/src/map/style.ts'
 import {
@@ -140,6 +140,17 @@ test('reference palette uses hall colors and hall-code labels instead of ordinar
     assert.equal(style.layer, 20)
   }
   assert.equal(mapStyle(feature({ building: 'yes', name: 'Ordinary building' })).hallLabel, null)
+})
+
+test('subhall hyphen and colon tags share canonical codes, labels and closed-area recognition', () => {
+  assert.deepEqual(hallCodes({ 'hall-e': ['1;2', '3'], 'hall:e': '1', 'hall-w': '２', 'hall-n': '1' }), ['E1', 'E2', 'E3', 'W2', 'N1'])
+  assert.deepEqual(hallCodes({ 'hall-e': 'unknown', 'hall:w': '0' }), [])
+  const area = buildOsmMap(nodes(), [{
+    id: 'e1', refs: ['1', '2', '3', '4', '1'], tags: { 'hall-e': '1', 'tokyo-big-sight': 'yes' },
+  }], []).features[0]
+  assert.equal(area.area, true)
+  assert.deepEqual(mapStyle(area).hallLabel, { text: '東1', color: '#b43a3a' })
+  assert.equal(mapStyle(area).fill, 'rgba(238, 137, 137, 0.57)')
 })
 
 test('reference scope fades outside features but preserves tagged indoor and hall colors', () => {
