@@ -1,9 +1,10 @@
-import { hallCodes, tagValues } from './osm'
+import { featureLevels, hallCodes, tagValues } from './osm'
 import type { OsmFeature, Tags } from './osm'
 import type { Point } from './viewport'
 
 export const mapBackground = '#f6f4ef'
 export const gridColor = 'rgba(80, 87, 90, 0.12)'
+export const filteredOutline = 'rgba(116, 121, 125, 0.2)'
 
 export interface MapStyle {
   stroke: string | null
@@ -20,6 +21,14 @@ function has(tags: Tags, key: string, value?: string): boolean {
   return value === undefined ? values.length > 0 : values.includes(value)
 }
 
+export function opaqueOnWhite(color: string): string {
+  const rgba = /^rgba\(([\d.]+),\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\)$/.exec(color)
+  if (!rgba) return color
+  const alpha = Number(rgba[4])
+  const channels = rgba.slice(1, 4).map(channel => Math.round(Number(channel) * alpha + 255 * (1 - alpha)))
+  return `rgb(${channels.join(', ')})`
+}
+
 export function hallLabel(tags: Tags): MapStyle['hallLabel'] {
   const codes = hallCodes(tags)
   for (const [direction, prefix, color] of [
@@ -33,8 +42,8 @@ export function hallLabel(tags: Tags): MapStyle['hallLabel'] {
 
 export function mapStyle(feature: OsmFeature): MapStyle {
   const tags = feature.tags
-  const levelValue = tagValues(tags, 'level').map(Number).find(Number.isFinite) ?? 1
-  const level = levelValue === 0 ? 1 : levelValue
+  const levels = featureLevels(tags)
+  const level = levels.length ? Math.min(...levels) : 1
   const building = has(tags, 'building') || has(tags, 'building:part')
   const indoor = has(tags, 'indoor')
   const codes = hallCodes(tags)
@@ -67,16 +76,16 @@ export function mapStyle(feature: OsmFeature): MapStyle {
     Object.assign(style, { stroke: null, fill: 'rgba(120, 128, 136, 0.28)', strokeWidth: 0, layer: 1 })
   } else if (building || indoor || codes.length) {
     let stroke = 'rgba(174, 94, 42, 0.54)'
-    let fill = 'rgba(226, 132, 67, 0.14)'
+    let fill = 'rgba(226, 132, 67, 0.08)'
     if (has(tags, 'hall', 'e') || codes.some(code => code.startsWith('E'))) {
       stroke = 'rgba(192, 104, 104, 0.54)'
-      fill = 'rgba(238, 137, 137, 0.57)'
+      fill = codes.length ? 'rgba(238, 137, 137, 0.48)' : 'rgba(238, 137, 137, 0.28)'
     } else if (has(tags, 'hall', 'w') || codes.some(code => code.startsWith('W'))) {
       stroke = 'rgba(88, 126, 188, 0.54)'
-      fill = 'rgba(136, 183, 248, 0.38)'
+      fill = codes.length ? 'rgba(136, 183, 248, 0.4)' : 'rgba(136, 183, 248, 0.19)'
     } else if (has(tags, 'hall', 's') || codes.some(code => code.startsWith('S'))) {
       stroke = 'rgba(93, 156, 122, 0.54)'
-      fill = 'rgba(127, 228, 162, 0.32)'
+      fill = codes.length ? 'rgba(127, 228, 162, 0.38)' : 'rgba(127, 228, 162, 0.16)'
     }
     Object.assign(style, {
       stroke, fill: building || codes.length ? fill : null, strokeWidth: label ? 1.05 : 0.85,
@@ -94,11 +103,29 @@ export function mapStyle(feature: OsmFeature): MapStyle {
     style.hallLabel = null
     if (!has(tags, 'highway') && !has(tags, 'railway')) style.stroke = null
   }
+  if (has(tags, 'highway') || has(tags, 'railway') || has(tags, 'route')
+    || Object.keys(tags).some(key => /^(?:path:|pathway$)/.test(key))) {
+    if (style.stroke) style.stroke = opaqueOnWhite(style.stroke)
+    if (style.fill) style.fill = opaqueOnWhite(style.fill)
+  }
+  if (feature.area && Object.keys(tags).some(key => /^hall[-:]/.test(key))) style.layer = 200
   return style
 }
 
 export function compareMapStyles(left: MapStyle, right: MapStyle): number {
   return left.level - right.level || left.layer - right.layer
+}
+
+export function matchesLevels(levels: number[], selected: ReadonlySet<number>): boolean {
+  return selected.size === 0 || levels.some(level => selected.has(level))
+}
+
+export function filteredLevelStyle(style: MapStyle): MapStyle {
+  return {
+    ...style, fill: null, hallLabel: null,
+    stroke: style.stroke || style.fill ? filteredOutline : null,
+    strokeWidth: style.strokeWidth > 0 ? style.strokeWidth : 0.85,
+  }
 }
 
 export function onewayTriangles(paths: Point[][], tags: Tags, metersPerUnit: number): Point[][] {

@@ -513,12 +513,30 @@
   <node id='-62244' action='modify' visible='true' lat='35.62960629005' lon='139.79489478896' />
   <node id='-62245' action='modify' visible='true' lat='35.62997682799' lon='139.79498771208' />
   <node id='-62246' action='modify' visible='true' lat='35.6298045387' lon='139.7946760309' />
-  <node id='-62247' action='modify' visible='true' lat='35.62965995024' lon='139.79479446503' />
   <node id='-62248' action='modify' visible='true' lat='35.62943531282' lon='139.79438297086' />
   <node id='-62503' action='modify' visible='true' lat='35.63140600115' lon='139.79938077042' />
   <node id='-62504' action='modify' visible='true' lat='35.63133150116' lon='139.79944257042' />
   <node id='-62534' action='modify' visible='true' lat='35.63091645269' lon='139.79855422318' />
   <node id='-62655' action='modify' visible='true' lat='35.63252693691' lon='139.79903110651' />
+  <node id='-69829' action='modify' visible='true' lat='35.62938661956' lon='139.79429163716' />
+  <node id='-69830' action='modify' visible='true' lat='35.62943528447' lon='139.79438290189' />
+  <node id='-69832' action='modify' visible='true' lat='35.62980451035' lon='139.79467596193' />
+  <node id='-69833' action='modify' visible='true' lat='35.63001256258' lon='139.79450144391' />
+  <node id='-69834' action='modify' visible='true' lat='35.63013857165' lon='139.79439853103' />
+  <node id='-69837' action='modify' visible='true' lat='35.63013646962' lon='139.79380143565' />
+  <node id='-69840' action='modify' visible='true' lat='35.62955403185' lon='139.79365395864' />
+  <node id='-69842' action='modify' visible='true' lat='35.63066187236' lon='139.79516152858' />
+  <node id='-69851' action='modify' visible='true' lat='35.63046417165' lon='139.79479503103' />
+  <node id='-69852' action='modify' visible='true' lat='35.63021307165' lon='139.79433673103' />
+  <node id='-69853' action='modify' visible='true' lat='35.62997679964' lon='139.79498764311' />
+  <node id='-69854' action='modify' visible='true' lat='35.6300564856' lon='139.79513179981' />
+  <node id='-69855' action='modify' visible='true' lat='35.63028455117' lon='139.79554438491' />
+  <node id='-69856' action='modify' visible='true' lat='35.63031787165' lon='139.79551673103' />
+  <node id='-69857' action='modify' visible='true' lat='35.63029277165' lon='139.79547083103' />
+  <node id='-69858' action='modify' visible='true' lat='35.63059067165' lon='139.79522353103' />
+  <node id='-69859' action='modify' visible='true' lat='35.63061577165' lon='139.79526943103' />
+  <node id='-69860' action='modify' visible='true' lat='35.63069027165' lon='139.79520753103' />
+  <node id='-69861' action='modify' visible='true' lat='35.62955997165' lon='139.79314503103' />
   <node id='31252897' action='delete' timestamp='2017-03-22T16:15:19Z' uid='3150532' user='dqn' visible='true' version='6' changeset='47072324' lat='35.6335578' lon='139.7815571'>
     <tag k='highway' v='motorway_junction' />
     <tag k='name' v='有明ジャンクション' />
@@ -1002,30 +1020,30 @@
   <node id='1666786520' timestamp='2012-03-09T04:29:25Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.628992' lon='139.7942836' />
   <node id='1666786521' action='modify' timestamp='2017-11-27T06:42:24Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54113348' lat='35.6290284' lon='139.7940533' />
   <node id='1666786522' timestamp='2012-03-09T04:29:25Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.6290925' lon='139.7944669' />
-  <node id='1666786523' timestamp='2023-01-05T14:03:32Z' uid='17764886' user='Neckstack' visible='true' version='2' changeset='130908437' lat='35.6291002' lon='139.7933935' />
-  <node id='1666786526' action='modify' timestamp='2017-11-27T06:13:09Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.62919991865' lon='139.79394545798' />
+  <node id='1666786523' action='modify' timestamp='2023-01-05T14:03:32Z' uid='17764886' user='Neckstack' visible='true' version='2' changeset='130908437' lat='35.62910017165' lon='139.79339343103' />
+  <node id='1666786526' action='modify' timestamp='2017-11-27T06:13:09Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.6291998903' lon='139.79394538901' />
   <node id='1666786528' timestamp='2012-03-09T04:29:26Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.6291921' lon='139.7944509' />
   <node id='1666786529' timestamp='2017-11-27T06:42:24Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54113348' lat='35.6292311' lon='139.7948187' />
   <node id='1666786530' timestamp='2012-03-09T04:29:26Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.6292181' lon='139.7946961' />
   <node id='1666786532' timestamp='2012-03-09T04:29:26Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.6292181' lon='139.7946961' />
-  <node id='1666786534' action='modify' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.62933938064' lon='139.79383282209' />
+  <node id='1666786534' action='modify' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.62933935229' lon='139.79383275312' />
   <node id='1666786535' action='modify' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.62938664791' lon='139.79429170613' />
   <node id='1666786536' action='modify' timestamp='2023-01-03T07:28:11Z' uid='17764886' user='Neckstack' visible='true' version='3' changeset='130814326' lat='35.62943531282' lon='139.79438297086' />
   <node id='1666786539' action='modify' timestamp='2017-11-27T06:42:24Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54113348' lat='35.62951660995' lon='139.79487153988' />
   <node id='1666786541' timestamp='2012-03-09T04:29:26Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.6294597' lon='139.7958292' />
   <node id='1666786542' timestamp='2012-03-09T04:29:26Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.6294597' lon='139.7958292' />
-  <node id='1666786545' timestamp='2012-03-09T04:29:27Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.6295098' lon='139.7930535' />
+  <node id='1666786545' action='modify' timestamp='2012-03-09T04:29:27Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.62950977165' lon='139.79305343103' />
   <node id='1666786546' timestamp='2012-03-09T04:29:27Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.629497' lon='139.7957982' />
   <node id='1666786548' timestamp='2012-03-09T04:29:27Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.629497' lon='139.7957982' />
   <node id='1666786552' action='modify' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.6295540602' lon='139.79365402761' />
   <node id='1666786556' action='modify' timestamp='2012-03-09T04:29:27Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.62960629005' lon='139.79489478896' />
-  <node id='1666786557' action='modify' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.62965995024' lon='139.79479446503' />
-  <node id='1666786569' action='modify' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.62974898057' lon='139.79349282209' />
+  <node id='1666786557' action='modify' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.62965992189' lon='139.79479439606' />
+  <node id='1666786569' action='modify' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.62974895222' lon='139.79349275312' />
   <node id='1666786572' action='modify' timestamp='2017-11-27T07:12:46Z' uid='741163' user='Retired Account' visible='true' version='3' changeset='54113801' lat='35.6298045387' lon='139.7946760309' />
   <node id='1666786573' action='modify' timestamp='2012-03-09T04:29:28Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.62983610521' lon='139.79530728895' />
   <node id='1666786575' action='modify' timestamp='2017-11-27T06:42:24Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54113348' lat='35.62985948959' lon='139.79549848773' />
   <node id='1666786576' action='modify' timestamp='2012-03-09T04:29:28Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.6298962' lon='139.7959336' />
-  <node id='1666786577' action='modify' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.62989788055' lon='139.79336912209' />
+  <node id='1666786577' action='modify' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.6298978522' lon='139.79336905312' />
   <node id='1666786578' action='modify' timestamp='2017-11-27T07:12:46Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54113801' lat='35.62997682799' lon='139.79498771208' />
   <node id='1666786579' action='modify' timestamp='2017-11-27T07:12:46Z' uid='741163' user='Retired Account' visible='true' version='3' changeset='54113801' lat='35.63001259093' lon='139.79450151288' />
   <node id='1666786580' action='modify' timestamp='2017-11-27T07:12:46Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54113801' lat='35.63005651395' lon='139.79513186878' />
@@ -1036,8 +1054,8 @@
   <node id='1666786586' action='modify' timestamp='2017-11-27T07:12:46Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54113801' lat='35.63028457952' lon='139.79554445388' />
   <node id='1666786587' timestamp='2017-11-27T07:12:46Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54113801' lat='35.6302928' lon='139.7954709' />
   <node id='1666786588' timestamp='2017-11-27T07:12:46Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54113801' lat='35.6303179' lon='139.7955168' />
-  <node id='1666786589' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.630362' lon='139.7942131' />
-  <node id='1666786590' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.630362' lon='139.7942131' />
+  <node id='1666786589' action='modify' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.63036197165' lon='139.79421303103' />
+  <node id='1666786590' action='delete' timestamp='2017-11-27T06:13:10Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54112926' lat='35.630362' lon='139.7942131' />
   <node id='1666786591' timestamp='2017-11-27T07:12:46Z' uid='741163' user='Retired Account' visible='true' version='2' changeset='54113801' lat='35.6304642' lon='139.7947951' />
   <node id='1666786592' action='delete' timestamp='2012-03-09T04:29:29Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.6305682' lon='139.7957758' />
   <node id='1666786593' timestamp='2012-03-09T04:29:29Z' uid='616165' user='Mitazuna' visible='true' version='1' changeset='10915975' lat='35.6305482' lon='139.7940586' />
@@ -3481,7 +3499,7 @@
     <tag k='name' v='カレー香房' />
     <tag k='tokyo-big-sight' v='yes' />
   </node>
-  <node id='4359537849' action='modify' timestamp='2023-01-05T14:03:32Z' uid='17764886' user='Neckstack' visible='true' version='3' changeset='130908437' lat='35.6295206' lon='139.7938047' />
+  <node id='4359537849' action='modify' timestamp='2023-01-05T14:03:32Z' uid='17764886' user='Neckstack' visible='true' version='3' changeset='130908437' lat='35.62952823035' lon='139.79381676994' />
   <node id='4359537850' timestamp='2016-08-21T02:43:29Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='41585736' lat='35.6313119' lon='139.7920908' />
   <node id='4359537851' timestamp='2016-08-21T02:43:29Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='41585736' lat='35.6325989' lon='139.7929562' />
   <node id='4359537852' timestamp='2016-08-21T02:43:29Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='41585736' lat='35.6326248' lon='139.7932014' />
@@ -3507,7 +3525,7 @@
     <tag k='name' v='魚とと' />
     <tag k='tokyo-big-sight' v='yes' />
   </node>
-  <node id='4359537862' action='modify' timestamp='2023-01-05T14:03:32Z' uid='17764886' user='Neckstack' visible='true' version='4' changeset='130908437' lat='35.6292218' lon='139.7938527' />
+  <node id='4359537862' action='modify' timestamp='2023-01-05T14:03:32Z' uid='17764886' user='Neckstack' visible='true' version='4' changeset='130908437' lat='35.62921525967' lon='139.7938513589' />
   <node id='4359537863' timestamp='2016-08-21T02:43:29Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='41585736' lat='35.6328267' lon='139.7937674' />
   <node id='4359537864' timestamp='2016-08-21T02:43:29Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='41585736' lat='35.6323113' lon='139.7927281' />
   <node id='4359537866' action='modify' timestamp='2016-08-21T05:16:17Z' uid='610947' user='muramototomoya' visible='true' version='2' changeset='41586766' lat='35.6293393' lon='139.7939286'>
@@ -3532,7 +3550,7 @@
   <node id='4359537877' timestamp='2016-08-21T02:43:29Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='41585736' lat='35.6316843' lon='139.7917817' />
   <node id='4359537878' timestamp='2016-08-21T02:43:29Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='41585736' lat='35.6310513' lon='139.7923072' />
   <node id='4359537879' timestamp='2016-08-21T02:43:29Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='41585736' lat='35.6325504' lon='139.7932632' />
-  <node id='4359537880' timestamp='2023-01-05T14:03:32Z' uid='17764886' user='Neckstack' visible='true' version='3' changeset='130908437' lat='35.6294527' lon='139.7942345' />
+  <node id='4359537880' action='modify' timestamp='2023-01-05T14:03:32Z' uid='17764886' user='Neckstack' visible='true' version='3' changeset='130908437' lat='35.62946033036' lon='139.79424656994' />
   <node id='4359537881' timestamp='2016-08-21T02:43:29Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='41585736' lat='35.6308755' lon='139.7919864' />
   <node id='4359537882' timestamp='2016-08-21T02:43:29Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='41585736' lat='35.6329003' lon='139.7935062' />
   <node id='4359537883' timestamp='2016-08-21T02:43:29Z' uid='610947' user='muramototomoya' visible='true' version='1' changeset='41585736' lat='35.6328258' lon='139.7935681' />
@@ -3972,7 +3990,7 @@
   <node id='5249897583' timestamp='2017-11-27T06:42:23Z' uid='741163' user='Retired Account' visible='true' version='1' changeset='54113348' lat='35.6285963' lon='139.7949456' />
   <node id='5249897584' timestamp='2017-11-27T06:42:23Z' uid='741163' user='Retired Account' visible='true' version='1' changeset='54113348' lat='35.6281867' lon='139.7952856' />
   <node id='5249897585' timestamp='2017-11-27T06:42:23Z' uid='741163' user='Retired Account' visible='true' version='1' changeset='54113348' lat='35.6290484' lon='139.7957706' />
-  <node id='5249926428' action='modify' timestamp='2023-01-05T14:03:32Z' uid='17764886' user='Neckstack' visible='true' version='4' changeset='130908437' lat='35.6292097' lon='139.7939295' />
+  <node id='5249926428' action='modify' timestamp='2023-01-05T14:03:32Z' uid='17764886' user='Neckstack' visible='true' version='4' changeset='130908437' lat='35.62920315967' lon='139.7939281589' />
   <node id='5249926430' timestamp='2017-11-27T07:09:35Z' uid='741163' user='Retired Account' visible='true' version='1' changeset='54113801' lat='35.6290674' lon='139.7944211' />
   <node id='5249926431' timestamp='2017-11-27T07:09:35Z' uid='741163' user='Retired Account' visible='true' version='1' changeset='54113801' lat='35.6290301' lon='139.794452' />
   <node id='5249947947' timestamp='2017-11-27T07:35:15Z' uid='741163' user='Retired Account' visible='true' version='1' changeset='54113801' lat='35.6314439' lon='139.79945' />
@@ -7842,12 +7860,74 @@
     <nd ref='-62244' />
     <nd ref='-62245' />
     <nd ref='-62246' />
-    <nd ref='-62247' />
+    <nd ref='1666786557' />
     <nd ref='-62248' />
     <nd ref='-62236' />
     <tag k='building' v='yes' />
     <tag k='indoor' v='corridor' />
     <tag k='level' v='1' />
+    <tag k='tokyo-big-sight' v='yes' />
+  </way>
+  <way id='-63645' action='modify' visible='true'>
+    <nd ref='1666786526' />
+    <nd ref='-69829' />
+    <nd ref='-69830' />
+    <nd ref='1666786557' />
+    <nd ref='-69832' />
+    <nd ref='-69833' />
+    <nd ref='-69834' />
+    <nd ref='1666786589' />
+    <nd ref='-69837' />
+    <nd ref='1666786577' />
+    <nd ref='1666786569' />
+    <nd ref='-69840' />
+    <nd ref='1666786534' />
+    <nd ref='1666786526' />
+    <tag k='building' v='yes' />
+    <tag k='building:part' v='yes' />
+    <tag k='debug1' v='yes' />
+    <tag k='height' v='8' />
+    <tag k='indoor' v='corridor' />
+    <tag k='level' v='1' />
+    <tag k='name' v='エントランスプラザ' />
+    <tag k='tokyo-big-sight' v='yes' />
+  </way>
+  <way id='-63646' action='modify' visible='true'>
+    <nd ref='-69842' />
+    <nd ref='-69851' />
+    <nd ref='-69852' />
+    <nd ref='-69834' />
+    <nd ref='-69833' />
+    <nd ref='-69832' />
+    <nd ref='-69853' />
+    <nd ref='-69854' />
+    <nd ref='-69855' />
+    <nd ref='-69856' />
+    <nd ref='-69857' />
+    <nd ref='-69858' />
+    <nd ref='-69859' />
+    <nd ref='-69860' />
+    <nd ref='-69842' />
+    <tag k='building' v='yes' />
+    <tag k='debug1' v='yes' />
+    <tag k='indoor' v='corridor' />
+    <tag k='level' v='1' />
+    <tag k='name' v='北コンコース' />
+    <tag k='tokyo-big-sight' v='yes' />
+  </way>
+  <way id='-63647' action='modify' visible='true'>
+    <nd ref='1666786569' />
+    <nd ref='-69861' />
+    <nd ref='1666786545' />
+    <nd ref='1666786523' />
+    <nd ref='1666786534' />
+    <nd ref='-69840' />
+    <nd ref='1666786569' />
+    <tag k='building' v='yes' />
+    <tag k='debug1' v='yes' />
+    <tag k='indoor' v='corridor' />
+    <tag k='level' v='1' />
+    <tag k='name' v='イベントプラザ' />
     <tag k='tokyo-big-sight' v='yes' />
   </way>
   <way id='4847507' action='delete' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='39' changeset='156187174'>
@@ -9505,7 +9585,7 @@
     <tag k='tokyo-big-sight' v='yes' />
   </way>
   <way id='154080988' action='modify' timestamp='2023-01-03T14:43:29Z' uid='17764886' user='Neckstack' visible='true' version='9' changeset='130829694'>
-    <nd ref='1666786590' />
+    <nd ref='1666786589' />
     <nd ref='1666786585' />
     <nd ref='4359478270' />
     <nd ref='1666786579' />
@@ -9520,7 +9600,6 @@
     <nd ref='1666786577' />
     <nd ref='1666786583' />
     <nd ref='1666786589' />
-    <nd ref='1666786590' />
     <tag k='building' v='yes' />
     <tag k='layer' v='3' />
     <tag k='name' v='会議棟' />
@@ -9751,7 +9830,6 @@
     <nd ref='1666786605' />
     <nd ref='1666786591' />
     <nd ref='1666786585' />
-    <nd ref='1666786590' />
     <nd ref='1666786589' />
     <tag k='building' v='yes' />
     <tag k='height' v='18' />
@@ -13492,6 +13570,7 @@
     <tag k='height' v='6' />
     <tag k='highway' v='pedestrian' />
     <tag k='layer' v='2' />
+    <tag k='level' v='2' />
     <tag k='name' v='やぐら橋' />
     <tag k='tokyo-big-sight' v='yes' />
   </way>
@@ -13626,7 +13705,6 @@
     <nd ref='1666786572' />
     <nd ref='1666786579' />
     <nd ref='4359478270' />
-    <nd ref='1666786590' />
     <nd ref='1666786589' />
     <nd ref='1666786583' />
     <nd ref='1666786577' />
@@ -13939,12 +14017,12 @@
     <tag k='roof:material' v='metal' />
   </way>
   <way id='543039457' action='modify' timestamp='2017-11-27T06:13:08Z' uid='741163' user='Retired Account' visible='true' version='1' changeset='54112926'>
-    <nd ref='1666786590' />
+    <nd ref='1666786589' />
     <nd ref='1666786585' />
     <nd ref='4359478270' />
     <nd ref='1666786579' />
     <nd ref='1666786583' />
-    <nd ref='1666786590' />
+    <nd ref='1666786589' />
     <tag k='building:colour' v='#c3b08a' />
     <tag k='building:material' v='metal' />
     <tag k='building:part' v='yes' />
@@ -14446,7 +14524,6 @@
     <nd ref='1666786579' />
     <nd ref='4359478270' />
     <nd ref='1666786585' />
-    <nd ref='1666786590' />
     <nd ref='1666786589' />
     <nd ref='1666786583' />
     <nd ref='1666786577' />

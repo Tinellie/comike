@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parseHalls, parseHallTransforms, hallMatrix, hallWorldBounds } from '../../client/src/map/halls.ts'
+import { parseHalls, parseHallTransforms, hallMatrix, hallWorldBounds, hallTextRotation } from '../../client/src/map/halls.ts'
 import { hallBoothAspectRatio, correctHallAspectRatios } from '../../client/src/map/hallPreparation.ts'
 import { projectCoordinate, worldToScreen, fitViewport } from '../../client/src/map/viewport.ts'
 import { validHallTransforms } from '../src/hallTransforms.ts'
 
 function finalData() {
   return { halls: [{
-    name: 'East',
+    name: 'East', textRotation: 0,
     boundary: [{ x: 10, y: 20 }, { x: 110, y: 20 }, { x: 110, y: 100 }, { x: 10, y: 100 }],
     labels: [{ id: 'label1', text: '東1/E1', code: 'E1', pos: { x: 40, y: 30 } }],
     islands: [{
@@ -58,6 +58,27 @@ test('irregular block geometry and unknown split/labels are kept without inventi
   assert.equal(hall.page.halfBooths?.length, 2)
   assert.equal(hall.page.islandMarkers?.[0].label, null)
   assert.ok((hall.page.blocks?.[0].outline.length ?? 0) > 0)
+})
+
+test('all page text follows the source OCR direction regardless of Booth shape, with only half-turn flips', () => {
+  for (const base of [0, 90, 180, 270]) {
+    const data = finalData()
+    data.halls[0].textRotation = base
+    data.halls[0].islands[0].blocks[0].booths[0].bbox.width = 15
+    data.halls[0].islands[0].blocks[0].booths[1].bbox.height = 15
+    const [hall] = parseHalls(data)
+    assert.ok(hall.page.booths.every(booth => booth.rotation === base))
+    for (const screen of [-540, -179, -90, -35, 0, 35, 90, 179, 540]) {
+      const rotation = hallTextRotation(hall, screen)
+      assert.equal(Math.abs((rotation - base) % 180), 0)
+      assert.ok(Math.abs(screen + rotation) <= 90)
+    }
+  }
+  for (const bad of [undefined, null, 45, -90, 360, '90', NaN]) {
+    const data = finalData()
+    Reflect.set(data.halls[0], 'textRotation', bad)
+    assert.throws(() => parseHalls(data), /Hall/)
+  }
 })
 
 test('invalid final structures and invalid/missing/duplicate/mismatched placements fail explicitly', () => {

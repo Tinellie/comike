@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildOsmMap, hallCodes, mergeTags, stitchRings, tagValues } from '../../client/src/map/osm.ts'
+import { buildOsmMap, featureLevels, hallCodes, mergeTags, stitchRings, tagValues } from '../../client/src/map/osm.ts'
 import type { OsmFeature, OsmNode, OsmWay, Tags } from '../../client/src/map/osm.ts'
-import { compareMapStyles, mapBackground, mapStyle, onewayTriangles } from '../../client/src/map/style.ts'
 import {
-  fitViewport, panViewport, projectCoordinate, screenToWorld, worldToScreen, zoomViewport,
+  compareMapStyles, filteredLevelStyle, filteredOutline, mapBackground, mapStyle, matchesLevels, onewayTriangles, opaqueOnWhite,
+} from '../../client/src/map/style.ts'
+import {
+  dragRotation, fitViewport, panViewport, projectCoordinate, screenToWorld, viewportBounds, worldToScreen, zoomViewport,
 } from '../../client/src/map/viewport.ts'
 
 function nodes(): OsmNode[] {
@@ -62,6 +64,75 @@ test('zoom keeps the cursor world point fixed including at both scale limits', (
     const result = screenToWorld(anchor, zoomed, size)
     assert.ok(Math.abs(result.x - original.x) < 1e-9)
     assert.ok(Math.abs(result.y - original.y) < 1e-9)
+  }
+})
+
+test('rotated view preserves inverse coordinates, screen-space panning and cursor-anchored zoom', () => {
+  const size = { width: 900, height: 600 }, point = { x: 135, y: 210 }
+  for (const rotation of [-179, -90, -35, 0, 47, 90, 180]) {
+    const view = { center: { x: 100, y: 200 }, scale: 2, rotation }
+    const before = worldToScreen(point, view, size)
+    const inverse = screenToWorld(before, view, size)
+    assert.ok(Math.hypot(inverse.x - point.x, inverse.y - point.y) < 1e-10)
+    const after = worldToScreen(point, panViewport(view, 60, -30), size)
+    assert.ok(Math.hypot(after.x - before.x - 60, after.y - before.y + 30) < 1e-10)
+    const anchor = { x: 123, y: 456 }, world = screenToWorld(anchor, view, size)
+    for (const factor of [1.4, 1e10, 1e-10]) {
+      const zoomed = zoomViewport(view, factor, anchor, size, 0.1, 100)
+      const fixed = worldToScreen(world, zoomed, size)
+      assert.equal(zoomed.rotation, rotation)
+      assert.ok(Math.hypot(fixed.x - anchor.x, fixed.y - anchor.y) < 1e-9)
+    }
+    const bounds = viewportBounds(view, size)
+    for (const x of [0, size.width]) for (const y of [0, size.height]) {
+      const corner = screenToWorld({ x, y }, view, size)
+      assert.ok(corner.x >= bounds.minX && corner.x <= bounds.maxX)
+      assert.ok(corner.y >= bounds.minY && corner.y <= bounds.maxY)
+    }
+    assert.deepEqual(worldToScreen(view.center, view, size), { x: size.width / 2, y: size.height / 2 })
+  }
+})
+
+test('rotated fit contains all corners and Alt drag follows the shortest angle around viewport center', () => {
+  const bounds = { minX: -200, minY: -10, maxX: 300, maxY: 100 }, size = { width: 800, height: 600 }
+  for (const rotation of [-135, -90, 37, 90, 145]) {
+    const view = fitViewport(bounds, size, rotation)
+    for (const x of [bounds.minX, bounds.maxX]) for (const y of [bounds.minY, bounds.maxY]) {
+      const screen = worldToScreen({ x, y }, view, size)
+      assert.ok(screen.x >= 32 - 1e-9 && screen.x <= size.width - 32 + 1e-9)
+      assert.ok(screen.y >= 32 - 1e-9 && screen.y <= size.height - 32 + 1e-9)
+    }
+  }
+  const center = { x: 400, y: 300 }
+  assert.equal(dragRotation({ x: 500, y: 300 }, { x: 400, y: 400 }, center), 90)
+  assert.equal(dragRotation({ x: 300, y: 301 }, { x: 300, y: 299 }, center) < 2, true)
+  assert.equal(dragRotation(center, { x: 400, y: 400 }, center), 0)
+})
+
+test('level selection uses exact numeric tags, fades unmatched objects without changing stroke format', () => {
+  assert.deepEqual(featureLevels({ level: ['1;2', '3,4', '2', '', 'invalid'] }), [1, 2, 3, 4])
+  assert.deepEqual(featureLevels({ level: '0;-1;1.5' }), [0, -1, 1.5])
+  assert.equal(matchesLevels([], new Set()), true)
+  assert.equal(matchesLevels([], new Set([1])), false)
+  assert.equal(matchesLevels([0], new Set([1])), false)
+  assert.equal(matchesLevels([1, 3], new Set([2, 3])), true)
+  assert.equal(matchesLevels([1], new Set([2, 3])), false)
+  assert.equal(mapStyle(feature({ level: '0' })).level, 0)
+  assert.equal(mapStyle(feature({ level: '3;1' })).level, 1)
+  for (const tags of [
+    { highway: 'steps', level: '3', 'tokyo-big-sight': 'yes' },
+    { building: 'yes', 'hall-e': '1', level: '2', 'tokyo-big-sight': 'yes' },
+  ]) {
+    const original = mapStyle(feature(tags, true)), before = structuredClone(original)
+    const faded = filteredLevelStyle(original)
+    assert.equal(faded.stroke, filteredOutline)
+    assert.equal(faded.fill, null)
+    assert.equal(faded.hallLabel, null)
+    assert.equal(faded.strokeWidth, original.strokeWidth)
+    assert.deepEqual(faded.lineDash, original.lineDash)
+    assert.equal(faded.level, original.level)
+    assert.equal(faded.layer, original.layer)
+    assert.deepEqual(original, before)
   }
 })
 
@@ -129,15 +200,15 @@ function feature(tags: Tags, area = false): OsmFeature {
 test('reference palette uses hall colors and hall-code labels instead of ordinary names', () => {
   assert.equal(mapBackground, '#f6f4ef')
   for (const [hall, field, prefix, fill, color] of [
-    ['e', 'hall:e', '東', 'rgba(238, 137, 137, 0.57)', '#b43a3a'],
-    ['w', 'hall:w', '西', 'rgba(136, 183, 248, 0.38)', '#2a57ad'],
-    ['s', 'hall:s', '南', 'rgba(127, 228, 162, 0.32)', '#2f8a4d'],
+    ['e', 'hall:e', '東', 'rgba(238, 137, 137, 0.48)', '#b43a3a'],
+    ['w', 'hall:w', '西', 'rgba(136, 183, 248, 0.4)', '#2a57ad'],
+    ['s', 'hall:s', '南', 'rgba(127, 228, 162, 0.38)', '#2f8a4d'],
   ]) {
     const style = mapStyle(feature({ building: 'yes', hall, [field]: '1', 'tokyo-big-sight': 'yes' }, true))
     assert.equal(style.fill, fill)
     assert.deepEqual(style.hallLabel, { text: `${prefix}1`, color })
     assert.equal(style.strokeWidth, 1.05)
-    assert.equal(style.layer, 20)
+    assert.equal(style.layer, 200)
   }
   assert.equal(mapStyle(feature({ building: 'yes', name: 'Ordinary building' })).hallLabel, null)
 })
@@ -150,7 +221,25 @@ test('subhall hyphen and colon tags share canonical codes, labels and closed-are
   }], []).features[0]
   assert.equal(area.area, true)
   assert.deepEqual(mapStyle(area).hallLabel, { text: '東1', color: '#b43a3a' })
-  assert.equal(mapStyle(area).fill, 'rgba(238, 137, 137, 0.57)')
+  assert.equal(mapStyle(area).fill, 'rgba(238, 137, 137, 0.48)')
+})
+
+test('subhall areas cover same-level OSM geometry while other halls and orange buildings use lighter fills', () => {
+  const base = { 'tokyo-big-sight': 'yes', building: 'yes', level: '1' }
+  for (const key of ['hall-e', 'hall:w', 'hall-s']) {
+    const hall = mapStyle(feature({ ...base, [key]: '1' }, true))
+    for (const tags of [{ highway: 'footway' }, { highway: 'pedestrian' }, { railway: 'rail' }]) {
+      assert.ok(compareMapStyles(mapStyle(feature({ ...base, ...tags }, true)), hall) < 0)
+    }
+    assert.ok(compareMapStyles(hall, mapStyle(feature({ ...base, level: '2' }, true))) < 0)
+  }
+  for (const [hall, fill] of [
+    ['e', 'rgba(238, 137, 137, 0.28)'],
+    ['w', 'rgba(136, 183, 248, 0.19)'],
+    ['s', 'rgba(127, 228, 162, 0.16)'],
+  ]) assert.equal(mapStyle(feature({ ...base, hall }, true)).fill, fill)
+  assert.equal(mapStyle(feature(base, true)).fill, 'rgba(226, 132, 67, 0.08)')
+  assert.equal(mapStyle(feature({ ...base, 'hall-e': '1' }, false)).layer, 20)
 })
 
 test('reference scope fades outside features but preserves tagged indoor and hall colors', () => {
@@ -183,27 +272,53 @@ test('reference footways are solid green and only steps have meter-based dashes'
 test('reference pedestrian areas, bridges, railways and platforms retain their distinct styles', () => {
   const base = { 'tokyo-big-sight': 'yes' }
   const pedestrian = mapStyle(feature({ ...base, highway: 'pedestrian' }, true))
-  assert.equal(pedestrian.fill, 'rgba(122, 225, 218, 0.34)')
+  assert.equal(pedestrian.fill, 'rgb(210, 245, 242)')
   assert.equal(pedestrian.stroke, null)
   const bridge = mapStyle(feature({ ...base, highway: 'pedestrian', bridge: 'yes' }, true))
   assert.equal(bridge.strokeWidth, 1.25)
   assert.equal(bridge.layer, 101)
   const rail = mapStyle(feature({ ...base, railway: 'rail' }))
-  assert.equal(rail.stroke, 'rgba(42, 93, 158, 0.68)')
+  assert.equal(rail.stroke, 'rgb(110, 145, 189)')
   assert.equal(rail.strokeWidth, 2.4)
   assert.deepEqual(rail.lineDash, [])
   const platform = mapStyle(feature({ ...base, railway: 'platform' }, true))
   assert.equal(platform.stroke, null)
-  assert.equal(platform.fill, 'rgba(120, 128, 136, 0.28)')
+  assert.equal(platform.fill, 'rgb(217, 219, 222)')
 })
 
-test('reference drawing order uses level then type layer, with level zero mapped to one', () => {
+test('path styles composite onto white once and remain opaque without changing widths or dashes', () => {
+  assert.equal(opaqueOnWhite('rgba(10, 20, 30, 0)'), 'rgb(255, 255, 255)')
+  assert.equal(opaqueOnWhite('rgba(10, 20, 30, 1)'), 'rgb(10, 20, 30)')
+  assert.equal(opaqueOnWhite('#00b86b'), '#00b86b')
+  const base = { 'tokyo-big-sight': 'yes' }
+  const footway = mapStyle(feature({ ...base, highway: 'footway' }))
+  assert.equal(footway.stroke, 'rgb(137, 161, 148)')
+  assert.equal(footway.strokeWidth, 0.9)
+  const steps = mapStyle(feature({ ...base, highway: 'steps' }))
+  assert.equal(steps.stroke, footway.stroke)
+  assert.deepEqual(steps.lineDash, [1.2, 2.4])
+  assert.equal(mapStyle(feature({ highway: 'footway' })).stroke, 'rgb(191, 193, 195)')
+  assert.equal(mapStyle(feature({ ...base, highway: 'pedestrian', bridge: 'yes' }, true)).stroke, 'rgb(162, 210, 214)')
+  for (const tags of [
+    { highway: 'pedestrian' }, { railway: 'rail' }, { railway: 'station' },
+    { railway: 'platform' }, { highway: 'cycleway' }, { pathway: 'yes' },
+  ]) {
+    const style = mapStyle(feature({ ...base, ...tags }, true))
+    for (const color of [style.stroke, style.fill]) {
+      if (color) assert.equal(color.startsWith('rgba'), false)
+    }
+    assert.equal(filteredLevelStyle(style).fill, null)
+    assert.equal(filteredLevelStyle(style).stroke, filteredOutline)
+  }
+})
+
+test('drawing order uses exact numeric level then type layer', () => {
   const low = mapStyle(feature({ level: '-1', highway: 'tertiary' }))
   const hall = mapStyle(feature({ level: '1', building: 'yes', 'hall:e': '1' }))
   const road = mapStyle(feature({ level: '0', highway: 'footway' }))
   const high = mapStyle(feature({ level: '2', building: 'yes' }))
-  assert.equal(road.level, 1)
-  assert.deepEqual([high, road, hall, low].sort(compareMapStyles), [low, hall, road, high])
+  assert.equal(road.level, 0)
+  assert.deepEqual([high, road, hall, low].sort(compareMapStyles), [low, road, hall, high])
 })
 
 test('active relation tags accumulate without losing conflicting values or mutating input', () => {

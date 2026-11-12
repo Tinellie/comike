@@ -1,30 +1,36 @@
 import { BlockLayer } from '../preview/BlockLayer'
-import { HalfBoothLayer } from '../preview/HalfBoothLayer'
 import { NumberLayer } from '../preview/layers'
 import type { CanvasLayer, PreviewOptions } from '../preview/layers'
-import type { Point } from './viewport'
+import type { Bounds, Point } from './viewport'
 import type { HallPlacement, MapHall } from './halls'
-import { hallMatrix, object } from './halls'
+import { hallMatrix, hallTextRotation, object } from './halls'
 import hallMetaSource from '../../../ref/hall-meta.json?raw'
+import { filteredOutline } from './style'
+import { HallVisibility, intersectsBounds, paddedBounds } from './hallVisibility'
 
 const hallMeta = object(JSON.parse(hallMetaSource))
 if (!Array.isArray(hallMeta.halls)) throw new Error('Hall marker 元数据列表无效')
-const markerColors = hallMeta.halls.map(value => {
+const hallEntries = hallMeta.halls.map(value => {
   const entry = object(value)
   if (typeof entry.name !== 'string' || !entry.name
     || typeof entry.code !== 'string' || !/^[EWSN]$/.test(entry.code)
-    || typeof entry['marker-color'] !== 'string' || !/^#[0-9a-f]{6}$/i.test(entry['marker-color'])) {
-    throw new Error('Hall marker 名称、编号或颜色无效')
+    || typeof entry['marker-color'] !== 'string' || !/^#[0-9a-f]{6}$/i.test(entry['marker-color'])
+    || typeof entry.level !== 'number' || !Number.isFinite(entry.level)) {
+    throw new Error('Hall marker 名称、编号、颜色或 level 无效')
   }
-  return { name: entry.name, code: entry.code, color: entry['marker-color'] }
+  return { name: entry.name, code: entry.code, color: entry['marker-color'], level: entry.level }
 })
 
-export function hallMarkerColor(hall: MapHall): string {
+export function hallMetadata(hall: MapHall) {
   const codes = new Set(hall.labels.flatMap(label => label.code ? [label.code[0]] : []))
-  const matches = markerColors.filter(entry => codes.size > 0
+  const matches = hallEntries.filter(entry => codes.size > 0
     ? codes.has(entry.code) : hall.name?.startsWith(entry.name))
   if (matches.length !== 1) throw new Error(`Hall ${hall.name ?? hall.index + 1} 缺少唯一 marker-color 配置`)
-  return matches[0].color
+  return matches[0]
+}
+
+export function hallMarkerColor(hall: MapHall): string {
+  return hallMetadata(hall).color
 }
 
 export interface HallDisplay {
@@ -37,38 +43,88 @@ export interface HallDisplay {
 }
 
 export const defaultHallDisplay: HallDisplay = {
-  visible: true, boxes: true, numbers: true, halfBooths: true, islands: true, labels: true,
+  visible: true, boxes: true, numbers: true, halfBooths: false, islands: true, labels: true,
 }
 
 export class HallMapLayer {
   private readonly layers: CanvasLayer[] = [
-    new BlockLayer(), new NumberLayer(), new HalfBoothLayer(),
+    new BlockLayer(), new NumberLayer(),
   ]
   private readonly image = new Image()
+  private readonly visibility = new WeakMap<MapHall, HallVisibility>()
+  private readonly blockBackgrounds = new WeakMap<MapHall, Map<string, Path2D>>()
 
   draw(
     context: CanvasRenderingContext2D, hall: MapHall, placement: HallPlacement,
-    origin: Point, display: HallDisplay, selected: boolean,
+    origin: Point, display: HallDisplay, selected: boolean, viewRotation = 0, filtered = false,
+    cull = true,
   ) {
     if (!display.visible || !hall.page.hallOutline) return
     const markerColor = hallMarkerColor(hall)
     const [a, b, c, d, e, f] = hallMatrix(hall, placement)
     context.save()
     context.transform(a, b, c, d, e - origin.x, f - origin.y)
+    let view: Bounds | null = null
+    if (cull) {
+      const inverse = context.getTransform().inverse()
+      const points = [
+        inverse.transformPoint({ x: 0, y: 0 }),
+        inverse.transformPoint({ x: context.canvas.width, y: 0 }),
+        inverse.transformPoint({ x: context.canvas.width, y: context.canvas.height }),
+        inverse.transformPoint({ x: 0, y: context.canvas.height }),
+      ]
+      view = {
+        minX: Math.min(...points.map(p => p.x)), minY: Math.min(...points.map(p => p.y)),
+        maxX: Math.max(...points.map(p => p.x)), maxY: Math.max(...points.map(p => p.y)),
+      }
+    }
+    let visibility = this.visibility.get(hall)
+    if (!visibility) {
+      visibility = new HallVisibility(hall.page)
+      this.visibility.set(hall, visibility)
+    }
+    let backgrounds = this.blockBackgrounds.get(hall)
+    if (!backgrounds) {
+      backgrounds = new Map()
+      const booths = new Map(hall.page.booths.map(booth => [booth.id, booth]))
+      for (const block of hall.page.blocks ?? []) {
+        const path = new Path2D()
+        for (const id of block.boothIds) {
+          const booth = booths.get(id)
+          if (!booth) throw new Error(`Block ${block.id} 缺少 Booth ${id}`)
+          const b = booth.bbox
+          path.rect(b.x, b.y, b.width, b.height)
+        }
+        backgrounds.set(block.id, path)
+      }
+      this.blockBackgrounds.set(hall, backgrounds)
+    }
+    const textPadding = 32 * Math.max(1, 1 / placement.aspectRatio)
+    const page = view ? visibility.visiblePage(view, textPadding) : hall.page
     context.setLineDash([])
     context.beginPath()
     const [first, ...rest] = hall.page.hallOutline.polygon
     context.moveTo(first.x, first.y)
     for (const point of rest) context.lineTo(point.x, point.y)
     context.closePath()
-    context.strokeStyle = selected ? '#f07800' : '#d32f2f'
+    context.strokeStyle = filtered ? filteredOutline : selected ? '#f07800' : '#d32f2f'
     context.lineWidth = selected ? 6 : 3
     context.stroke()
     const options: PreviewOptions = {
-      background: false, boxes: display.boxes, numbers: display.numbers, halfBooths: display.halfBooths,
+      background: false, boxes: display.boxes, numbers: display.numbers, halfBooths: false,
       islands: display.islands, groups: false, gaps: false, blockFrames: false, selectedIsland: null,
     }
+    if (display.boxes && !filtered) {
+      context.fillStyle = 'rgba(128, 128, 128, 0.18)'
+      for (const block of page.blocks ?? []) {
+        const path = backgrounds.get(block.id)
+        if (!path) throw new Error(`Block ${block.id} 缺少背景几何`)
+        context.fill(path)
+      }
+    }
+    const textRotation = hallTextRotation(hall, placement.rotation + viewRotation)
     const drawText = (x: number, y: number, draw: () => void) => {
+      if (filtered) return
       context.save()
       context.translate(x, y)
       // Cancel anisotropy around the label anchor, before its own text rotation.
@@ -79,10 +135,19 @@ export class HallMapLayer {
     }
     for (const layer of this.layers) {
       context.save()
-      layer.draw(context, { page: hall.page, image: this.image, options, drawText })
+      layer.draw(context, { page, image: this.image, options, drawText,
+        outlineColor: filtered ? filteredOutline : '#444444',
+        numberColor: '#444444', numberBackground: false,
+        numberRotation: () => textRotation })
       context.restore()
     }
     const drawMarker = (text: string, center: Point, fontSize: number, rotation = 0) => {
+      if (view) {
+        const radius = (text.length + 2) * fontSize * Math.max(1, 1 / placement.aspectRatio)
+        if (!intersectsBounds(view, paddedBounds({
+          minX: center.x, maxX: center.x, minY: center.y, maxY: center.y,
+        }, radius))) return
+      }
       context.textAlign = 'center'
       context.textBaseline = 'middle'
       context.font = `bold ${fontSize}px "Yu Gothic", "Noto Sans JP", sans-serif`
@@ -93,15 +158,14 @@ export class HallMapLayer {
         context.fillText(text, 0, 0)
       })
     }
-    if (display.islands) {
-      const rotation = -Math.round(placement.rotation / 90) * 90
+    if (display.islands && !filtered) {
       for (const marker of hall.page.islandMarkers ?? []) {
-        drawMarker(marker.label ?? '?', marker.center, 20, rotation)
+        drawMarker(marker.label ?? '?', marker.center, 20, textRotation)
       }
     }
-    if (display.labels) {
+    if (display.labels && !filtered) {
       for (const label of hall.labels) {
-        drawMarker(label.text ?? label.code ?? '?', label.center, 22)
+        drawMarker(label.text ?? label.code ?? '?', label.center, 22, textRotation)
       }
     }
     context.restore()

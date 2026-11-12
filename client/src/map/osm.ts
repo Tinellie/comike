@@ -8,6 +8,11 @@ export function tagValues(tags: Tags, key: string): string[] {
   return value === undefined ? [] : Array.isArray(value) ? value : [value]
 }
 
+export function featureLevels(tags: Tags): number[] {
+  return [...new Set(tagValues(tags, 'level').flatMap(value => value.split(/[;,]/))
+    .map(value => value.trim()).filter(value => value !== '').map(Number).filter(Number.isFinite))]
+}
+
 export function hallCodes(tags: Tags): string[] {
   return [...new Set(['e', 'w', 's', 'n'].flatMap(direction =>
     [`hall:${direction}`, `hall-${direction}`].flatMap(key =>

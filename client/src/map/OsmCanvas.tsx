@@ -1,9 +1,13 @@
-import { useEffect, useRef } from 'react'
-import { Box, Typography } from '@mui/material'
+import { useEffect, useRef, useState } from 'react'
+import {
+  Accordion, AccordionDetails, AccordionSummary, Box, Checkbox, FormControlLabel,
+  FormGroup, Paper, Slider, Typography,
+} from '@mui/material'
 import type { OsmMapData } from './osm'
 import { OsmMapRenderer } from './OsmMapRenderer'
 import type { HallTransforms, MapHall } from './halls'
 import { defaultHallDisplay } from './HallMapLayer'
+import { dragRotation } from './viewport'
 
 interface OsmCanvasProps {
   data: OsmMapData
@@ -17,6 +21,15 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<OsmMapRenderer | null>(null)
   const hallState = useRef({ halls, transforms })
+  const [rotation, setRotation] = useState(0)
+  const [levels, setLevels] = useState<number[]>([])
+  const viewState = useRef({ rotation, levels })
+
+  useEffect(() => {
+    viewState.current = { rotation, levels }
+    rendererRef.current?.setRotation(rotation)
+    rendererRef.current?.setLevels(levels)
+  }, [rotation, levels])
 
   useEffect(() => {
     hallState.current = { halls, transforms }
@@ -35,12 +48,14 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
     function resize() {
       if (!canvas || !container) return
       try {
-        renderer ??= new OsmMapRenderer(canvas, data, () => {})
+        renderer ??= new OsmMapRenderer(canvas, data, () => {}, setRotation)
         const state = hallState.current
         renderer.setHalls(state.halls, state.transforms, defaultHallDisplay, null)
         rendererRef.current = renderer
         const bounds = canvas.getBoundingClientRect()
         renderer.resize(bounds.width, bounds.height, window.devicePixelRatio || 1)
+        renderer.setRotation(viewState.current.rotation)
+        renderer.setLevels(viewState.current.levels)
       } catch (reason) {
         console.error('OSM rendering failed:', reason)
         onError(reason instanceof Error ? reason.message : 'OSM 地图绘制失败')
@@ -48,17 +63,27 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
     }
     function pointerDown(event: PointerEvent) {
       if (event.button !== 0 || drag || !canvas) return
+      event.preventDefault()
       canvas.focus({ preventScroll: true })
       canvas.setPointerCapture(event.pointerId)
       drag = {
         id: event.pointerId, x: event.clientX, y: event.clientY,
       }
-      canvas.style.cursor = 'grabbing'
+      canvas.style.cursor = event.altKey ? 'crosshair' : 'grabbing'
     }
     function pointerMove(event: PointerEvent) {
       if (!drag || drag.id !== event.pointerId) return
       const dx = event.clientX - drag.x, dy = event.clientY - drag.y
-      renderer?.pan(dx, dy)
+      if (event.altKey && canvas) {
+        const bounds = canvas.getBoundingClientRect()
+        renderer?.rotate(dragRotation(
+          { x: drag.x, y: drag.y }, { x: event.clientX, y: event.clientY },
+          { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 },
+        ))
+      } else {
+        renderer?.pan(dx, dy)
+      }
+      if (canvas) canvas.style.cursor = event.altKey ? 'crosshair' : 'grabbing'
       drag.x = event.clientX
       drag.y = event.clientY
     }
@@ -87,6 +112,7 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
       else return
       event.preventDefault()
     }
+    resize()
     observer.observe(container)
     window.addEventListener('resize', resize)
     canvas.addEventListener('pointerdown', pointerDown)
@@ -122,10 +148,38 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
       >
         <canvas
           ref={canvasRef}
-          aria-label="OSM 地图，可按住鼠标左键拖动、滚轮缩放，也可用方向键和加减键操作"
+          aria-label="OSM 地图，可拖动、滚轮缩放、Alt 拖动旋转，也可用方向键和加减键操作"
           tabIndex={0}
           style={{ display: 'block', width: '100%', height: '100%', cursor: 'grab', touchAction: 'none' }}
         />
+        <Paper elevation={4} sx={{
+          position: 'absolute', right: 16, top: 72, width: 180, p: 2,
+          maxHeight: 'calc(100% - 120px)', overflow: 'auto',
+        }}>
+          <Typography id="map-rotation-label" variant="body2">rotation</Typography>
+          <Slider aria-labelledby="map-rotation-label" value={rotation} min={-180} max={180}
+            step={1} valueLabelDisplay="auto" valueLabelFormat={value => `${Math.round(value)}°`}
+            onChange={(_, value) => {
+              if (typeof value === 'number') setRotation(value)
+            }} />
+          <Accordion disableGutters elevation={0} defaultExpanded>
+            <AccordionSummary aria-controls="map-level-options" id="map-level-label"
+              expandIcon={<Box sx={{ width: 7, height: 7, borderRight: '1px solid', borderBottom: '1px solid',
+                transform: 'rotate(45deg)' }} />}>
+              <Typography variant="body2">level</Typography>
+            </AccordionSummary>
+            <AccordionDetails id="map-level-options" sx={{ p: 0 }}>
+              <FormGroup aria-labelledby="map-level-label">
+                {[1, 2, 3, 4].map(level => (
+                  <FormControlLabel key={level} label={String(level)}
+                    control={<Checkbox checked={levels.includes(level)} onChange={(_, checked) => {
+                      setLevels(previous => checked ? [...previous, level] : previous.filter(value => value !== level))
+                    }} />} />
+                ))}
+              </FormGroup>
+            </AccordionDetails>
+          </Accordion>
+        </Paper>
         <Box sx={{ position: 'absolute', right: 6, bottom: 4, bgcolor: 'rgba(255,255,255,0.9)', px: 0.5 }}>
           <Typography variant="caption">
             © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>

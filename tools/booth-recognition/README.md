@@ -224,6 +224,9 @@ Preview 的独立 `场馆标签` 层经现有 PDF 仿射变换对齐，可在关
 - `block-grouping.json`：独立 Block 分组快照，包含每页成员、包围框及矩阵行列数，不含 Island 归属或逐条边线。
 - `result.json`：最终结果，包含尺寸、格子/Island 坐标、文字、评分、问题和校正依据。
 - `final.json`：保存 `result.json` 后生成的精简业务数据，嵌套为 `halls → islands → blocks → booths`，不含统计、评分、推断或备用数据；字段见下文。
+  每个 Hall 的 `textRotation` 保留该页统一的 Booth OCR 旋转角度（0/90/180/270°），
+  对应 Canvas 中原 PDF 数字的顺时针绘制角度；不会根据格子宽高猜测方向。
+  同页 OCR 方向缺失或不一致时导出明确报错，不生成不可靠的基础角度。
 - `page-001.png`：提取后的原始底图；坐标对应这张图。
 - `page-001-pdf.png`：PDF 输入的完整页面；Preview 通过 `pdfPreview.transform` 对齐识别标注。
 - `page-001-overlay.png`：Block 外轮廓/内分割线、Booth 数字与按最终状态着色的 Island 方框/出现位置 ID。
@@ -238,6 +241,7 @@ Preview 的独立 `场馆标签` 层经现有 PDF 仿射变换对齐，可在关
 ```text
 halls[]
   name                         ← page.venue.label
+  textRotation                 ← 本页统一的原 PDF 数字方向，0/90/180/270°
   islands[]
     id, code                   ← Island ID、label
     markers[]

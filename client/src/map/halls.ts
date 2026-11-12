@@ -22,6 +22,7 @@ export interface HallTransforms {
 export interface MapHall {
   index: number
   name: string | null
+  textRotation: number
   page: PreviewPage
   pivot: Point
   bounds: Bounds
@@ -84,6 +85,8 @@ export function parseHalls(value: unknown): MapHall[] {
   if (!halls.length) throw new Error('final.json 没有 Hall')
   return halls.map((raw, index) => {
     const hall = object(raw), name = text(hall.name)
+    const textRotation = number(hall.textRotation)
+    if (![0, 90, 180, 270].includes(textRotation)) throw new Error('Hall 文字基础角度必须是 90° 的倍数')
     const boundary = list(hall.boundary).map(point)
     if (boundary.length < 3) throw new Error('Hall 至少需要三个边界顶点')
     const bounds = pointsBounds(boundary)
@@ -106,7 +109,7 @@ export function parseHalls(value: unknown): MapHall[] {
         for (const rawBooth of list(block.booths)) {
           const booth = object(rawBooth), id = identifier(booth.id, ids), b = box(booth.bbox)
           const cell: PreviewBooth = {
-            id, bbox: b, number: text(booth.number), rotation: b.height > b.width ? 270 : 0,
+            id, bbox: b, number: text(booth.number), rotation: textRotation,
             status: booth.number === null ? 'unrecognized' : 'recognized',
             islandId, blockId, assignment: null,
           }
@@ -167,10 +170,14 @@ export function parseHalls(value: unknown): MapHall[] {
       throw new Error('Hall 标签编号无效')
     }
     return {
-      index, name, page, bounds: extent, labels,
+      index, name, textRotation, page, bounds: extent, labels,
       pivot: { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 },
     }
   })
+}
+
+export function hallTextRotation(hall: MapHall, screenRotation: number): number {
+  return hall.textRotation - Math.round((screenRotation + hall.textRotation) / 180) * 180
 }
 
 export function parseHallTransforms(value: unknown, halls: MapHall[]): HallTransforms {

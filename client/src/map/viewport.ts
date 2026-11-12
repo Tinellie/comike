@@ -13,6 +13,7 @@ export interface Bounds {
 export interface Viewport {
   center: Point
   scale: number
+  rotation?: number
 }
 
 export interface Size {
@@ -33,34 +34,46 @@ export function projectCoordinate(latitude: number, longitude: number): Point {
   }
 }
 
-export function fitViewport(bounds: Bounds, size: Size): Viewport {
+export function rotatePoint(point: Point, degrees: number): Point {
+  const angle = degrees * Math.PI / 180
+  const cosine = Math.cos(angle), sine = Math.sin(angle)
+  return { x: point.x * cosine - point.y * sine, y: point.x * sine + point.y * cosine }
+}
+
+export function fitViewport(bounds: Bounds, size: Size, rotation = 0): Viewport {
+  const angle = rotation * Math.PI / 180
+  const width = Math.max(1, bounds.maxX - bounds.minX), height = Math.max(1, bounds.maxY - bounds.minY)
   return {
     center: { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 },
+    rotation,
     scale: Math.min(
-      Math.max(1, size.width - 64) / Math.max(1, bounds.maxX - bounds.minX),
-      Math.max(1, size.height - 64) / Math.max(1, bounds.maxY - bounds.minY),
+      Math.max(1, size.width - 64) / (Math.abs(Math.cos(angle)) * width + Math.abs(Math.sin(angle)) * height),
+      Math.max(1, size.height - 64) / (Math.abs(Math.sin(angle)) * width + Math.abs(Math.cos(angle)) * height),
     ),
   }
 }
 
 export function screenToWorld(point: Point, view: Viewport, size: Size): Point {
+  const offset = rotatePoint({ x: (point.x - size.width / 2) / view.scale,
+    y: (point.y - size.height / 2) / view.scale }, -(view.rotation ?? 0))
   return {
-    x: view.center.x + (point.x - size.width / 2) / view.scale,
-    y: view.center.y + (point.y - size.height / 2) / view.scale,
+    x: view.center.x + offset.x, y: view.center.y + offset.y,
   }
 }
 
 export function worldToScreen(point: Point, view: Viewport, size: Size): Point {
+  const offset = rotatePoint({ x: (point.x - view.center.x) * view.scale,
+    y: (point.y - view.center.y) * view.scale }, view.rotation ?? 0)
   return {
-    x: (point.x - view.center.x) * view.scale + size.width / 2,
-    y: (point.y - view.center.y) * view.scale + size.height / 2,
+    x: offset.x + size.width / 2, y: offset.y + size.height / 2,
   }
 }
 
 export function panViewport(view: Viewport, dx: number, dy: number): Viewport {
+  const offset = rotatePoint({ x: dx / view.scale, y: dy / view.scale }, -(view.rotation ?? 0))
   return {
     ...view,
-    center: { x: view.center.x - dx / view.scale, y: view.center.y - dy / view.scale },
+    center: { x: view.center.x - offset.x, y: view.center.y - offset.y },
   }
 }
 
@@ -69,11 +82,33 @@ export function zoomViewport(
 ): Viewport {
   const scale = Math.max(minimum, Math.min(maximum, view.scale * factor))
   const world = screenToWorld(anchor, view, size)
+  const offset = rotatePoint({ x: (anchor.x - size.width / 2) / scale,
+    y: (anchor.y - size.height / 2) / scale }, -(view.rotation ?? 0))
   return {
+    ...view,
     scale,
     center: {
-      x: world.x - (anchor.x - size.width / 2) / scale,
-      y: world.y - (anchor.y - size.height / 2) / scale,
+      x: world.x - offset.x, y: world.y - offset.y,
     },
   }
+
+}
+
+export function viewportBounds(view: Viewport, size: Size, margin = 0): Bounds {
+  const corners = [
+    { x: -margin, y: -margin }, { x: size.width + margin, y: -margin },
+    { x: size.width + margin, y: size.height + margin }, { x: -margin, y: size.height + margin },
+  ].map(point => screenToWorld(point, view, size))
+  return {
+    minX: Math.min(...corners.map(p => p.x)), minY: Math.min(...corners.map(p => p.y)),
+    maxX: Math.max(...corners.map(p => p.x)), maxY: Math.max(...corners.map(p => p.y)),
+  }
+}
+
+export function dragRotation(previous: Point, current: Point, center: Point): number {
+  const from = { x: previous.x - center.x, y: previous.y - center.y }
+  const to = { x: current.x - center.x, y: current.y - center.y }
+  if (Math.hypot(from.x, from.y) < 8 || Math.hypot(to.x, to.y) < 8) return 0
+  const degrees = (Math.atan2(to.y, to.x) - Math.atan2(from.y, from.x)) * 180 / Math.PI
+  return ((degrees + 540) % 360) - 180
 }

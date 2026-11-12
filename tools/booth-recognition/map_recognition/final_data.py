@@ -93,6 +93,15 @@ def simplify_result(data: dict[str, object]) -> dict[str, object]:
         if "islandAssignment" not in page or "halfBooths" not in page:
             raise ValueError("Final export requires completed Island assignment and half-booth splitting")
         booths = _index(page.get("booths"), "booths")
+        rotations: set[int] = set()
+        for booth in booths.values():
+            rotation = booth.get("rotation")
+            if isinstance(rotation, bool) or not isinstance(rotation, int) or rotation not in (0, 90, 180, 270):
+                raise ValueError("Final export requires a quarter-turn OCR rotation for every Booth")
+            rotations.add(rotation)
+        if len(rotations) != 1:
+            raise ValueError("Final export requires one shared Booth text rotation per page")
+        text_rotation = rotations.pop()
         blocks = _index(page.get("blocks"), "blocks")
         markers = _index(page.get("islandMarkers"), "islandMarkers")
         islands = _index(page.get("islands"), "islands")
@@ -153,7 +162,10 @@ def simplify_result(data: dict[str, object]) -> dict[str, object]:
         if used_blocks != set(blocks) or used_booths != set(booths) or used_markers != set(markers):
             raise ValueError("Final export would omit unassigned Blocks, Booths or markers")
         venue = _object(page.get("venue"), "venue")
-        hall = {"name": _text(venue.get("label"), f"Page {page.get('page')} hall name"), "islands": final_islands}
+        hall = {
+            "name": _text(venue.get("label"), f"Page {page.get('page')} hall name"),
+            "textRotation": text_rotation, "islands": final_islands,
+        }
         if "hallLabels" in page:
             hall["labels"] = [
                 {

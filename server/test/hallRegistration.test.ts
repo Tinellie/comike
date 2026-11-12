@@ -13,7 +13,7 @@ function rectangle(x: number, y: number, width: number, height: number): Point[]
 
 function fixture(boundary = rectangle(0, 0, 200, 100)): MapHall {
   return parseHalls({ halls: [{
-    name: 'Composite', boundary,
+    name: 'Composite', textRotation: 0, boundary,
     labels: [
       { id: 'l1', code: 'E1', text: '東1', pos: { x: 50, y: 5 } },
       { id: 'l2', code: 'E1', text: 'E1', pos: { x: 50, y: 95 } },

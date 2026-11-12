@@ -5,7 +5,7 @@ export class HalfBoothLayer {
   draw(context: Pick<CanvasRenderingContext2D,
     'lineWidth' | 'strokeStyle' | 'fillStyle' | 'font' | 'textAlign' | 'textBaseline'
     | 'beginPath' | 'moveTo' | 'lineTo' | 'stroke' | 'setLineDash' | 'fillText'>,
-  scene: Pick<DrawingScene, 'page' | 'options' | 'drawText'>) {
+  scene: Pick<DrawingScene, 'page' | 'options' | 'drawText' | 'outlineColor'>) {
     const { page, options } = scene
     if (!options.halfBooths || page.halfBooths === null) return
     const parents = new Map(page.booths.map(b => [b.id, b]))
@@ -17,7 +17,8 @@ export class HalfBoothLayer {
       const parent = parents.get(half.boothId)
       if (!parent || (options.selectedIsland !== null && parent.islandId !== options.selectedIsland)) continue
       const b = half.bbox
-      const color = half.status === 'resolved' && parent.status !== 'needs_review' ? '#006d77' : '#e08000'
+      const color = scene.outlineColor
+        ?? (half.status === 'resolved' && parent.status !== 'needs_review' ? '#006d77' : '#e08000')
       if (half.id.endsWith('-h1')) {
         const vertical = b.width < parent.bbox.width
         context.strokeStyle = color

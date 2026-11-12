@@ -44,6 +44,10 @@ export function createApp({
     }
     res.sendFile(join(recognitionDirectory, name), (error) => {
       if (!error) return
+      if (res.headersSent || res.destroyed) {
+        next(error)
+        return
+      }
       if ('code' in error && error.code === 'ENOENT') {
         console.warn(`Recognition asset missing: ${name}`)
         res.status(404).json({ message: 'Recognition output not found. Run the recognition script first.' })
@@ -61,6 +65,10 @@ export function createApp({
     res.type('application/xml')
     res.sendFile(osmFile, (error) => {
       if (!error) return
+      if (res.headersSent || res.destroyed) {
+        next(error)
+        return
+      }
       if ('code' in error && error.code === 'ENOENT') {
         console.warn('OSM map file missing:', osmFile)
         res.status(404).type('json').json({ message: 'OSM map not found. Add ref/osm-map.osm first.' })
@@ -82,6 +90,10 @@ export function createApp({
     res.set('Cache-Control', 'no-store')
     res.sendFile(file, error => {
       if (!error) return
+      if (res.headersSent || res.destroyed) {
+        next(error)
+        return
+      }
       if ('code' in error && error.code === 'ENOENT') {
         console.warn('Hall asset missing:', file)
         res.status(404).json({ message: 'Hall data file not found' })
@@ -140,6 +152,10 @@ export function createApp({
   }
 
   const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, next) => {
+    if (res.destroyed) {
+      console.warn('Request connection closed:', error)
+      return
+    }
     console.error('Request failed:', error)
     if (res.headersSent) {
       next(error)

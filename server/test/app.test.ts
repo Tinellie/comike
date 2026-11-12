@@ -5,7 +5,49 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import type { AddressInfo } from 'node:net'
+import { get } from 'node:http'
 import { createApp } from '../src/app.js'
+
+test('aborted map and preview downloads do not crash the server or modify sent headers', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'comike-abort-test-'))
+  const payload = Buffer.alloc(8 * 1024 * 1024, 32)
+  for (const name of ['osm-map.osm', 'final.json', 'hall-transforms.json', 'result.json']) {
+    await writeFile(join(directory, name), payload)
+  }
+  const app = createApp({
+    checkDatabase: async () => {},
+    recognitionDirectory: directory,
+    osmFile: join(directory, 'osm-map.osm'),
+    hallTransformsFile: join(directory, 'hall-transforms.json'),
+  })
+  const server = app.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(async () => {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    await rm(directory, { recursive: true })
+  })
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  for (const path of [
+    '/api/map/osm-map.osm', '/api/map/final.json',
+    '/api/map/hall-transforms.json', '/api/preview/result.json',
+  ]) {
+    await new Promise<void>((resolve, reject) => {
+      const request = get(base + path, response => {
+        assert.equal(response.statusCode, 200)
+        response.once('data', () => response.destroy())
+        response.once('close', resolve)
+        response.once('error', reject)
+      })
+      request.once('error', reject)
+    })
+    const health = await fetch(`${base}/api/health`)
+    assert.equal(health.status, 200)
+    assert.deepEqual(await health.json(), { status: 'ok' })
+  }
+  const response = await fetch(`${base}/api/map/osm-map.osm`)
+  assert.equal(response.status, 200)
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), payload)
+})
 
 test('Express APIs and SPA deep links', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'comike-test-'))

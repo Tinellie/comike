@@ -3,17 +3,20 @@
         {
             "name": "東",
             "code": "E",
-            "marker-color": "#B43A3A"
+            "marker-color": "#B43A3A",
+            "level": 1
         },
         {
             "name": "西",
             "code": "W",
-            "marker-color": "#2A57AD"
+            "marker-color": "#2A57AD",
+            "level": 1
         },
         {
             "name": "南",
             "code": "S",
-            "marker-color": "#2F8A4D"
+            "marker-color": "#2F8A4D",
+            "level": 1
         }
     ]
 }

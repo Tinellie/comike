@@ -1,5 +1,5 @@
 import { statusColors } from './data'
-import type { PreviewPage } from './data'
+import type { PreviewBooth, PreviewPage } from './data'
 import { inverseTransform } from './pdfPreview'
 
 export interface PreviewOptions {
@@ -21,6 +21,10 @@ export interface DrawingScene {
   image: HTMLImageElement
   options: PreviewOptions
   drawText?: (x: number, y: number, draw: () => void) => void
+  outlineColor?: string
+  numberRotation?: (booth: PreviewBooth) => number
+  numberColor?: string
+  numberBackground?: boolean
 }
 
 export function drawSceneText(scene: Pick<DrawingScene, 'drawText'>, x: number, y: number, draw: () => void) {
@@ -48,12 +52,12 @@ export class BackgroundLayer implements CanvasLayer {
 }
 
 export class BoothLayer implements CanvasLayer {
-  draw(context: CanvasRenderingContext2D, { page, options }: DrawingScene) {
+  draw(context: CanvasRenderingContext2D, { page, options, outlineColor }: DrawingScene) {
     if (!options.boxes) return
     context.lineWidth = 2
     for (const booth of page.booths) {
       const { x, y, width, height } = booth.bbox
-      context.strokeStyle = statusColors[booth.status]
+      context.strokeStyle = outlineColor ?? statusColors[booth.status]
       context.strokeRect(x + 1, y + 1, width - 2, height - 2)
     }
   }
@@ -75,13 +79,15 @@ export class NumberLayer implements CanvasLayer {
         context.save()
         context.translate(x + width / 2, y + height / 2)
         // OCR stores correction CCW; place labels in the original image's orientation.
-        context.rotate(booth.rotation * Math.PI / 180)
+        context.rotate((scene.numberRotation?.(booth) ?? booth.rotation) * Math.PI / 180)
         context.font = `bold ${fontSize}px sans-serif`
         const text = booth.number ?? '?'
-        const textWidth = context.measureText(text).width
-        context.fillStyle = 'rgba(255,255,255,0.94)'
-        context.fillRect(-textWidth / 2 - 2, -fontSize / 2 - 2, textWidth + 4, fontSize + 4)
-        context.fillStyle = statusColors[booth.status]
+        if (scene.numberBackground !== false) {
+          const textWidth = context.measureText(text).width
+          context.fillStyle = 'rgba(255,255,255,0.94)'
+          context.fillRect(-textWidth / 2 - 2, -fontSize / 2 - 2, textWidth + 4, fontSize + 4)
+        }
+        context.fillStyle = scene.numberColor ?? statusColors[booth.status]
         context.fillText(text, 0, 0)
         context.restore()
       })

@@ -6,7 +6,7 @@ import type { CanvasLayer, DrawingScene } from './layers'
 type BlockContext = Pick<CanvasRenderingContext2D,
   'lineWidth' | 'strokeStyle' | 'setLineDash' | 'beginPath' | 'moveTo' | 'lineTo' | 'stroke'>
 
-export function drawBlockBorders(context: BlockContext, blocks: PreviewBlock[]) {
+export function drawBlockBorders(context: BlockContext, blocks: PreviewBlock[], outlineColor?: string) {
   context.lineWidth = 2
   context.setLineDash([])
   const drawEdges = (edges: PreviewBlockEdge[]) => {
@@ -18,7 +18,7 @@ export function drawBlockBorders(context: BlockContext, blocks: PreviewBlock[]) 
     }
     for (const [status, batch] of batches) {
       context.beginPath()
-      context.strokeStyle = statusColors[status]
+      context.strokeStyle = outlineColor ?? statusColors[status]
       for (const edge of batch) {
         context.moveTo(edge.x1, edge.y1)
         context.lineTo(edge.x2, edge.y2)
@@ -40,6 +40,6 @@ export class BlockLayer implements CanvasLayer {
       this.legacy.draw(context, scene)
       return
     }
-    drawBlockBorders(context, page.blocks)
+    drawBlockBorders(context, page.blocks, scene.outlineColor)
   }
 }

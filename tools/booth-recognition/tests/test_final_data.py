@@ -26,7 +26,7 @@ def fixture() -> dict:
             }],
             "booths": [{
                 "id": "c1", "number": "01", "bbox": {"x": 10, "y": 20, "width": 41, "height": 29},
-                "status": "needs_review", "recognitionScore": 0.9, "issues": ["low_confidence"],
+                "status": "needs_review", "recognitionScore": 0.9, "issues": ["low_confidence"], "rotation": 270,
             }],
             "halfBooths": [
                 {"id": "c1-h1", "boothId": "c1", "suffix": "a",
@@ -56,13 +56,13 @@ class FinalDataTests(unittest.TestCase):
         source["pages"][0]["hallOutline"] = {"method": "nonwhite_bbox", "polygon": polygon}
         hall = simplify_result(source)["halls"][0]
         self.assertEqual(hall["boundary"], polygon)
-        self.assertEqual(set(hall), {"name", "islands", "boundary"})
+        self.assertEqual(set(hall), {"name", "textRotation", "islands", "boundary"})
 
     def test_exact_nested_output_strips_diagnostics_without_mutating_source(self) -> None:
         source = fixture()
         original = copy.deepcopy(source)
         self.assertEqual(simplify_result(source), {"halls": [{
-            "name": "East", "islands": [{
+            "name": "East", "textRotation": 270, "islands": [{
                 "id": "i1", "code": "A", "markers": [{"id": "m1", "pos": {"x": 10.5, "y": 2}}],
                 "blocks": [{
                     "id": "b1", "bbox": {"x": 10, "y": 20, "width": 41, "height": 29},
@@ -74,6 +74,21 @@ class FinalDataTests(unittest.TestCase):
             }],
         }]})
         self.assertEqual(source, original)
+
+    def test_text_rotation_preserves_shared_ocr_direction_and_rejects_missing_or_mixed_evidence(self) -> None:
+        for rotation in (0, 90, 180, 270):
+            source = fixture()
+            source["pages"][0]["booths"][0]["rotation"] = rotation
+            self.assertEqual(simplify_result(source)["halls"][0]["textRotation"], rotation)
+        for invalid in (None, True, 45, "90", -90, 360):
+            source = fixture()
+            source["pages"][0]["booths"][0]["rotation"] = invalid
+            with self.assertRaises(ValueError):
+                simplify_result(source)
+        source = fixture()
+        source["pages"][0]["booths"].append({**source["pages"][0]["booths"][0], "id": "c2", "rotation": 0})
+        with self.assertRaisesRegex(ValueError, "one shared"):
+            simplify_result(source)
 
     def test_all_split_positions_use_geometry_not_record_order_or_ids(self) -> None:
         for vertical in (False, True):
