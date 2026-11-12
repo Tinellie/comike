@@ -29,8 +29,8 @@ export function opaqueOnWhite(color: string): string {
   return `rgb(${channels.join(', ')})`
 }
 
-export function hallLabel(tags: Tags): MapStyle['hallLabel'] {
-  const codes = hallCodes(tags)
+export function hallLabel(tags: Tags, occupiedCodes?: ReadonlySet<string>): MapStyle['hallLabel'] {
+  const codes = hallCodes(tags).filter(code => !occupiedCodes?.has(code))
   for (const [direction, prefix, color] of [
     ['E', '東', '#b43a3a'], ['W', '西', '#2a57ad'], ['S', '南', '#2f8a4d'], ['N', '北', '#ad7132'],
   ]) {
@@ -43,14 +43,14 @@ export function hallLabel(tags: Tags): MapStyle['hallLabel'] {
 export function mapStyle(feature: OsmFeature): MapStyle {
   const tags = feature.tags
   const levels = featureLevels(tags)
-  const level = levels.length ? Math.min(...levels) : 1
+  const level = levels.length ? Math.min(...levels) : 0
   const building = has(tags, 'building') || has(tags, 'building:part')
   const indoor = has(tags, 'indoor')
   const codes = hallCodes(tags)
   const label = hallLabel(tags)
   const style: MapStyle = {
     stroke: 'rgba(117, 121, 126, 0.5)',
-    fill: has(tags, 'tokyo-big-sight') && feature.area ? 'rgba(224, 104, 170, 0.24)' : null,
+    fill: has(tags, 'tokyo-big-sight') && feature.area ? 'rgba(224, 104, 170, 0.12)' : null,
     strokeWidth: 0.75, lineDash: [], level,
     layer: has(tags, 'tokyo-big-sight') && feature.area ? -5 : -20, hallLabel: null,
   }
@@ -92,7 +92,10 @@ export function mapStyle(feature: OsmFeature): MapStyle {
       layer: label ? 20 : 0, hallLabel: feature.polygonMember ? null : label,
     })
   } else if (has(tags, 'boundary')) {
-    Object.assign(style, { stroke: 'rgba(177, 128, 219, 0.58)', fill: null, strokeWidth: 4, layer: 4 })
+    Object.assign(style, {
+      stroke: has(tags, 'tokyo-big-sight') ? 'rgba(116, 121, 125, 0.58)' : 'rgba(177, 128, 219, 0.58)',
+      fill: null, strokeWidth: 4, layer: 4,
+    })
   }
   if (!has(tags, 'tokyo-big-sight')) {
     if (style.stroke) style.stroke = 'rgba(116, 121, 125, 0.46)'

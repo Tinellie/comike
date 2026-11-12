@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { buildOsmMap, featureLevels, hallCodes, mergeTags, stitchRings, tagValues } from '../../client/src/map/osm.ts'
 import type { OsmFeature, OsmNode, OsmWay, Tags } from '../../client/src/map/osm.ts'
 import {
-  compareMapStyles, filteredLevelStyle, filteredOutline, mapBackground, mapStyle, matchesLevels, onewayTriangles, opaqueOnWhite,
+  compareMapStyles, filteredLevelStyle, filteredOutline, hallLabel, mapBackground, mapStyle, matchesLevels, onewayTriangles, opaqueOnWhite,
 } from '../../client/src/map/style.ts'
 import {
   dragRotation, fitViewport, panViewport, projectCoordinate, screenToWorld, viewportBounds, worldToScreen, zoomViewport,
@@ -21,6 +21,18 @@ function nodes(): OsmNode[] {
     { id: '8', lat: 35.6308, lon: 139.7902, tags: {} },
   ]
 }
+
+test('PDF occupied subhall codes hide only matching OSM labels and retain uncovered codes', () => {
+  const occupied = new Set(['E1', 'E2', 'W1'])
+  assert.equal(hallLabel({ 'hall-e': '1' }, occupied), null)
+  assert.equal(hallLabel({ 'hall:e': '2' }, occupied), null)
+  assert.equal(hallLabel({ 'hall:w': '1' }, occupied), null)
+  assert.equal(hallLabel({ 'hall-e': '1;2' }, occupied), null)
+  assert.deepEqual(hallLabel({ 'hall:e': ['1', '3'] }, occupied), { text: '東3', color: '#b43a3a' })
+  assert.deepEqual(hallLabel({ 'hall:e': '3' }, occupied), hallLabel({ 'hall:e': '3' }))
+  assert.deepEqual(hallLabel({ 'hall:w': '2' }, occupied), hallLabel({ 'hall:w': '2' }))
+  assert.deepEqual(hallLabel({ 'hall-e': '1' }, new Set()), hallLabel({ 'hall-e': '1' }))
+})
 
 test('Mercator projection preserves east/right and north/up and validates coordinates', () => {
   const origin = projectCoordinate(35.63, 139.79)
@@ -250,7 +262,7 @@ test('reference scope fades outside features but preserves tagged indoor and hal
   assert.equal(indoor.stroke, 'rgba(88, 126, 188, 0.54)')
   assert.equal(indoor.fill, null)
   const perimeter = mapStyle(feature({ 'tokyo-big-sight': 'yes' }, true))
-  assert.equal(perimeter.fill, 'rgba(224, 104, 170, 0.24)')
+  assert.equal(perimeter.fill, 'rgba(224, 104, 170, 0.12)')
   assert.equal(perimeter.layer, -5)
 })
 
@@ -312,6 +324,17 @@ test('path styles composite onto white once and remain opaque without changing w
   }
 })
 
+test('venue perimeter walls are gray while retaining boundary width, layer and filtered styling', () => {
+  const wall = mapStyle(feature({ boundary: 'yes', 'tokyo-big-sight': 'yes' }))
+  assert.equal(wall.stroke, 'rgba(116, 121, 125, 0.58)')
+  assert.equal(wall.fill, null)
+  assert.equal(wall.strokeWidth, 4)
+  assert.equal(wall.layer, 4)
+  assert.deepEqual(wall.lineDash, [])
+  assert.equal(filteredLevelStyle(wall).stroke, filteredOutline)
+  assert.equal(mapStyle(feature({ boundary: 'yes' })).stroke, 'rgba(116, 121, 125, 0.46)')
+})
+
 test('drawing order uses exact numeric level then type layer', () => {
   const low = mapStyle(feature({ level: '-1', highway: 'tertiary' }))
   const hall = mapStyle(feature({ level: '1', building: 'yes', 'hall:e': '1' }))
@@ -319,6 +342,18 @@ test('drawing order uses exact numeric level then type layer', () => {
   const high = mapStyle(feature({ level: '2', building: 'yes' }))
   assert.equal(road.level, 0)
   assert.deepEqual([high, road, hall, low].sort(compareMapStyles), [low, road, hall, high])
+})
+
+test('objects without a level draw before level 1 regardless of type without acquiring a filter level', () => {
+  const untagged = feature({ building: 'yes', 'hall-e': '1' }, true)
+  const background = mapStyle(untagged)
+  const firstFloor = mapStyle(feature({ level: '1' }, true))
+  assert.equal(background.level, 0)
+  assert.ok(background.layer > firstFloor.layer)
+  assert.ok(compareMapStyles(background, firstFloor) < 0)
+  assert.deepEqual(featureLevels(untagged.tags), [])
+  assert.equal(matchesLevels(featureLevels(untagged.tags), new Set([0, 1])), false)
+  assert.equal(matchesLevels(featureLevels(untagged.tags), new Set()), true)
 })
 
 test('active relation tags accumulate without losing conflicting values or mutating input', () => {

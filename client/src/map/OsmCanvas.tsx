@@ -22,7 +22,7 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
   const rendererRef = useRef<OsmMapRenderer | null>(null)
   const hallState = useRef({ halls, transforms })
   const [rotation, setRotation] = useState(0)
-  const [levels, setLevels] = useState<number[]>([])
+  const [levels, setLevels] = useState<number[]>([1, 2])
   const viewState = useRef({ rotation, levels })
 
   useEffect(() => {

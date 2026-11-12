@@ -2,7 +2,7 @@ import type { OsmFeature, OsmMapData } from './osm'
 import { featureLevels } from './osm'
 import { fitViewport, panViewport, rotatePoint, viewportBounds, worldToScreen, zoomViewport } from './viewport'
 import type { Point, Size, Viewport } from './viewport'
-import { compareMapStyles, filteredLevelStyle, gridColor, mapBackground, mapStyle, matchesLevels, onewayTriangles } from './style'
+import { compareMapStyles, filteredLevelStyle, gridColor, hallLabel, mapBackground, mapStyle, matchesLevels, onewayTriangles } from './style'
 import type { MapStyle } from './style'
 import { HallMapLayer, defaultHallDisplay, hallMetadata } from './HallMapLayer'
 import type { HallDisplay } from './HallMapLayer'
@@ -217,6 +217,22 @@ export class OsmMapRenderer {
     })
     const levels = [...new Set([...visible.map(item => item.style.level), ...hallItems.map(item => item.level)])]
       .sort((a, b) => a - b)
+    const occupiedCodes = new Map<number, Set<string>>()
+    if (this.hallDisplay.visible) {
+      for (const hall of this.halls) {
+        const level = hallMetadata(hall).level
+        if (!hall.page.hallOutline || !matchesLevels([level], this.selectedLevels)
+          || !this.transforms.placements.some(placement => placement.hallIndex === hall.index)) continue
+        let codes = occupiedCodes.get(level)
+        if (!codes) {
+          codes = new Set()
+          occupiedCodes.set(level, codes)
+        }
+        for (const label of hall.labels) {
+          if (label.code) codes.add(label.code)
+        }
+      }
+    }
     for (const level of levels) {
       const items = visible.filter(item => item.style.level === level)
       for (const { feature, path, style, arrows, filtered } of items) {
@@ -237,7 +253,7 @@ export class OsmMapRenderer {
       }
       ctx.setLineDash([])
       ctx.save()
-      this.drawLabels(items)
+      this.drawLabels(items, occupiedCodes.get(level))
       ctx.restore()
       for (const { hall, placement, filtered } of hallItems.filter(item => item.level === level)) {
         this.hallLayer.draw(ctx, hall, placement, this.origin, this.hallDisplay,
@@ -285,7 +301,7 @@ export class OsmMapRenderer {
     ctx.stroke()
   }
 
-  private drawLabels(features: StyledFeature[]) {
+  private drawLabels(features: StyledFeature[], occupiedCodes?: ReadonlySet<string>) {
     if (!this.view) return
     const ctx = this.context
     const view = this.view
@@ -299,9 +315,11 @@ export class OsmMapRenderer {
     const occupied: { x: number; y: number; width: number }[] = []
     for (const { feature, style } of [...features].reverse()) {
       if (!style.hallLabel) continue
+      const label = hallLabel(feature.tags, occupiedCodes)
+      if (!label) continue
       const b = feature.bounds
       const p = worldToScreen({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 }, view, this.size)
-      const width = ctx.measureText(style.hallLabel.text).width + 10
+      const width = ctx.measureText(label.text).width + 10
       if (p.x + width / 2 < 0 || p.y + fontSize / 2 < 0
         || p.x - width / 2 > this.size.width || p.y - fontSize / 2 > this.size.height) continue
       if (occupied.some(other => Math.abs(p.x - other.x) < (width + other.width) / 2
@@ -309,9 +327,9 @@ export class OsmMapRenderer {
       occupied.push({ ...p, width })
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.88)'
       ctx.lineWidth = Math.max(2.6, groundZoom)
-      ctx.strokeText(style.hallLabel.text, p.x, p.y)
-      ctx.fillStyle = style.hallLabel.color
-      ctx.fillText(style.hallLabel.text, p.x, p.y)
+      ctx.strokeText(label.text, p.x, p.y)
+      ctx.fillStyle = label.color
+      ctx.fillText(label.text, p.x, p.y)
     }
   }
 

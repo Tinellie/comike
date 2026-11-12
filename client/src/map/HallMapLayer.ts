@@ -56,7 +56,7 @@ export class HallMapLayer {
 
   draw(
     context: CanvasRenderingContext2D, hall: MapHall, placement: HallPlacement,
-    origin: Point, display: HallDisplay, selected: boolean, viewRotation = 0, filtered = false,
+    origin: Point, display: HallDisplay, _selected: boolean, viewRotation = 0, filtered = false,
     cull = true,
   ) {
     if (!display.visible || !hall.page.hallOutline) return
@@ -102,14 +102,6 @@ export class HallMapLayer {
     const textPadding = 32 * Math.max(1, 1 / placement.aspectRatio)
     const page = view ? visibility.visiblePage(view, textPadding) : hall.page
     context.setLineDash([])
-    context.beginPath()
-    const [first, ...rest] = hall.page.hallOutline.polygon
-    context.moveTo(first.x, first.y)
-    for (const point of rest) context.lineTo(point.x, point.y)
-    context.closePath()
-    context.strokeStyle = filtered ? filteredOutline : selected ? '#f07800' : '#d32f2f'
-    context.lineWidth = selected ? 6 : 3
-    context.stroke()
     const options: PreviewOptions = {
       background: false, boxes: display.boxes, numbers: display.numbers, halfBooths: false,
       islands: display.islands, groups: false, gaps: false, blockFrames: false, selectedIsland: null,
