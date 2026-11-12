@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import numpy as np
@@ -8,8 +9,10 @@ from PIL import Image, ImageDraw
 
 from booth_recognition import BoothRecognizer
 from island_recognition import IslandRecognizer
-from island_recognition.recognizer import detect_markers, marker_crop, valid_label
-from map_recognition.common import Reading
+from island_recognition.recognizer import (
+    IslandMarker, detect_markers, expanded_marker_box, marker_crop, marker_reference_size, valid_label,
+)
+from map_recognition.common import Box, Reading
 from map_recognition.ocr_step import OcrRecognitionStep
 from map_recognition.pipeline import MapRecognizer
 from map_recognition.venue import VenueRecognizer
@@ -165,6 +168,100 @@ class IslandRecognitionTests(unittest.TestCase):
             IslandRecognizer(model_dir="does-not-exist")
         with self.assertRaises(ValueError):
             IslandRecognizer(detect_only=True).recognize_image(colored_markers(), page=0)
+
+
+class MarkerCropRetryTests(unittest.TestCase):
+    def test_reference_is_per_page_mean_without_size_outliers(self) -> None:
+        boxes = [Box(i * 60, 20, w, h) for i, (w, h) in enumerate(
+            [(24, 30), (26, 32), (25, 31), (24, 30), (25, 31), (6, 12), (100, 100)],
+        )]
+        self.assertEqual(marker_reference_size(boxes), (24.8, 30.8))
+        self.assertEqual(marker_reference_size([Box(b.x, b.y, b.width * 2, b.height * 2)
+                                                for b in boxes]), (49.6, 61.6))
+        self.assertIsNone(marker_reference_size(boxes[:4]))
+        self.assertIsNone(marker_reference_size([Box(i * 500, 0, 4 ** i, 30) for i in range(5)]))
+
+    def test_expansion_preserves_original_box_clips_image_and_avoids_neighbors(self) -> None:
+        target = Box(0, 0, 6, 12)
+        neighbor = Box(18, 0, 24, 30)
+        enlarged = expanded_marker_box(target, (24, 30), [target, neighbor], 100, 100)
+        self.assertEqual((enlarged.x, enlarged.y), (0, 0))
+        self.assertGreater(enlarged.width, target.width)
+        self.assertGreater(enlarged.height, target.height)
+        self.assertLessEqual(enlarged.x + enlarged.width, neighbor.x)
+        edge = Box(94, 88, 6, 12)
+        clipped = expanded_marker_box(edge, (24, 30), [edge], 100, 100)
+        self.assertEqual((clipped.x + clipped.width, clipped.y + clipped.height), (100, 100))
+        large = Box(30, 30, 80, 80)
+        self.assertGreater(expanded_marker_box(large, (24, 30), [large], 200, 200).width, 80)
+
+    def recognize_outlier(
+        self, original: Reading, retry: Reading, *, bad_count: bool = False, detect_only: bool = False,
+        clean_retry: Reading | None = None,
+    ) -> tuple[list[IslandMarker], list[Box], MarkerReader]:
+        image = colored_markers(6)
+        rgb = np.asarray(image)
+        boxes, mask = detect_markers(rgb)
+        original_box = boxes[-1]
+        boxes[-1] = Box(original_box.x, original_box.y, 6, 12)
+
+        class RetryReader(MarkerReader):
+            def read(self, images: list[np.ndarray]) -> list[Reading]:
+                call = self.calls
+                self.calls += 1
+                if call >= 5:
+                    reading = clean_retry if call == 6 and clean_retry is not None else retry
+                    return [] if bad_count else [reading for _ in images]
+                if call in (1, 2, 3):
+                    return [Reading("", 0) for _ in images]
+                return [Reading("A", 0.99) for _ in images[:-1]] + [original]
+
+        reader = RetryReader()
+        with patch("island_recognition.recognizer.detect_markers", return_value=(boxes, mask)):
+            markers = IslandRecognizer(
+                reader=reader, kana_model_name=None, detect_only=detect_only,
+            ).recognize_image(image)
+        return markers, boxes, reader
+
+    def test_invalid_truncated_label_is_recovered_without_moving_source_geometry(self) -> None:
+        markers, boxes, reader = self.recognize_outlier(Reading("AB", 0.6), Reading("B", 0.98))
+        marker = markers[-1]
+        self.assertEqual(marker.bbox, boxes[-1])
+        self.assertEqual(marker.label, "B")
+        self.assertEqual(marker.status, "recognized")
+        self.assertEqual(reader.calls, 7)
+        self.assertTrue(all(m.crop_retry is None for m in markers[:-1]))
+        self.assertTrue(marker.crop_retry["accepted"])
+        self.assertGreater(marker.crop_retry["bbox"]["width"], marker.bbox.width)
+        self.assertEqual(marker.crop_retry["original"]["rawText"], "AB")
+        self.assertEqual(marker.to_dict()["cropRetry"], marker.crop_retry)
+        self.assertTrue(any("expanded" in a["model"] for a in marker.alternatives))
+
+    def test_narrow_valid_glyph_not_overwritten_by_conflicting_or_weaker_retry(self) -> None:
+        markers, _, _ = self.recognize_outlier(Reading("I", 0.99), Reading("B", 0.99))
+        self.assertEqual(markers[-1].label, "I")
+        self.assertFalse(markers[-1].crop_retry["accepted"])
+        self.assertIn("recognition_disagreement", markers[-1].issues)
+        markers, _, _ = self.recognize_outlier(Reading("I", 0.99), Reading("B", 0.5))
+        self.assertEqual(markers[-1].label, "I")
+        self.assertEqual(markers[-1].status, "recognized")
+        self.assertFalse(markers[-1].crop_retry["accepted"])
+
+    def test_conflicting_expanded_preprocessing_does_not_invent_a_label(self) -> None:
+        markers, _, _ = self.recognize_outlier(
+            Reading("AB", 0.6), Reading("B", 0.99), clean_retry=Reading("C", 0.99),
+        )
+        self.assertIsNone(markers[-1].label)
+        self.assertEqual(markers[-1].status, "unrecognized")
+        self.assertFalse(markers[-1].crop_retry["accepted"])
+        self.assertIn("recognition_disagreement", markers[-1].issues)
+
+    def test_detect_only_never_retries_and_bad_retry_count_fails_explicitly(self) -> None:
+        markers, _, reader = self.recognize_outlier(Reading("AB", 0.6), Reading("B", 0.98), detect_only=True)
+        self.assertEqual(reader.calls, 0)
+        self.assertTrue(all(m.crop_retry is None for m in markers))
+        with self.assertRaisesRegex(RuntimeError, "expanded crop results"):
+            self.recognize_outlier(Reading("AB", 0.6), Reading("B", 0.98), bad_count=True)
 
 
 class PipelineTests(unittest.TestCase):
