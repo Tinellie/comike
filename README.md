@@ -182,7 +182,20 @@ tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_re
 ```
 
 只列出识别输出实际包含的页码；当前示例 PDF 保留了前四页。
-数据或图片缺失会显示错误，不会静默绘制空地图；生成后刷新预览页。
+数据或图片缺失会显示错误，不会静默绘制空地图。
+也可以点击预览页的「重新生成」：服务端使用上述虚拟环境和主脚本处理 PDF 全部页面，
+同时更新预览结果和 Map 使用的 `final.json`；按钮在执行期间禁用，完成后自动刷新数据与底图，
+失败时显示错误，详细日志见服务端终端。刷新页面后仍可查询当前任务状态；同一服务进程只运行一个任务。
+接口为 `POST /api/preview/regenerate`（启动）和 `GET /api/preview/regenerate`（状态），
+写入沿用 Hall 编辑器的同源限制及 `HALL_EDITOR_ORIGIN` 配置。
+
+相关脚本：
+- [PDF 识别命令入口](./tools/booth-recognition/test_recognition.py)
+- [完整地图识别流水线](./tools/booth-recognition/map_recognition/pipeline.py)
+- [结果及图片保存](./tools/booth-recognition/map_recognition/result.py)
+- [Map 精简数据导出](./tools/booth-recognition/map_recognition/final_data.py)
+- [服务端调用入口](./server/src/regeneratePreview.ts)
+
 颜色表示识别状态，不代表人工核验过的准确率。
 
 `Hall 边框` 开关显示每页场馆边界：原图连续闭合外框为红色实线；

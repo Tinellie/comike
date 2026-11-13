@@ -646,7 +646,7 @@ function expandNormalizedPage(value: unknown): Record<string, unknown> {
 
 export class PreviewRepository {
   async load(signal: AbortSignal): Promise<PreviewPage[]> {
-    const response = await fetch('/api/preview/result.json', { signal })
+    const response = await fetch('/api/preview/result.json', { signal, cache: 'no-store' })
     if (!response.ok) {
       throw new Error(`无法加载识别结果（HTTP ${response.status}）。请先生成 official-map 识别输出。`)
     }

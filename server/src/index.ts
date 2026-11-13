@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { createApp } from './app.js'
 import { checkDatabase, pool } from './db/index.js'
+import { regeneratePreview } from './regeneratePreview.js'
 
 const port = Number(process.env.PORT ?? 3001)
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -20,6 +21,7 @@ const hallTransformsFile = fileURLToPath(new URL('../../ref/hall-transforms.json
 const hallEditorOrigin = process.env.HALL_EDITOR_ORIGIN ?? 'http://localhost:5173'
 const app = createApp({
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
+  regeneratePreview: () => regeneratePreview(fileURLToPath(new URL('../../', import.meta.url)), recognitionDirectory),
 })
 const server = app.listen(port, () => {
   console.info(`Server listening on http://localhost:${port}`)

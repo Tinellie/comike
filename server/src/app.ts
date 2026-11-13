@@ -13,14 +13,49 @@ interface AppOptions {
   osmFile?: string
   hallTransformsFile?: string
   hallEditorOrigin?: string
+  regeneratePreview?: () => Promise<void>
 }
 
 export function createApp({
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
+  regeneratePreview,
 }: AppOptions) {
   const app = express()
   app.disable('x-powered-by')
   app.use(express.json())
+
+  let generation: { status: 'idle' | 'running' | 'succeeded' | 'failed'; message?: string } = { status: 'idle' }
+  app.get('/api/preview/regenerate', (_req, res) => {
+    res.set('Cache-Control', 'no-store').json(generation)
+  })
+  app.post('/api/preview/regenerate', (req, res) => {
+    const origin = req.get('origin')
+    if ((origin && origin !== `${req.protocol}://${req.get('host')}` && origin !== hallEditorOrigin)
+      || req.get('sec-fetch-site') === 'cross-site') {
+      console.warn('Rejected cross-origin preview regeneration')
+      res.status(403).json({ message: 'Cross-origin writes are not allowed' })
+      return
+    }
+    if (!regeneratePreview) {
+      res.status(503).json({ message: 'Preview regeneration is not configured' })
+      return
+    }
+    if (generation.status === 'running') {
+      res.status(409).json({ ...generation, message: 'PDF recognition is already running' })
+      return
+    }
+    generation = { status: 'running' }
+    void Promise.resolve().then(regeneratePreview).then(() => {
+      generation = { status: 'succeeded' }
+    }).catch((error: unknown) => {
+      console.error('Preview regeneration failed:', error)
+      generation = {
+        status: 'failed',
+        message: 'PDF 识别失败，请检查服务端日志和 Python 虚拟环境后重试。',
+      }
+    })
+    res.status(202).json(generation)
+  })
 
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok' })
@@ -42,6 +77,7 @@ export function createApp({
       res.status(404).json({ message: 'Recognition output is not configured' })
       return
     }
+    res.set('Cache-Control', 'no-store')
     res.sendFile(join(recognitionDirectory, name), (error) => {
       if (!error) return
       if (res.headersSent || res.destroyed) {
