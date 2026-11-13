@@ -35,6 +35,34 @@ test('visibility skips disjoint islands and blocks, then selects Booths and both
   assert.equal(empty.halfBooths?.length, 0)
 })
 
+test('half-booth hit testing follows Island, Block, Booth and half bounds including shared edges', () => {
+  const page = fixture(), before = structuredClone(page), index = new HallVisibility(page)
+  assert.equal(index.hitTest({ x: -1, y: 50 }), null)
+  assert.equal(index.hitTest({ x: 60, y: 50 }), null)
+  const left = index.hitTest({ x: 5, y: 50 })
+  assert.equal(left?.block.id, 'b0-0')
+  assert.equal(left?.booth.id, 'c0-0-0')
+  assert.equal(left?.half.suffix, 'a')
+  assert.equal(index.hitTest({ x: 15, y: 50 })?.half.suffix, 'b')
+  assert.equal(index.hitTest({ x: 10, y: 50 })?.half.suffix, 'b')
+  assert.equal(index.hitTest({ x: 20, y: 50 })?.booth.id, 'c0-0-1')
+  assert.equal(index.hitTest({ x: 305, y: 50 })?.block.islandId, 'i1')
+  assert.deepEqual(page, before)
+})
+
+test('half-booth hit testing respects vertical splits and does not invent missing halves', () => {
+  const page = fixture(), booth = page.booths[0]
+  page.halfBooths = [0, 1].map(i => ({
+    id: `${booth.id}-h${i + 1}`, boothId: booth.id, suffix: i === 0 ? 'a' : 'b',
+    bbox: { ...booth.bbox, y: booth.bbox.y + i * 10, height: 10 },
+    status: 'resolved', issues: [],
+  }))
+  const index = new HallVisibility(page)
+  assert.equal(index.hitTest({ x: 5, y: 45 })?.half.suffix, 'a')
+  assert.equal(index.hitTest({ x: 5, y: 55 })?.half.suffix, 'b')
+  assert.equal(index.hitTest({ x: 25, y: 45 }), null)
+})
+
 test('fully contained subtrees avoid child checks, full scene reuses the original page', () => {
   const page = fixture(), index = new HallVisibility(page)
   assert.equal(index.visiblePage({ minX: -10, maxX: 600, minY: 0, maxY: 200 }, 0), page)

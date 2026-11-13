@@ -23,6 +23,7 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
   const hallState = useRef({ halls, transforms })
   const [rotation, setRotation] = useState(0)
   const [levels, setLevels] = useState<number[]>([1, 2])
+  const [hoverLabel, setHoverLabel] = useState('')
   const viewState = useRef({ rotation, levels })
 
   useEffect(() => {
@@ -48,7 +49,7 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
     function resize() {
       if (!canvas || !container) return
       try {
-        renderer ??= new OsmMapRenderer(canvas, data, () => {}, setRotation)
+        renderer ??= new OsmMapRenderer(canvas, data, () => {}, setRotation, setHoverLabel)
         const state = hallState.current
         renderer.setHalls(state.halls, state.transforms, defaultHallDisplay, null)
         rendererRef.current = renderer
@@ -72,6 +73,10 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
       canvas.style.cursor = event.altKey ? 'crosshair' : 'grabbing'
     }
     function pointerMove(event: PointerEvent) {
+      if (canvas) {
+        const bounds = canvas.getBoundingClientRect()
+        renderer?.setPointer({ x: event.clientX - bounds.left, y: event.clientY - bounds.top })
+      }
       if (!drag || drag.id !== event.pointerId) return
       const dx = event.clientX - drag.x, dy = event.clientY - drag.y
       if (event.altKey && canvas) {
@@ -92,6 +97,9 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
       drag = null
       canvas.style.cursor = 'grab'
       if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
+    }
+    function pointerLeave() {
+      renderer?.setPointer(null)
     }
     function wheel(event: WheelEvent) {
       event.preventDefault()
@@ -117,6 +125,7 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
     window.addEventListener('resize', resize)
     canvas.addEventListener('pointerdown', pointerDown)
     canvas.addEventListener('pointermove', pointerMove)
+    canvas.addEventListener('pointerleave', pointerLeave)
     canvas.addEventListener('pointerup', pointerEnd)
     canvas.addEventListener('pointercancel', pointerEnd)
     canvas.addEventListener('lostpointercapture', pointerEnd)
@@ -127,6 +136,7 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
       window.removeEventListener('resize', resize)
       canvas.removeEventListener('pointerdown', pointerDown)
       canvas.removeEventListener('pointermove', pointerMove)
+      canvas.removeEventListener('pointerleave', pointerLeave)
       canvas.removeEventListener('pointerup', pointerEnd)
       canvas.removeEventListener('pointercancel', pointerEnd)
       canvas.removeEventListener('lostpointercapture', pointerEnd)
@@ -179,6 +189,11 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
               </FormGroup>
             </AccordionDetails>
           </Accordion>
+          <Typography variant="caption" component="div" sx={{
+            mt: 1, color: 'text.secondary', overflowWrap: 'anywhere', minHeight: '1.5em',
+          }}>
+            {hoverLabel || '—'}
+          </Typography>
         </Paper>
         <Box sx={{ position: 'absolute', right: 6, bottom: 4, bgcolor: 'rgba(255,255,255,0.9)', px: 0.5 }}>
           <Typography variant="caption">
