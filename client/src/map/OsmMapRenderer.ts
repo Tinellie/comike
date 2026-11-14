@@ -219,7 +219,7 @@ export class OsmMapRenderer {
         const appearance = boothHover(hit, islandCode ?? null, this.occupancy)
         hover = appearance.bbox ? { hallIndex: hall.index, bbox: appearance.bbox } : null
         label = `${hall.name ?? `Hall ${hall.index + 1}`} / ${islandCode ?? hit.block.islandId ?? '?'} / ${hit.booth.number ?? '?'}${appearance.suffix}`
-        if (hall.name && islandCode && hit.booth.number && (hit.half.suffix === 'a' || hit.half.suffix === 'b')) {
+        if (appearance.bbox && hall.name && islandCode && hit.booth.number && (hit.half.suffix === 'a' || hit.half.suffix === 'b')) {
           selected = { hallGroup: hall.name, island: islandCode, number: hit.booth.number, suffix: hit.half.suffix }
         }
         break
