@@ -58,6 +58,30 @@ export function crawlerRouter(
       res.status(503).json({ message: '初始化失败，请检查 DATABASE_URL、MySQL 服务和建库权限；详情见服务端日志' })
     }
   })
+  router.get('/organization', async (_req, res) => {
+    try { res.json(await service.organizationStatus()) } catch (error) {
+      console.error('Map organization status unavailable:', error)
+      res.status(503).json({ message: '地图整理状态读取失败，请检查数据库迁移和服务端日志' })
+    }
+  })
+  router.post('/organize', async (req, res) => {
+    const kind: unknown = req.body?.kind
+    if (kind !== 'vacancies' && kind !== 'genres') {
+      console.warn('Rejected invalid map organization kind')
+      res.status(400).json({ message: '无效的地图整理类型' })
+      return
+    }
+    try {
+      const result = await service.organize(kind)
+      res.json({ result, message: kind === 'vacancies' ? 'vacancies 及合并范围已整理' : 'genre 范围、颜色、代码和数量已整理' })
+    } catch (error) {
+      if (error instanceof CrawlerConflictError) res.status(409).json({ message: error.message })
+      else {
+        console.error('Map organization failed:', error)
+        res.status(503).json({ message: error instanceof Error ? `整理失败：${error.message}` : '地图整理失败，请检查服务端日志' })
+      }
+    }
+  })
   router.post('/start', async (req, res) => {
     if ((req.body?.resume !== undefined && typeof req.body.resume !== 'boolean')
       || (req.body?.refreshList !== undefined && typeof req.body.refreshList !== 'boolean')) {

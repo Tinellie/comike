@@ -1,6 +1,6 @@
 import { desc, eq, inArray, sql } from 'drizzle-orm'
 import { db, checkDatabase } from '../db/index.js'
-import { booths, circleListCache, crawlJobs, mapVacancies } from '../db/schema.js'
+import { booths, circleListCache, crawlJobs, mapVacancies, mapVacancyRegions, mapGenres, mapGenreRegions } from '../db/schema.js'
 import type { Booth } from '../db/schema.js'
 import type { CircleListCache, CrawlJob, JobRepository } from './types.js'
 import { nameReading } from '../booths/reading.js'
@@ -42,6 +42,9 @@ export class MysqlJobRepository implements JobRepository {
     return database().transaction(async transaction => {
       const [deleted] = await transaction.delete(booths)
       await transaction.delete(mapVacancies)
+      await transaction.delete(mapVacancyRegions)
+      await transaction.delete(mapGenreRegions)
+      await transaction.delete(mapGenres)
       await transaction.delete(crawlJobs)
       return deleted.affectedRows
     })

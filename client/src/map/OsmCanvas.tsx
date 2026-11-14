@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, FormControlLabel,
-  FormGroup, LinearProgress, MenuItem, Paper, Slider, Switch, TextField, Typography,
+  Chip, FormGroup, LinearProgress, MenuItem, Paper, Popover, Slider, Switch, TextField, Typography,
 } from '@mui/material'
 import type { OsmMapData } from './osm'
 import { OsmMapRenderer } from './OsmMapRenderer'
@@ -36,6 +36,10 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
   const [levels, setLevels] = useState<number[]>([1, 2])
   const [hoverLabel, setHoverLabel] = useState('')
   const [hoverHit, setHoverHit] = useState<MapBoothHit | null>(null)
+  const [genreEnabled, setGenreEnabled] = useState(false)
+  const [selectedGenres, setSelectedGenres] = useState<string[] | null>(null)
+  const [genreAnchor, setGenreAnchor] = useState<HTMLElement | null>(null)
+  const genreState = useRef({ enabled: genreEnabled, selected: selectedGenres })
   const tooltipRef = useRef<BoothHoverHandle | null>(null)
   const [pdfVisible, setPdfVisible] = useState(false)
   const [pdfImages, setPdfImages] = useState<ReadonlyMap<MapHall, HTMLImageElement>>(new Map())
@@ -47,6 +51,11 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
   const clickHandler = useRef(onBoothClick)
   const boothState = useRef(boothData)
   useEffect(() => { clickHandler.current = onBoothClick }, [onBoothClick])
+
+  useEffect(() => {
+    genreState.current = { enabled: genreEnabled, selected: selectedGenres }
+    rendererRef.current?.setGenreDisplay(genreEnabled, selectedGenres)
+  }, [genreEnabled, selectedGenres])
 
   useEffect(() => {
     pdfState.current = pdfVisible ? pdfImages : new Map()
@@ -147,6 +156,7 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
         renderer.setRotation(viewState.current.rotation)
         renderer.setLevels(viewState.current.levels)
         renderer.setBoothData(boothState.current)
+        renderer.setGenreDisplay(genreState.current.enabled, genreState.current.selected)
         renderer.setPdfImages(pdfState.current)
       } catch (reason) {
         console.error('OSM rendering failed:', reason)
@@ -296,16 +306,55 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
               <Typography variant="body2">level</Typography>
             </AccordionSummary>
             <AccordionDetails id="map-level-options" sx={{ p: 0 }}>
-              <FormGroup aria-labelledby="map-level-label">
+              <FormGroup aria-labelledby="map-level-label" sx={{ '& .MuiFormControlLabel-root': { m: 0, minHeight: 28 },
+                '& .MuiCheckbox-root': { p: 0.5 }, '& .MuiFormControlLabel-label': { fontSize: 13 } }}>
                 {[1, 2, 3, 4].map(level => (
                   <FormControlLabel key={level} label={String(level)}
-                    control={<Checkbox checked={levels.includes(level)} onChange={(_, checked) => {
+                    control={<Checkbox size="small" checked={levels.includes(level)} onChange={(_, checked) => {
                       setLevels(previous => checked ? [...previous, level] : previous.filter(value => value !== level))
                     }} />} />
                 ))}
               </FormGroup>
             </AccordionDetails>
           </Accordion>
+          <Accordion disableGutters elevation={0} defaultExpanded>
+            <AccordionSummary sx={{ minHeight: 36, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
+              <Typography variant="body2">genre</Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{ p: 0 }}>
+              <FormControlLabel label="类别上色" sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: 13 } }}
+                control={<Checkbox size="small" checked={genreEnabled} onChange={(_, checked) => {
+                  setGenreEnabled(checked)
+                  if (!checked) setGenreAnchor(null)
+                }} />} />
+              {genreEnabled && <>
+                {!boothData?.genreReady
+                  ? <Typography variant="caption" color="warning.main">请先在 Crawler 整理 genre 数据</Typography>
+                  : <Button size="small" fullWidth onClick={event => setGenreAnchor(event.currentTarget)}>选择 genre
+                    {selectedGenres === null ? '（全部）' : `（${selectedGenres.length}）`}</Button>}
+              </>}
+            </AccordionDetails>
+          </Accordion>
+          <Popover open={genreEnabled && genreAnchor !== null} anchorEl={genreAnchor} onClose={() => setGenreAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+            slotProps={{ paper: { sx: { p: 1.5, maxWidth: 'min(560px, calc(100vw - 32px))', maxHeight: '65vh' } } }}>
+            <Typography variant="subtitle2">genre（社团数）</Typography>
+            <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+              <Button size="small" onClick={() => setSelectedGenres(null)}>全部上色</Button>
+              <Button size="small" onClick={() => setSelectedGenres([])}>全部取消</Button>
+            </Box>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+              {boothData?.genres.map(genre => {
+                const active = selectedGenres === null || selectedGenres.includes(genre.key)
+                return <Chip key={genre.key} size="small" label={`${genre.name || '未分类'}（${genre.count}）`}
+                  title={genre.code ? `genre code: ${genre.code}` : '无 genre code'}
+                  aria-pressed={active} variant={active ? 'filled' : 'outlined'}
+                  icon={<Box component="span" sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: genre.color }} />}
+                  onClick={() => setSelectedGenres(previous => previous === null ? [genre.key]
+                    : previous.includes(genre.key) ? previous.filter(key => key !== genre.key) : [...previous, genre.key])} />
+              })}
+            </Box>
+          </Popover>
           <Typography variant="caption" component="div" sx={{
             mt: 1, color: 'text.secondary', overflowWrap: 'anywhere', minHeight: '1.5em',
           }}>

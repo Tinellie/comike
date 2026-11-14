@@ -8,6 +8,7 @@ import { collectDetails } from './details.js'
 import { listStoredBoothImages, saveImage } from './images.js'
 import type { LoginSession } from './login.js'
 import type { CircleListCache, CrawlJob, CrawlStatus, JobRepository } from './types.js'
+import type { MapOrganization } from '../booths/organization.js'
 
 export class CrawlerConflictError extends Error {}
 
@@ -34,6 +35,8 @@ export class CrawlerService {
   private readonly workDirectory: string
   private readonly runners: CrawlerRunners
   private readonly reconcile: ((eventId: string) => Promise<unknown>) | undefined
+  private readonly organization: Pick<MapOrganization, 'status' | 'run'> | undefined
+  private organizing: Promise<unknown> | undefined
 
   constructor(
     login: LoginSession,
@@ -42,6 +45,7 @@ export class CrawlerService {
     workDirectory: string,
     runners: CrawlerRunners = { list: collectList, details: collectDetails },
     reconcile?: (eventId: string) => Promise<unknown>,
+    organization?: Pick<MapOrganization, 'status' | 'run'>,
   ) {
     this.login = login
     this.repository = repository
@@ -49,6 +53,7 @@ export class CrawlerService {
     this.workDirectory = workDirectory
     this.runners = runners
     this.reconcile = reconcile
+    this.organization = organization
   }
 
   private async restore() {
@@ -100,7 +105,19 @@ export class CrawlerService {
     }
   }
 
-  get active() { return Boolean(this.starting || this.running || this.resetting) }
+  get active() { return Boolean(this.starting || this.running || this.resetting || this.organizing) }
+
+  async organizationStatus() {
+    if (!this.organization) throw new Error('地图数据整理未配置')
+    return { ...await this.organization.status(), organizing: Boolean(this.organizing) }
+  }
+
+  organize(kind: 'vacancies' | 'genres') {
+    if (this.active) return Promise.reject(new CrawlerConflictError('请等待采集、清空或整理操作完成'))
+    if (!this.organization) return Promise.reject(new Error('地图数据整理未配置'))
+    this.organizing = this.organization.run(kind).finally(() => { this.organizing = undefined })
+    return this.organizing
+  }
 
   start(resume = false, refreshList = false) {
     if (this.active) return Promise.reject(new CrawlerConflictError('采集任务正在运行或正在清空数据'))
@@ -266,7 +283,7 @@ export class CrawlerService {
     this.job!.status = failed ? 'failed' : 'completed'
     if (!failed && this.reconcile && this.job!.eventId) {
       this.job!.status = 'details'
-      this.job!.action = '社团采集完成，正在比对地图空位'
+      this.job!.action = '社团采集完成，正在整理地图空位范围和 genre'
       await this.persist()
       await this.reconcile(this.job!.eventId)
       signal.throwIfAborted()
@@ -327,6 +344,7 @@ export class CrawlerService {
   async close() {
     await this.starting
     await this.resetting
+    await this.organizing
     this.controller?.abort(new Error('Server shutting down'))
     await this.running
     await this.login.close()

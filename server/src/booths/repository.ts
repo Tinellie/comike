@@ -1,7 +1,7 @@
 import { and, count, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { booths, mapVacancies } from '../db/schema.js'
+import { booths, mapVacancies, mapVacancyRegions, mapGenres, mapGenreRegions } from '../db/schema.js'
 import { BoothFilterError, eventDays, hallGroup } from './catalog.js'
 import type { BoothQuery, HallGroup } from './catalog.js'
 
@@ -187,11 +187,18 @@ export class MysqlBoothRepository {
   }
 
   async mapData(eventId: string, weekday: string) {
-    const [mergedRows, vacancyRows] = await Promise.all([
+    const filter = and(eq(mapGenres.event_id, eventId), eq(mapGenres.weekday, weekday))
+    const [mergedRows, vacancyRows, vacancyRegions, genres, genreRegions] = await Promise.all([
       this.database.select({ island: booths.island_code, number: booths.booth_number })
         .from(booths).where(and(eq(booths.event_id, eventId), eq(booths.weekday, weekday), eq(booths.booth_suffix, 'ab'))),
       this.database.select({ island: mapVacancies.island_code, number: mapVacancies.booth_number, suffix: mapVacancies.booth_suffix })
         .from(mapVacancies).where(and(eq(mapVacancies.event_id, eventId), eq(mapVacancies.weekday, weekday))),
+      this.database.select({ hallGroup: mapVacancyRegions.hall_group, rectangles: mapVacancyRegions.rectangles })
+        .from(mapVacancyRegions).where(and(eq(mapVacancyRegions.event_id, eventId), eq(mapVacancyRegions.weekday, weekday))),
+      this.database.select({ key: mapGenres.genre_key, name: mapGenres.genre, code: mapGenres.genre_code,
+        color: mapGenres.color, count: mapGenres.circle_count }).from(mapGenres).where(filter).orderBy(mapGenres.genre_key),
+      this.database.select({ hallGroup: mapGenreRegions.hall_group, genreKey: mapGenreRegions.genre_key, rectangles: mapGenreRegions.rectangles })
+        .from(mapGenreRegions).where(and(eq(mapGenreRegions.event_id, eventId), eq(mapGenreRegions.weekday, weekday))),
     ])
     function group(rows: { island: string; number: string; suffix?: string }[]) {
       const islands = new Map<string, Set<string>>()
@@ -203,7 +210,8 @@ export class MysqlBoothRepository {
       }
       return Object.fromEntries([...islands].map(([island, values]) => [island, [...values].sort()]))
     }
-    return { merged: group(mergedRows), vacancies: group(vacancyRows) }
+    return { merged: group(mergedRows), vacancies: group(vacancyRows), vacancyRegions, genres, genreRegions,
+      vacancyReady: vacancyRegions.length > 0, genreReady: genres.length > 0 }
   }
 
   async atLocation(query: { eventId: string; weekday: string; hallGroup: string; island: string; number: string; suffix: 'a' | 'b' }) {

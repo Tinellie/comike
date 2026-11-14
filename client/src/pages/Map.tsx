@@ -184,6 +184,7 @@ export default function Map() {
       )}
       <Stack sx={{ position: 'absolute', top: 16, left: 16, maxWidth: 'min(400px, calc(100% - 32px))', gap: 1 }}>
         {eventId && weekday && !boothData && !preloadError && <LinearProgress aria-label="预加载地图摊位" />}
+        {boothData && !boothData.vacancyReady && <Alert severity="warning">请在 Crawler 整理 vacancies 数据，以加载空位合并背景。</Alert>}
         {preloadError && <Alert severity="warning" action={<Button onClick={() => {
           setPreloadError(null); setMapAttempt(value => value + 1)
         }}>重试</Button>}>{preloadError}</Alert>}

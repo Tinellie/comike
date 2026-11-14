@@ -56,13 +56,24 @@ export class HallMapLayer {
   private readonly image = new Image()
   private readonly visibility = new WeakMap<MapHall, HallVisibility>()
   private readonly blockBackgrounds = new WeakMap<MapHall, Map<string, Path2D>>()
-  private readonly vacancyPaths = new WeakMap<readonly PreviewBooth['bbox'][], Path2D>()
+  private readonly regionPaths = new WeakMap<readonly PreviewBooth['bbox'][], Path2D>()
+
+  private path(rectangles: readonly PreviewBooth['bbox'][]) {
+    let path = this.regionPaths.get(rectangles)
+    if (!path) {
+      path = new Path2D()
+      for (const b of rectangles) path.rect(b.x, b.y, b.width, b.height)
+      this.regionPaths.set(rectangles, path)
+    }
+    return path
+  }
 
   draw(
     context: CanvasRenderingContext2D, hall: MapHall, placement: HallPlacement,
     origin: Point, display: HallDisplay, _selected: boolean, viewRotation = 0, filtered = false,
     cull = true, occupancy: BoothOccupancy | null = null, hover: PreviewBooth['bbox'] | null = null,
     pdfImage: HTMLImageElement | undefined = undefined,
+    genreDisplay: { enabled: boolean; selected: ReadonlySet<string> | null } = { enabled: false, selected: null },
   ) {
     if (!display.visible || !hall.page.hallOutline) return
     const markerColor = hallMarkerColor(hall)
@@ -126,17 +137,21 @@ export class HallMapLayer {
         if (!path) throw new Error(`Block ${block.id} 缺少背景几何`)
         context.fill(path)
       }
+      if (occupancy && genreDisplay.enabled) {
+        context.save()
+        context.globalAlpha = 0.65
+        for (const group of occupancy.genreRegions(hall)) {
+          if (genreDisplay.selected && !genreDisplay.selected.has(group.key)) continue
+          context.fillStyle = group.color
+          context.fill(this.path(group.rectangles))
+        }
+        context.restore()
+      }
       if (occupancy) {
         const regions = occupancy.vacancyRegions(hall)
         if (regions.length) {
-          let path = this.vacancyPaths.get(regions)
-          if (!path) {
-            path = new Path2D()
-            for (const b of regions) path.rect(b.x, b.y, b.width, b.height)
-            this.vacancyPaths.set(regions, path)
-          }
           context.fillStyle = '#555555'
-          context.fill(path)
+          context.fill(this.path(regions))
         }
       }
       if (hover) {

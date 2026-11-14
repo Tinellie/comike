@@ -20,12 +20,20 @@ interface Status {
   login: { open: boolean; authenticated: boolean; width: number; height: number; opening?: boolean; error?: string | null }
 }
 
+interface OrganizationStatus {
+  event: { eventId: string; comiket: number } | null
+  vacancies: number
+  vacancyReady: boolean
+  genreReady: boolean
+  organizing: boolean
+}
+
 async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T | undefined> {
   const response = await fetch(`/api/crawler/${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(path.endsWith('status') ? 8000 : path === 'reset' ? 120_000 : 45_000)]),
+    signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(path.endsWith('status') ? 8000 : ['reset', 'organize'].includes(path) ? 120_000 : 45_000)]),
     cache: 'no-store',
   }).catch((reason: unknown) => {
     if (reason instanceof DOMException && reason.name === 'TimeoutError') {
@@ -214,12 +222,23 @@ export default function Crawler() {
   const [loginError, setLoginError] = useState<string | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
   const [resetConfirmation, setResetConfirmation] = useState('')
+  const [organization, setOrganization] = useState<OrganizationStatus | null>(null)
+  const [organizationError, setOrganizationError] = useState<string | null>(null)
   const previousLoginOpen = useRef(false)
 
   useEffect(() => {
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout>
     async function poll() {
+      const organizationRequest = api<OrganizationStatus>('organization', undefined, controller.signal).then(result => {
+        if (controller.signal.aborted) return
+        if (!result) throw new Error('地图整理状态为空')
+        setOrganization(result); setOrganizationError(null)
+      }).catch((reason: unknown) => {
+        if (controller.signal.aborted) return
+        console.error('Map organization status failed:', reason)
+        setOrganizationError(reason instanceof Error ? reason.message : '地图整理状态读取失败')
+      })
       try {
         const result = await api<Status>('status', undefined, controller.signal)
         if (!result) throw new Error('状态接口返回了空内容')
@@ -235,6 +254,7 @@ export default function Crawler() {
         console.error('Crawler status failed:', reason)
         setStatusError(reason instanceof Error ? reason.message : '采集状态加载失败')
       }
+      await organizationRequest
       if (!controller.signal.aborted) timer = setTimeout(() => { void poll() }, 1500)
     }
     void poll()
@@ -255,6 +275,10 @@ export default function Crawler() {
         if (current) setStatus(current)
       }
       if (path === 'login/open') setLoginOpen(true)
+      if (path === 'organize' || path === 'reset') {
+        const current = await api<OrganizationStatus>('organization')
+        if (current) { setOrganization(current); setOrganizationError(null) }
+      }
     } catch (reason) {
       console.error('Crawler action failed:', reason)
       setError(reason instanceof Error ? reason.message : '操作失败')
@@ -279,7 +303,7 @@ export default function Crawler() {
     setNotice('网站登录成功，等待中的任务会自动继续')
   }, [])
 
-  const active = ['listing', 'details', 'waiting_login', 'stopping', 'resetting'].includes(status?.status ?? '')
+  const active = !!organization?.organizing || ['listing', 'details', 'waiting_login', 'stopping', 'resetting'].includes(status?.status ?? '')
   const progress = status?.total ? Math.min(100, status.processed / status.total * 100) : 0
 
   return (
@@ -303,6 +327,22 @@ export default function Crawler() {
           <Button disabled={busy || active} onClick={() => { void action('login/clear') }}>清除登录会话</Button>
           <Button color="error" disabled={busy || active || !status || !!statusError} onClick={() => { setResetConfirmation(''); setResetOpen(true) }}>清空数据和图片</Button>
         </Stack>
+        <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 2 }}>
+          <Typography variant="h6" sx={{ mb: 1 }}>地图数据整理</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            {organization?.event ? `C${organization.event.comiket} · vacancies ${organization.vacancies} 个半格` : '暂无可整理活动'}
+          </Typography>
+          {organizationError && <Alert severity="error" sx={{ mb: 1 }}>{organizationError}</Alert>}
+          <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
+            <Button variant={organization && !organization.vacancyReady ? 'contained' : 'outlined'}
+              disabled={busy || active || !organization?.event || !!organizationError}
+              onClick={() => { void action('organize', { kind: 'vacancies' }) }}>整理 vacancies 数据</Button>
+            <Button variant={organization && !organization.genreReady ? 'contained' : 'outlined'}
+              disabled={busy || active || !organization?.event || !!organizationError}
+              onClick={() => { void action('organize', { kind: 'genres' }) }}>整理 genre 数据</Button>
+          </Stack>
+          {organization?.organizing && <LinearProgress aria-label="整理地图数据" sx={{ mt: 1 }} />}
+        </Box>
         <Typography>
           网站会话：{status?.login.authenticated ? '已登录' : '未确认登录'}
           {status?.comiket ? ` · Comiket C${status.comiket}` : ''}

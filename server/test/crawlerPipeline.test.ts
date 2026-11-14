@@ -13,6 +13,7 @@ import type { LoginSession } from '../src/crawler/login.js'
 import type { CircleListCache, CrawlJob, JobRepository } from '../src/crawler/types.js'
 import { parseDetail } from '../src/crawler/parser.js'
 import type { Booth } from '../src/db/schema.js'
+import { createApp } from '../src/app.js'
 
 const fixture = await readFile(new URL('../../ref/circle-detail.html', import.meta.url), 'utf8')
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK1cAAAAASUVORK5CYII=', 'base64')
@@ -70,6 +71,53 @@ async function finished(service: CrawlerService) {
   }
   return service.status()
 }
+
+test('manual map organizers expose readiness, reject overlap and surface failures through HTTP', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'comike-organizer-controls-'))
+  t.after(() => rm(directory, { recursive: true }))
+  let release!: () => void
+  let rejectGenre = false
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const calls: string[] = []
+  const service = new CrawlerService(session(), new Repository(), directory, join(directory, 'work'), undefined, undefined, {
+    async status() { return { event: { eventId: '240', comiket: 109 }, vacancies: 0, vacancyReady: true, genreReady: false } },
+    async run(kind) {
+      calls.push(kind)
+      if (kind === 'vacancies') await gate
+      if (kind === 'genres' && rejectGenre) throw new Error('test genre conflict')
+      return { eventId: '240' }
+    },
+  })
+  t.after(() => service.close())
+  const server = createApp({ checkDatabase: async () => {}, crawler: service, initializeDatabase: async () => {} }).listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())))
+  const address = server.address()
+  assert.ok(address && typeof address !== 'string')
+  const base = `http://127.0.0.1:${address.port}/api/crawler`
+  const post = (body: unknown) => fetch(`${base}/organize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const status = await (await fetch(`${base}/organization`)).json()
+  assert.equal(status.vacancyReady, true)
+  assert.equal(status.genreReady, false)
+  assert.equal(status.organizing, false)
+  assert.equal((await post({ kind: 'invalid' })).status, 400)
+  const pending = service.organize('vacancies')
+  assert.equal(service.active, true)
+  assert.equal((await service.organizationStatus()).organizing, true)
+  assert.equal((await post({ kind: 'genres' })).status, 409)
+  await assert.rejects(service.start(), /正在运行/)
+  await assert.rejects(service.reset(), /请先停止/)
+  release()
+  await pending
+  assert.equal(service.active, false)
+  assert.equal((await post({ kind: 'genres' })).status, 200)
+  rejectGenre = true
+  const failed = await post({ kind: 'genres' })
+  assert.equal(failed.status, 503)
+  assert.match((await failed.json()).message, /test genre conflict/)
+  assert.equal(service.active, false)
+  assert.deepEqual(calls, ['vacancies', 'genres', 'genres'])
+})
 
 test('successful completed crawls reconcile map vacancies and reconciliation errors remain explicit', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'comike-reconcile-pipeline-'))

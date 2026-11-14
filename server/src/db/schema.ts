@@ -1,4 +1,6 @@
-import { char, datetime, index, int, longtext, mysqlTable, primaryKey, text, varchar } from 'drizzle-orm/mysql-core'
+import { char, datetime, index, int, json, longtext, mysqlTable, primaryKey, text, varchar } from 'drizzle-orm/mysql-core'
+
+export interface MapRectangle { x: number; y: number; width: number; height: number }
 
 export const booths = mysqlTable('booths', {
   id: varchar('id', { length: 32 }).primaryKey(),
@@ -53,3 +55,30 @@ export const mapVacancies = mysqlTable('map_vacancies', {
   checked_at: datetime('checked_at', { mode: 'string' }).notNull(),
 }, table => [index('map_vacancies_event_idx').on(table.event_id),
   primaryKey({ columns: [table.event_id, table.weekday, table.hall_group, table.island_code, table.booth_number, table.booth_suffix] })])
+
+export const mapVacancyRegions = mysqlTable('map_vacancy_regions', {
+  event_id: varchar('event_id', { length: 32 }).notNull(),
+  weekday: char('weekday', { length: 1 }).notNull(),
+  hall_group: varchar('hall_group', { length: 16 }).notNull(),
+  rectangles: json('rectangles').$type<MapRectangle[]>().notNull(),
+  checked_at: datetime('checked_at', { mode: 'string' }).notNull(),
+}, table => [primaryKey({ columns: [table.event_id, table.weekday, table.hall_group] })])
+
+export const mapGenres = mysqlTable('map_genres', {
+  event_id: varchar('event_id', { length: 32 }).notNull(),
+  weekday: char('weekday', { length: 1 }).notNull(),
+  genre_key: varchar('genre_key', { length: 300 }).notNull(),
+  genre: varchar('genre', { length: 255 }),
+  genre_code: varchar('genre_code', { length: 16 }),
+  color: char('color', { length: 7 }).notNull(),
+  circle_count: int('circle_count').notNull(),
+  checked_at: datetime('checked_at', { mode: 'string' }).notNull(),
+}, table => [primaryKey({ columns: [table.event_id, table.weekday, table.genre_key] })])
+
+export const mapGenreRegions = mysqlTable('map_genre_regions', {
+  event_id: varchar('event_id', { length: 32 }).notNull(),
+  weekday: char('weekday', { length: 1 }).notNull(),
+  hall_group: varchar('hall_group', { length: 16 }).notNull(),
+  genre_key: varchar('genre_key', { length: 300 }).notNull(),
+  rectangles: json('rectangles').$type<MapRectangle[]>().notNull(),
+}, table => [primaryKey({ columns: [table.event_id, table.weekday, table.hall_group, table.genre_key] })])

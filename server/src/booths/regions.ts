@@ -1,8 +1,7 @@
-import type { PreviewBooth } from '../preview/data'
+import type { MapRectangle } from '../db/schema.js'
+type Box = MapRectangle
 
-type Box = PreviewBooth['bbox']
-
-export function mergeVacancyRegions(boxes: readonly Box[]): readonly Box[] {
+export function mergeVacancyRegions(boxes: readonly Box[]): Box[] {
   const edges = [...new Set(boxes.flatMap(box => [box.y, box.y + box.height]))].sort((a, b) => a - b)
   const regions: Box[] = []
   let previous = new Map<string, Box>()

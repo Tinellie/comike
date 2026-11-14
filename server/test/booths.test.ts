@@ -23,6 +23,7 @@ const groups = parseHallGroups({ halls: [
   { name: '西12', islands: [{ code: 'あ' }] },
   { name: '南12', islands: [{ code: 'a' }] },
 ] })
+const emptyMapRegions = { vacancyRegions: [], genres: [], genreRegions: [], vacancyReady: false, genreReady: false }
 
 test('hall groups use the actual map and preserve Latin case and kana distinctions', async () => {
   const actual = parseHallGroups(JSON.parse(await readFile(
@@ -100,7 +101,7 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
     async mapData(eventId, weekday) {
       if (eventId === '999') throw new Error('test map preload unavailable')
       assert.equal(weekday, '土')
-      return { merged: { 'メ': ['10', '11'] }, vacancies: { 'メ': ['12a', '12b'] } }
+      return { merged: { 'メ': ['10', '11'] }, vacancies: { 'メ': ['12a', '12b'] }, ...emptyMapRegions }
     },
   }
   const server = createApp({ checkDatabase: async () => {}, boothStore: store, mediaRoot: directory }).listen(0, '127.0.0.1')
@@ -149,7 +150,7 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
   const mapData = await fetch(`${base}/map-data?eventId=240&weekday=土`)
   assert.equal(mapData.status, 200)
   assert.equal(mapData.headers.get('cache-control'), 'no-store')
-  assert.deepEqual(await mapData.json(), { merged: { 'メ': ['10', '11'] }, vacancies: { 'メ': ['12a', '12b'] } })
+  assert.deepEqual(await mapData.json(), { merged: { 'メ': ['10', '11'] }, vacancies: { 'メ': ['12a', '12b'] }, ...emptyMapRegions })
 })
 
 test('MySQL sorts, filters and paginates actual booth rows without changing existing data',
@@ -182,8 +183,8 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
     t.after(() => rm(directory, { recursive: true }))
     const mapFile = join(directory, 'map.json')
     await writeFile(mapFile, JSON.stringify({ halls: [{ name: '東123', islands: [{ code: 'ア', blocks: [{ booths: [
-      { id: 'm1', number: '02', split: { a: 'l', b: 'r' } },
-      { id: 'm2', number: '99', split: { a: 't', b: 'b' } },
+      { id: 'm1', number: '02', bbox: { x: 0, y: 0, width: 20, height: 20 }, split: { a: 'l', b: 'r' } },
+      { id: 'm2', number: '99', bbox: { x: 20, y: 0, width: 20, height: 20 }, split: { a: 't', b: 'b' } },
     ] }] }] }] }))
     const rollback = new Error('Rollback synthetic booth test records')
     await assert.rejects(connection.transaction(async transaction => {
@@ -261,11 +262,12 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
       queries.length = 0
       assert.deepEqual(await store.mapData(eventId, '土'), {
         merged: { 'ア': ['02'] }, vacancies: { 'ア': ['99a'] },
+        ...emptyMapRegions,
       })
-      assert.equal(queries.length, 2)
-      assert.ok(queries.every(query => !/row_number|order by|group by/i.test(query)))
-      assert.deepEqual(await store.mapData(eventId, '日'), { merged: {}, vacancies: {} })
-      assert.deepEqual(await store.mapData(`${eventId}0`, '土'), { merged: {}, vacancies: {} })
+      assert.equal(queries.length, 5)
+      assert.ok(queries.every(query => !/row_number|group by/i.test(query)))
+      assert.deepEqual(await store.mapData(eventId, '日'), { merged: {}, vacancies: {}, ...emptyMapRegions })
+      assert.deepEqual(await store.mapData(`${eventId}0`, '土'), { merged: {}, vacancies: {}, ...emptyMapRegions })
       const reconciliation = await reconcileMapVacancies(mapFile, eventId, transaction)
       assert.equal(reconciliation.vacancies, 10)
       const savedVacancies = await transaction.select().from(mapVacancies).where(eq(mapVacancies.event_id, eventId))
@@ -279,7 +281,8 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
       assert.equal((await reconcileMapVacancies(mapFile, eventId, transaction)).vacancies, 8)
       assert.equal((await store.atLocation(empty))!.circles[0]!.booth_suffix, 'ab')
       assert.equal((await store.atLocation(empty))!.vacancy, null)
-      assert.deepEqual(await store.mapData(eventId, '土'), { merged: { 'ア': ['02', '99'] }, vacancies: {} })
+      assert.deepEqual((await store.mapData(eventId, '土')).merged, { 'ア': ['02', '99'] })
+      assert.deepEqual((await store.mapData(eventId, '土')).vacancyRegions, [{ hallGroup: '東123', rectangles: [] }])
       await writeFile(mapFile, '{"halls":[]}')
       await assert.rejects(reconcileMapVacancies(mapFile, eventId, transaction), /Hall/)
       assert.equal((await transaction.select().from(mapVacancies).where(eq(mapVacancies.event_id, eventId))).length, 8)

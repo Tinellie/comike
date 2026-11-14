@@ -69,6 +69,12 @@ export class OsmMapRenderer {
   private hoverFrame: number | null = null
   private occupancy: BoothOccupancy | null = null
   private boothData: MapBoothData | null = null
+  private genreDisplay: { enabled: boolean; selected: ReadonlySet<string> | null } = { enabled: false, selected: null }
+
+  setGenreDisplay(enabled: boolean, selected: string[] | null) {
+    this.genreDisplay = { enabled, selected: selected ? new Set(selected) : null }
+    this.requestDraw()
+  }
   private hover: { hallIndex: number; bbox: PreviewBooth['bbox'] } | null = null
   private pdfImages: ReadonlyMap<MapHall, HTMLImageElement> = new Map()
 
@@ -81,7 +87,6 @@ export class OsmMapRenderer {
     if (this.boothData === data) return
     this.boothData = data
     this.occupancy = data ? new BoothOccupancy(data) : null
-    for (const hall of this.halls) this.occupancy?.vacancyRegions(hall)
     this.requestDraw()
   }
 
@@ -135,7 +140,6 @@ export class OsmMapRenderer {
     this.transforms = transforms
     this.hallDisplay = display
     this.selectedHall = selected
-    for (const hall of halls) this.occupancy?.vacancyRegions(hall)
     this.requestDraw()
   }
 
@@ -360,7 +364,7 @@ export class OsmMapRenderer {
       for (const { hall, placement, filtered } of hallItems.filter(item => item.level === level)) {
         this.hallLayer.draw(ctx, hall, placement, this.origin, this.hallDisplay,
           hall.index === this.selectedHall, view.rotation ?? 0, filtered, true, this.occupancy,
-          this.hover?.hallIndex === hall.index ? this.hover.bbox : null, this.pdfImages.get(hall))
+          this.hover?.hallIndex === hall.index ? this.hover.bbox : null, this.pdfImages.get(hall), this.genreDisplay)
       }
     }
     const report = this.hallDisplay.visible ? this.registrationReports.find(report => report.hallIndex === this.selectedHall) : undefined

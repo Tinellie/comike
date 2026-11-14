@@ -43,7 +43,14 @@ export type BoothDays = Pick<BoothOptions, 'event' | 'days' | 'warnings'>
 export interface MapBoothData {
   merged: Record<string, string[]>
   vacancies: Record<string, string[]>
+  vacancyRegions: { hallGroup: string; rectangles: MapRectangle[] }[]
+  genres: { key: string; name: string | null; code: string | null; color: string; count: number }[]
+  genreRegions: { hallGroup: string; genreKey: string; rectangles: MapRectangle[] }[]
+  vacancyReady: boolean
+  genreReady: boolean
 }
+
+export interface MapRectangle { x: number; y: number; width: number; height: number }
 
 export interface BoothPage {
   items: BoothSummary[]

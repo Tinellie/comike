@@ -1,13 +1,13 @@
-import type { MapBoothData } from '../booths/api'
+import type { MapBoothData, MapRectangle } from '../booths/api'
 import type { HallVisibility } from './hallVisibility'
 import type { PreviewBooth } from '../preview/data'
 import type { MapHall } from './halls'
-import { mergeVacancyRegions } from './vacancyRegions'
 
 export class BoothOccupancy {
   private readonly merged: Map<string, Set<string>>
   private readonly vacancies: Map<string, Set<string>>
-  private readonly regions = new WeakMap<MapHall, readonly PreviewBooth['bbox'][]>()
+  private readonly regions: Map<string, MapRectangle[]>
+  private readonly genres: Map<string, { key: string; color: string; rectangles: MapRectangle[] }[]>
 
   constructor(data: MapBoothData) {
     const index = (groups: Record<string, string[]>) => new Map(
@@ -15,6 +15,16 @@ export class BoothOccupancy {
     )
     this.merged = index(data.merged)
     this.vacancies = index(data.vacancies)
+    this.regions = new Map(data.vacancyRegions.map(row => [row.hallGroup, row.rectangles]))
+    const colors = new Map(data.genres.map(genre => [genre.key, genre.color]))
+    this.genres = new Map()
+    for (const row of data.genreRegions) {
+      const color = colors.get(row.genreKey)
+      if (!color) throw new Error('genre 范围缺少颜色数据，请重新整理')
+      const groups = this.genres.get(row.hallGroup) ?? []
+      groups.push({ key: row.genreKey, color, rectangles: row.rectangles })
+      this.genres.set(row.hallGroup, groups)
+    }
   }
 
   isMerged(island: string, number: string) {
@@ -26,21 +36,15 @@ export class BoothOccupancy {
   }
 
   vacancyRegions(hall: MapHall): readonly PreviewBooth['bbox'][] {
-    const cached = this.regions.get(hall)
-    if (cached) return cached
-    const parents = new Map(hall.page.booths.map(booth => [booth.id, booth]))
-    const boxes: PreviewBooth['bbox'][] = []
-    for (const half of hall.page.halfBooths ?? []) {
-      const booth = parents.get(half.boothId)
-      const island = booth?.islandId ? hall.islandCodes.get(booth.islandId) : null
-      if (island && booth?.number && half.suffix && this.isVacant(island, booth.number, half.suffix)) boxes.push(half.bbox)
-    }
-    const regions = mergeVacancyRegions(boxes)
-    this.regions.set(hall, regions)
-    return regions
+    return hall.name ? this.regions.get(hall.name) ?? emptyRegions : emptyRegions
+  }
+
+  genreRegions(hall: MapHall) {
+    return hall.name ? this.genres.get(hall.name) ?? [] : []
   }
 }
 
+const emptyRegions: readonly MapRectangle[] = []
 export function boothHover(
   hit: NonNullable<ReturnType<HallVisibility['hitTest']>>, island: string | null, occupancy: BoothOccupancy | null,
 ): { bbox: PreviewBooth['bbox'] | null; suffix: string } {
