@@ -52,11 +52,16 @@ test('event days infer consecutive dates across the Sunday boundary and report a
 test('list queries are bounded, strict and distinguish all from no selected filters', () => {
   const parse = (query: string) => parseBoothQuery(new URLSearchParams(query))
   assert.deepEqual(parse('eventId=240'), {
-    eventId: '240', offset: 0, limit: 40, sort: 'location', direction: 'asc', days: null, halls: null, genres: null,
+    eventId: '240', search: '', offset: 0, limit: 40, sort: 'location', direction: 'asc', days: null, halls: null, genres: null,
   })
   assert.deepEqual(parse('eventId=240&days=&halls=').days, [])
   assert.deepEqual(parse('eventId=240&days=土,日,土').days, ['土', '日'])
   assert.equal(parse('eventId=240&sort=genre').sort, 'genre')
+  assert.equal(parse('eventId=240&search=%20ABC%20').search, 'ABC')
+  assert.equal(parse('eventId=240&search=%20%20').search, '')
+  assert.equal(parse(`eventId=240&search=${'a'.repeat(255)}`).search.length, 255)
+  assert.throws(() => parse(`eventId=240&search=${'a'.repeat(256)}`))
+  assert.throws(() => parse('eventId=240&search=a&search=b'))
   const genreQuery = (values: unknown) => `eventId=240&genres=${encodeURIComponent(JSON.stringify(values))}`
   assert.deepEqual(parse(genreQuery(['Alpha,Two', null, '', 'Alpha,Two'])).genres, ['Alpha,Two', null, ''])
   assert.deepEqual(parse(genreQuery([])).genres, [])
@@ -88,6 +93,7 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
       return eventId ? null : { event: null, events: [], days: [], halls: [], genres: [], warnings: [] }
     },
     async list(query) {
+      if (query.search) assert.equal(query.search, '社团%_')
       if (query.days?.includes('月')) throw new BoothFilterError('筛选项不属于当前活动')
       return query.eventId === '240' ? { items: [], total: 0, nextOffset: null } : null
     },
@@ -114,6 +120,7 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
   const page = await fetch(`${base}?eventId=240`)
   assert.deepEqual(await page.json(), { items: [], total: 0, nextOffset: null })
   assert.equal(page.headers.get('cache-control'), 'no-store')
+  assert.equal((await fetch(`${base}?eventId=240&search=${encodeURIComponent('社团%_')}`)).status, 200)
   const options = await fetch(`${base}/options`)
   assert.equal(options.status, 200)
   assert.deepEqual(await options.json(), { event: null, events: [], days: [], halls: [], genres: [], warnings: [] })
@@ -172,11 +179,11 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
       make(3, { booth_suffix: 'ab', circle_name: 'ABC', circle_name_reading: 'abc', genre: 'Alpha,Two' }),
       make(4, { booth_suffix: 'b', circle_name: 'いぬ', circle_name_reading: 'いぬ', genre: 'Zeta' }),
       make(5, { island_code: 'A', booth_number: '01', genre: null }),
-      make(6, { hall: '西', island_code: 'あ', booth_number: '01' }),
+      make(6, { hall: '西', island_code: 'あ', booth_number: '01', author_name: '作者%_\\テスト' }),
       make(7, { hall: '南', island_code: 'a', booth_number: '01', genre: '' }),
       make(8, { weekday: '日', booth_number: '01', genre: 'Alpha,Two' }),
       make(9, { weekday: '月', booth_number: '01', genre: 'Zeta' }),
-      make(10, { booth_number: '10', tags: '长'.repeat(800), circle_appeal: '詳細\nテスト' }),
+      make(10, { booth_number: '10', tags: `${'长'.repeat(797)}末尾标`, circle_appeal: '詳細\nテスト' }),
     ]
     const query = parseBoothQuery(new URLSearchParams({ eventId }))
     const directory = await mkdtemp(join(tmpdir(), 'comike-map-reconcile-sql-'))
@@ -208,6 +215,22 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
       assert.equal(full.total, 10)
       assert.equal(full.nextOffset, null)
       assert.equal(full.items.find(row => row.id === rows[9]!.id)!.tags!.length, 512)
+      for (const [search, expected] of [
+        ['ねこ', [1]], ['作者', [6]], ['Zeta', [2, 4, 9]], ['末尾标', [10]],
+        ['%_', [6]], ['\\', [6]], ['ABC', [3]], ['absent-search', []],
+        ["' OR 1=1 --", []], ['詳細', []],
+      ] as const) {
+        const result = (await store.list({ ...query, search }))!
+        assert.deepEqual(result.items.map(item => item.id), ids([...expected]), search)
+        assert.equal(result.total, expected.length, search)
+      }
+      const searchedPage = (await store.list({ ...query, search: 'Zeta', limit: 1 }))!
+      assert.equal(searchedPage.total, 3)
+      assert.equal(searchedPage.nextOffset, 1)
+      assert.deepEqual((await store.list({ ...query, search: 'Zeta', offset: 1, limit: 1 }))!.items.map(item => item.id), ids([4]))
+      assert.deepEqual((await store.list({ ...query, search: 'Zeta', days: ['月'], genres: ['Zeta'], sort: 'genre' }))!.items.map(item => item.id), ids([9]))
+      assert.equal((await store.list({ ...query, search: '作者', halls: ['東123'] }))!.total, 0)
+      assert.equal((await store.list({ ...query, eventId: `${eventId}0`, search: '作者' })), null)
       const descending = (await store.list({ ...query, direction: 'desc' }))!
       assert.deepEqual(descending.items.map(item => item.id), [...full.items].reverse().map(item => item.id))
       const byName = (await store.list({ ...query, sort: 'name' }))!

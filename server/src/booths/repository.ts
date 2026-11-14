@@ -139,6 +139,10 @@ export class MysqlBoothRepository {
     }
     const group = this.groupExpression(groups)
     const filters = [eq(booths.event_id, query.eventId)]
+    if (query.search) {
+      filters.push(or(...[booths.circle_name, booths.author_name, booths.genre, booths.tags]
+        .map(column => sql`locate(${query.search}, ${column}) > 0`))!)
+    }
     if (query.days) filters.push(query.days.length ? inArray(booths.weekday, query.days) : sql`false`)
     if (query.halls) filters.push(query.halls.length ? inArray(group, query.halls) : sql`false`)
     if (query.genres) {

@@ -72,6 +72,7 @@ export function eventDays(values: string[]) {
 
 export interface BoothQuery {
   eventId: string
+  search: string
   offset: number
   limit: number
   sort: 'name' | 'location' | 'genre'
@@ -85,12 +86,14 @@ export class BoothFilterError extends Error {}
 
 export function parseBoothQuery(params: URLSearchParams): BoothQuery {
   for (const key of params.keys()) {
-    if (!['eventId', 'offset', 'limit', 'sort', 'direction', 'days', 'halls', 'genres'].includes(key) || params.getAll(key).length !== 1) {
+    if (!['eventId', 'search', 'offset', 'limit', 'sort', 'direction', 'days', 'halls', 'genres'].includes(key) || params.getAll(key).length !== 1) {
       throw new Error('列表查询包含未知或重复参数')
     }
   }
   const eventId = params.get('eventId') ?? ''
   if (!/^\d{1,32}$/.test(eventId)) throw new Error('eventId 必须是活动 ID')
+  const search = (params.get('search') ?? '').trim()
+  if (search.length > 255) throw new Error('搜索文本不能超过 255 个字符')
   function integer(key: string, fallback: number, min: number, max: number) {
     const value = params.get(key)
     if (value === null) return fallback
@@ -121,7 +124,7 @@ export function parseBoothQuery(params: URLSearchParams): BoothQuery {
     genres = [...new Set<string | null>(parsed)]
   }
   return {
-    eventId, sort, direction,
+    eventId, search, sort, direction,
     offset: integer('offset', 0, 0, 1_000_000),
     limit: integer('limit', 40, 1, 100),
     days: filter('days', /^[月火水木金土日]$/),

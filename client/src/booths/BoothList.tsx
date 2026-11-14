@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import {
   Alert, Box, Button, Checkbox, CircularProgress, FormControlLabel, IconButton, MenuItem,
   Paper, Popover, Stack, SvgIcon, Table, TableBody, TableCell, TableContainer,
@@ -9,7 +10,15 @@ import { locationLabel, readBoothApi } from './api'
 import BoothDetail from './BoothDetail'
 import { BoothImages, BoothLinks } from './BoothMedia'
 
-function BoothTable({ options }: { options: BoothOptions }) {
+function BoothHeader({ children }: { children?: ReactNode }) {
+  return <Stack direction="row" sx={{ mb: 2, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+    <Box><Typography variant="h4" sx={{ fontWeight: 700 }}>Booth List</Typography><Typography variant="body2" color="text.secondary">Comiket 社团列表</Typography></Box>
+    <Stack direction="row" sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1.5 }}>{children}</Stack>
+  </Stack>
+}
+
+function BoothTable({ options, eventControl }: { options: BoothOptions; eventControl: ReactNode }) {
+  const [search, setSearch] = useState('')
   const [sort, setSort] = useState<'name' | 'location' | 'genre'>('location')
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc')
   const [days, setDays] = useState<string[] | null>(null)
@@ -27,6 +36,7 @@ function BoothTable({ options }: { options: BoothOptions }) {
   const request = useRef<AbortController | null>(null)
   const inFlight = useRef(false)
   const query = new URLSearchParams({ eventId: options.event!.eventId, sort, direction, limit: '40' })
+  if (search.trim()) query.set('search', search.trim())
   if (days !== null) query.set('days', days.join(','))
   if (halls !== null) query.set('halls', halls.join(','))
   if (genres !== null) query.set('genres', JSON.stringify(genres))
@@ -100,6 +110,16 @@ function BoothTable({ options }: { options: BoothOptions }) {
   }
 
   return <>
+    <BoothHeader>
+      {eventControl}
+      <TextField type="search" size="small" label="搜索" placeholder="社团名、作者名、genre、tags" value={search}
+        slotProps={{ htmlInput: { maxLength: 255 } }} sx={{ width: 320, maxWidth: '100%' }}
+        onChange={event => {
+          const value = event.target.value
+          if (value.trim() !== search.trim()) resetPage()
+          setSearch(value)
+        }} />
+    </BoothHeader>
     <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
       已加载 {items.length} / {total} 个社团 · 向下滚动加载更多 · 点击社团查看详情
     </Typography>
@@ -230,19 +250,17 @@ export default function BoothList() {
       })
     return () => controller.abort()
   }, [eventId, retry])
-  return <Box sx={{ maxWidth: 1700, mx: 'auto', p: { xs: 1.5, md: 3 } }}>
-    <Stack direction="row" sx={{ mb: 2, alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-      <Box><Typography variant="h4" sx={{ fontWeight: 700 }}>Booth List</Typography><Typography variant="body2" color="text.secondary">Comiket 社团列表</Typography></Box>
-      {!!options?.events.length && <TextField select size="small" label="活动" value={options.event?.eventId ?? ''} sx={{ minWidth: 120 }}
+  const eventControl = !!options?.events.length && <TextField select size="small" label="活动" value={options.event?.eventId ?? ''} sx={{ minWidth: 120 }}
         onChange={event => { setOptions(null); setError(null); setEventId(event.target.value) }}>
         {options.events.map(event => <MenuItem key={event.eventId} value={event.eventId}>C{event.comiket}</MenuItem>)}
-      </TextField>}
-    </Stack>
+      </TextField>
+  return <Box sx={{ maxWidth: 1700, mx: 'auto', p: { xs: 1.5, md: 3 } }}>
+    {!options?.event && <BoothHeader>{eventControl}</BoothHeader>}
     {error && <Alert severity="error" action={<Button onClick={() => { setError(null); setRetry(value => value + 1) }}>重试</Button>}>{error}</Alert>}
     {!options && !error && <CircularProgress aria-label="加载活动和筛选项" size={24} />}
     {options?.warnings.map(warning => <Alert key={warning} severity="warning" sx={{ mb: 2 }}>{warning}</Alert>)}
     {options && (options.event
-      ? <BoothTable key={options.event.eventId} options={options} />
+      ? <BoothTable key={options.event.eventId} options={options} eventControl={eventControl} />
       : <Alert severity="info">数据库中还没有 booth 数据，请先在爬虫 Dashboard 采集。</Alert>)}
   </Box>
 }
