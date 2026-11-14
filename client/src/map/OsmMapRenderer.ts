@@ -64,7 +64,7 @@ export class OsmMapRenderer {
   private selectedLevels = new Set<number>()
   private pointer: Point | null = null
   private readonly hitIndexes = new WeakMap<MapHall, HallVisibility>()
-  private readonly onHover: (label: string, clickable: boolean) => void
+  private readonly onHover: (label: string, clickable: boolean, hit: MapBoothHit | null) => void
   private hoverLabel = ''
   private hoverFrame: number | null = null
   private occupancy: BoothOccupancy | null = null
@@ -90,7 +90,7 @@ export class OsmMapRenderer {
     data: OsmMapData,
     onZoom: (percent: number) => void,
     onRotation: (degrees: number) => void = () => {},
-    onHover: (label: string, clickable: boolean) => void = () => {},
+    onHover: (label: string, clickable: boolean, hit: MapBoothHit | null) => void = () => {},
   ) {
     this.canvas = canvas
     this.data = data
@@ -227,8 +227,8 @@ export class OsmMapRenderer {
     }
     if (label !== this.hoverLabel) {
       this.hoverLabel = label
-      this.onHover(label, selected !== null)
     }
+    this.onHover(label, selected !== null, hover ? selected : null)
     if (hover?.hallIndex !== this.hover?.hallIndex || hover?.bbox !== this.hover?.bbox) {
       this.hover = hover
       if (redraw) this.requestDraw()

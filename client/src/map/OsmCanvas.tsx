@@ -9,7 +9,10 @@ import type { MapBoothHit } from './OsmMapRenderer'
 import type { HallTransforms, MapHall } from './halls'
 import { defaultHallDisplay } from './HallMapLayer'
 import { dragRotation } from './viewport'
-import type { MapBoothData } from '../booths/api'
+import type { MapBoothData, MapBoothLocation } from '../booths/api'
+import BoothHoverPreview from './BoothHoverPreview'
+import type { BoothHoverHandle } from './BoothHoverPreview'
+import { mapBoothKey } from './boothLookup'
 
 interface OsmCanvasProps {
   data: OsmMapData
@@ -21,9 +24,10 @@ interface OsmCanvasProps {
   weekday: string
   onDayChange: (weekday: string) => void
   boothData: MapBoothData | null
+  loadBooth: (hit: MapBoothHit) => Promise<MapBoothLocation>
 }
 
-export default function OsmCanvas({ data, halls, transforms, onError, onBoothClick, days, weekday, onDayChange, boothData }: OsmCanvasProps) {
+export default function OsmCanvas({ data, halls, transforms, onError, onBoothClick, days, weekday, onDayChange, boothData, loadBooth }: OsmCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<OsmMapRenderer | null>(null)
@@ -31,6 +35,8 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
   const [rotation, setRotation] = useState(0)
   const [levels, setLevels] = useState<number[]>([1, 2])
   const [hoverLabel, setHoverLabel] = useState('')
+  const [hoverHit, setHoverHit] = useState<MapBoothHit | null>(null)
+  const tooltipRef = useRef<BoothHoverHandle | null>(null)
   const [pdfVisible, setPdfVisible] = useState(false)
   const [pdfImages, setPdfImages] = useState<ReadonlyMap<MapHall, HTMLImageElement>>(new Map())
   const [pdfError, setPdfError] = useState<string | null>(null)
@@ -124,10 +130,14 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
     function resize() {
       if (!canvas || !container) return
       try {
-        renderer ??= new OsmMapRenderer(canvas, data, () => {}, setRotation, (label, canClick) => {
+        renderer ??= new OsmMapRenderer(canvas, data, () => {}, setRotation, (label, canClick, hit) => {
           setHoverLabel(label)
           clickable = canClick
           updateCursor()
+          setHoverHit(previous => {
+            const next = drag ? null : hit
+            return previous && next && mapBoothKey(previous) === mapBoothKey(next) ? previous : next
+          })
         })
         const state = hallState.current
         renderer.setHalls(state.halls, state.transforms, defaultHallDisplay, null)
@@ -153,8 +163,10 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
         startX: event.clientX, startY: event.clientY, moved: event.altKey,
       }
       canvas.style.cursor = event.altKey ? 'crosshair' : 'grabbing'
+      setHoverHit(null)
     }
     function pointerMove(event: PointerEvent) {
+      tooltipRef.current?.move(event.clientX, event.clientY)
       if (canvas) {
         const bounds = canvas.getBoundingClientRect()
         renderer?.setPointer({ x: event.clientX - bounds.left, y: event.clientY - bounds.top })
@@ -188,6 +200,7 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
       updateCursor()
     }
     function pointerLeave() {
+      setHoverHit(null)
       clickable = false
       updateCursor()
       renderer?.setPointer(null)
@@ -247,6 +260,7 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
           position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden',
         }}
       >
+        <BoothHoverPreview ref={tooltipRef} hit={boothData ? hoverHit : null} load={loadBooth} />
         <canvas
           ref={canvasRef}
           aria-label="OSM 地图，可拖动、滚轮缩放、Alt 拖动旋转，也可用方向键和加减键操作"

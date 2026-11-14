@@ -63,6 +63,11 @@ export interface MapVacancy {
   checked_at: string
 }
 
+export interface MapBoothLocation {
+  circles: BoothDetail[]
+  vacancy: MapVacancy | null
+}
+
 export async function readBoothApi<T>(path: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(`/api/booths${path}`, {
     cache: 'no-store', signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),

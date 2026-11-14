@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Box, Button, LinearProgress, Stack } from '@mui/material'
 import OsmCanvas from '../map/OsmCanvas'
 import { parseOsm } from '../map/osm'
@@ -10,6 +10,7 @@ import type { MapBoothHit } from '../map/OsmMapRenderer'
 import BoothDetail from '../booths/BoothDetail'
 import { readBoothApi } from '../booths/api'
 import type { BoothDays, BoothDetail as Detail, MapBoothData, MapVacancy } from '../booths/api'
+import { MapBoothLookup } from '../map/boothLookup'
 
 export default function Map() {
   const [data, setData] = useState<OsmMapData | null>(null)
@@ -33,6 +34,8 @@ export default function Map() {
   const boothData = preload?.eventId === eventId && preload?.weekday === weekday ? preload.data : null
   const lookup = useRef<AbortController | null>(null)
   const lastHit = useRef<MapBoothHit | null>(null)
+  const locationLookup = useMemo(() => new MapBoothLookup(eventId ?? '', weekday), [eventId, weekday])
+  useEffect(() => () => locationLookup.dispose(), [locationLookup])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -82,8 +85,7 @@ export default function Map() {
     lookup.current = controller
     setLookingUp(true); setLookupError(null); setSelected(null); setVacancy(null); setCircles([])
     try {
-      const query = new URLSearchParams({ eventId: options.event.eventId, weekday, ...hit })
-      const result = await readBoothApi<{ circles: Detail[]; vacancy: MapVacancy | null }>(`/location?${query}`, controller.signal)
+      const result = await locationLookup.load(hit)
       if (controller.signal.aborted) return
       setCircles(result.circles); setSelected(result.circles[0] ?? null); setVacancy(result.vacancy)
       if (!result.circles.length && !result.vacancy) setLookupError('此位置没有社团记录或已保存的空位记录，请完成采集并重新执行地图比对')
@@ -177,6 +179,7 @@ export default function Map() {
       {data && transforms && (
         <OsmCanvas data={data} halls={halls} transforms={transforms} onError={setError}
           boothData={boothData}
+          loadBooth={locationLookup.load}
           days={options?.days ?? []} weekday={weekday} onDayChange={changeDay} onBoothClick={hit => { void selectBooth(hit) }} />
       )}
       <Stack sx={{ position: 'absolute', top: 16, left: 16, maxWidth: 'min(400px, calc(100% - 32px))', gap: 1 }}>
