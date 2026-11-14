@@ -5,6 +5,35 @@ MUI、MySQL 和 Drizzle ORM。
 
 界面包含主导航栏、Booth List 首页 (`/`) 和 OSM 地图 Map (`/map`)。
 另提供 Preview (`/preview`) 用于查看地图识别结果。
+导航栏右侧的“登录”进入 `/login`，支持注册、登录和退出。注册账号默认为普通用户。
+
+## 账号与权限
+
+先配置 `server/.env` 的 `DATABASE_URL` 并运行 `npm run db:init`，再启动服务和注册账号。
+账号为 3–32 位字母、数字或下划线，不区分大小写；密码为 8–128 位字符。
+通过服务端 CLI 授予或撤销已注册账号的管理员权限：
+
+```powershell
+npm run auth:admin -w server -- <username> grant
+npm run auth:admin -w server -- <username> revoke
+```
+
+管理员字段为 `users.is_admin`，注册接口无法自行提升权限，也不自动提升首个用户。
+变更角色后刷新页面即可更新界面；API 每次从数据库读取当前角色，撤销权限立即生效。
+
+- Home、Map、booth 数据和地图读取接口保持公开。
+- `/preview`、`/crawler` 由前端管理员路由守卫保护，未登录跳转登录，普通用户显示无权限。
+  导航仅向管理员展示入口；`/api/preview/*` 和 `/api/crawler/*` 在服务端统一要求管理员，
+  包括识别结果、裁剪图片、截图、远程输入、初始化、采集及整理接口。未登录返回 401，非管理员返回 403。
+  例外是 Map 共用的 `/api/preview/page-NNN-pdf.png` 原始 PDF 图片，GET/HEAD 保持公开，
+  普通用户仍可使用 Map 的“PDF 原图”开关。
+- Map 的“重新计算全部 Hall”按钮仅管理员可见，未登录和非管理员隐藏；保存变换的 PUT 接口也要求管理员。
+- 密码以随机盐的 scrypt 哈希保存。会话为随机令牌，数据库仅保存 SHA-256 摘要，
+  使用 HttpOnly、SameSite=Lax Cookie，有效期 7 天，服务重启后保持；退出使当前会话失效。
+  不在 localStorage 保存密码或令牌。注册、登录有进程内限流；多实例部署应额外配置网关限流。
+- 生产环境必须启用 HTTPS，设置 `NODE_ENV=production` 或 `AUTH_COOKIE_SECURE=true`，
+  同时将 `HALL_EDITOR_ORIGIN` 设置为公开 HTTPS 来源。写请求仍执行跨站请求检查。
+  认证数据库故障时明确返回 503，不降级放行。生产环境应先从 CLI 初始化/迁移数据库。
 
 ## Booth List
 
@@ -185,7 +214,7 @@ Map 的 Island marker 文字直接以 `pos` 为中心绘制，无偏移、圆点
 随机示例位移、角度和比例，**不是精确地理配准，也不会每次刷新重新随机**。
 重新排序或增删最终 Hall 后需同步修改配置，缺失/重复/名称不匹配均会报错。
 
-Map 页面保留导航、地图及「重新计算全部 Hall」按钮，右侧悬浮面板提供 `rotation` 拉杆
+Map 页面保留导航、地图及仅管理员可见的「重新计算全部 Hall」按钮，右侧悬浮面板提供 `rotation` 拉杆
 （-180°–180°）和可折叠 `level` 勾选区（1–4），不显示配准报告或额外说明文字。
 按住 Alt 拖动，以地图视口中心旋转；普通拖动、滚轮和键盘操作在旋转后仍按屏幕方向工作，
 滚轮缩放保持鼠标所指的地理位置不变，并保留 OSM 必需署名。
@@ -274,7 +303,7 @@ Hall 边界、Block/Booth 和分割线直接不等比缩放；编号、a/b、Isl
 页面不提供单独的保存入口，重新计算按钮同时负责保存；
 需允许服务器写入配置及其所在目录。原始识别数据和 OSM 文件不会被修改。
 保存接口只允许同源请求及 `HALL_EDITOR_ORIGIN` 指定的编辑器来源（默认 `http://localhost:5173`，用于 Vite 代理）。
-这是本地编辑接口，未提供多用户权限/版本冲突管理，不应直接暴露到公开网络。
+此写接口仅管理员可用，仍未提供并发编辑的版本冲突管理。
 
 固定 Hall 读取接口为 `/api/map/final.json` 和 `/api/map/hall-transforms.json`；
 缺失文件、无效数据或计算/绘制失败时记录控制台错误，并以红色重新计算按钮提示失败，
@@ -453,7 +482,7 @@ Copy-Item server\.env.example server\.env
 
 Drizzle 连接位于 [server/src/db/index.ts](./server/src/db/index.ts)，
 表定义放在 [server/src/db/schema.ts](./server/src/db/schema.ts)。
-已定义 `booths`、`crawl_jobs`、`circle_list_cache` 和 `map_vacancies`。首次运行时使用具有建库权限的账号执行：
+已定义 booth、采集和地图相关表，以及认证用的 `users`、`sessions`。首次运行时使用具有建库权限的账号执行：
 
 ```powershell
 npm run db:init
@@ -515,12 +544,9 @@ SQL 清理在一个事务中执行，但文件系统与 SQL 不在同一事务�
 登录窗口内的“确认登录”用于验证并保存会话，“暂时关闭”只隐藏窗口，
 “重试打开登录页”用于重新加载；其余发送文本、按键及滚动按钮用于操作远程网页。
 
-**当前按需求不实现管理账号鉴权。页面、控制 API、登录画面及输入接口都是公开的。**
-任何能访问它们的人均可控制采集及第三方登录会话。使用真实账号前，
-必须通过防火墙、VPN 或反向代理限制整个 `/crawler` 和 `/api/crawler` 的访问，
-不要只隐藏导航。跨站请求检查不等于身份验证。后续可以通过
-`createApp` 的 `authorizeCrawler` middleware 对全部采集 API 统一鉴权，
-并同时保护前端路由。
+Crawler 页面、控制 API、第三方登录画面及输入接口均仅允许本应用管理员访问，
+由服务端会话统一鉴权，不能通过直接调用接口绕过前端限制。
+本应用账号与第三方采集网站的登录会话相互独立；管理员共享服务端采集会话，请仅向可信用户授权。
 
 ### 本地运行与登录
 
@@ -532,7 +558,8 @@ npm run dev
 ```
 
 1. 在 `server/.env` 配置 `DATABASE_URL`；必须先配置并启动服务，网页不能设置数据库密码。
-2. 打开 http://localhost:5173/crawler，点击“开始采集”。
+2. 在 `/login` 注册账号，通过上述 CLI 授予管理员权限并登录，
+   打开 http://localhost:5173/crawler，点击“开始采集”。
 3. 无有效会话时自动打开 dashboard 登录窗口。该画面来自**服务器上的
    headless Chromium**，并非嵌入第三方网站，所以本地测试和远程部署使用同一流程。
    点击“打开登录窗口”会立即显示窗口和浏览器启动提示，不等待网站加载完成。

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import type { AddressInfo } from 'node:net'
-import { createApp } from '../src/app.ts'
+import { createAdminApp as createApp } from './authFixture.js'
 
 test('Hall files are whitelisted and transform writes persist only validated configuration', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'comike-hall-api-'))

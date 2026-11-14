@@ -1,4 +1,18 @@
-import { char, datetime, index, int, json, longtext, mysqlTable, primaryKey, text, varchar } from 'drizzle-orm/mysql-core'
+import { boolean, char, datetime, index, int, json, longtext, mysqlTable, primaryKey, text, varchar } from 'drizzle-orm/mysql-core'
+
+export const users = mysqlTable('users', {
+  id: char('id', { length: 36 }).primaryKey(),
+  username: varchar('username', { length: 32 }).notNull().unique(),
+  password_hash: varchar('password_hash', { length: 255 }).notNull(),
+  is_admin: boolean('is_admin').notNull().default(false),
+  created_at: datetime('created_at').notNull(),
+})
+
+export const sessions = mysqlTable('sessions', {
+  token_hash: char('token_hash', { length: 64 }).primaryKey(),
+  user_id: char('user_id', { length: 36 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  expires_at: datetime('expires_at').notNull(),
+}, table => [index('sessions_expiry_idx').on(table.expires_at)])
 
 export interface MapRectangle { x: number; y: number; width: number; height: number }
 

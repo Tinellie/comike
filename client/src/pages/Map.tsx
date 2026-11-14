@@ -11,8 +11,10 @@ import BoothDetail from '../booths/BoothDetail'
 import { readBoothApi } from '../booths/api'
 import type { BoothDays, BoothDetail as Detail, MapBoothData, MapVacancy } from '../booths/api'
 import { MapBoothLookup } from '../map/boothLookup'
+import { useAuth } from '../auth/context'
 
 export default function Map() {
+  const { user } = useAuth()
   const [data, setData] = useState<OsmMapData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -99,6 +101,10 @@ export default function Map() {
   }
 
   async function recalculateTransforms() {
+    if (!user?.isAdmin) {
+      setError('重新计算全部 Hall 需要管理员权限')
+      return
+    }
     if (saving) return
     if (!data) {
       setError(null)
@@ -169,13 +175,14 @@ export default function Map() {
       position: 'relative', display: 'flex', flexDirection: 'column',
       height: { xs: 'calc(100dvh - 56px)', sm: 'calc(100dvh - 64px)' },
     }}>
-      <Button variant="contained" onClick={() => { void recalculateTransforms() }}
+      {user?.isAdmin && <Button variant="contained" onClick={() => { void recalculateTransforms() }}
         disabled={saving || (!data && !error)} color={error ? 'error' : 'primary'}
         aria-busy={saving}
-        title={error ?? undefined} aria-label={error ? `重新计算全部 Hall：${error}，点击重试` : undefined}
+        title={error ?? undefined}
+        aria-label={error ? `重新计算全部 Hall：${error}，点击重试` : undefined}
         sx={{ position: 'absolute', top: 16, right: 16, zIndex: 1 }}>
         {saving ? '计算并保存中…' : error ? '重新计算全部 Hall（失败，重试）' : '重新计算全部 Hall'}
-      </Button>
+      </Button>}
       {data && transforms && (
         <OsmCanvas data={data} halls={halls} transforms={transforms} onError={setError}
           boothData={boothData}
@@ -183,6 +190,9 @@ export default function Map() {
           days={options?.days ?? []} weekday={weekday} onDayChange={changeDay} onBoothClick={hit => { void selectBooth(hit) }} />
       )}
       <Stack sx={{ position: 'absolute', top: 16, left: 16, maxWidth: 'min(400px, calc(100% - 32px))', gap: 1 }}>
+        {!user?.isAdmin && error && <Alert severity="error" action={<Button onClick={() => {
+          setError(null); setAttempt(value => value + 1)
+        }}>重试</Button>}>{error}</Alert>}
         {eventId && weekday && !boothData && !preloadError && <LinearProgress aria-label="预加载地图摊位" />}
         {boothData && !boothData.vacancyReady && <Alert severity="warning">请在 Crawler 整理 vacancies 数据，以加载空位合并背景。</Alert>}
         {preloadError && <Alert severity="warning" action={<Button onClick={() => {

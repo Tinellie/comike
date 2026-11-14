@@ -1,5 +1,4 @@
 import { Router } from 'express'
-import type { RequestHandler } from 'express'
 import type { BrowserInput } from './login.js'
 import { LoginRequiredError } from './parser.js'
 import { CrawlerConflictError } from './service.js'
@@ -28,10 +27,8 @@ export function crawlerRouter(
   service: CrawlerService,
   initialize: () => Promise<void>,
   editorOrigin: string | undefined,
-  authorize: RequestHandler = (_req, _res, next) => next(),
 ) {
   const router = Router()
-  router.use(authorize)
   router.use((req, res, next) => {
     res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' })
     const origin = req.get('origin')
