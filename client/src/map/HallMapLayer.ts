@@ -9,6 +9,7 @@ import { filteredOutline } from './style'
 import { HallVisibility, intersectsBounds, paddedBounds } from './hallVisibility'
 import type { BoothOccupancy } from './boothOccupancy'
 import type { PreviewBooth } from '../preview/data'
+import { inverseTransform } from '../preview/pdfPreview'
 
 const hallMeta = object(JSON.parse(hallMetaSource))
 if (!Array.isArray(hallMeta.halls)) throw new Error('Hall marker 元数据列表无效')
@@ -60,12 +61,21 @@ export class HallMapLayer {
     context: CanvasRenderingContext2D, hall: MapHall, placement: HallPlacement,
     origin: Point, display: HallDisplay, _selected: boolean, viewRotation = 0, filtered = false,
     cull = true, occupancy: BoothOccupancy | null = null, hover: PreviewBooth['bbox'] | null = null,
+    pdfImage: HTMLImageElement | undefined = undefined,
   ) {
     if (!display.visible || !hall.page.hallOutline) return
     const markerColor = hallMarkerColor(hall)
     const [a, b, c, d, e, f] = hallMatrix(hall, placement)
     context.save()
     context.transform(a, b, c, d, e - origin.x, f - origin.y)
+    if (pdfImage && hall.page.pdfPreview && !filtered) {
+      const pdf = hall.page.pdfPreview
+      context.save()
+      context.transform(...inverseTransform(pdf.transform))
+      context.globalAlpha = 0.35
+      context.drawImage(pdfImage, 0, 0, pdf.width, pdf.height)
+      context.restore()
+    }
     let view: Bounds | null = null
     if (cull) {
       const inverse = context.getTransform().inverse()

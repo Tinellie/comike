@@ -166,6 +166,25 @@ def simplify_result(data: dict[str, object]) -> dict[str, object]:
             "name": _text(venue.get("label"), f"Page {page.get('page')} hall name"),
             "textRotation": text_rotation, "islands": final_islands,
         }
+        if "pdfPreview" in page:
+            source_page = page.get("page")
+            pdf = _object(page["pdfPreview"], "pdfPreview")
+            if isinstance(source_page, bool) or not isinstance(source_page, int) or source_page < 1:
+                raise ValueError("PDF source page must be a positive integer")
+            image = f"page-{source_page:03}-pdf.png"
+            width, height = pdf.get("width"), pdf.get("height")
+            if (pdf.get("image") != image
+                    or any(isinstance(n, bool) or not isinstance(n, int) or n <= 0 for n in (width, height))):
+                raise ValueError("PDF image or dimensions are invalid")
+            transform = pdf.get("transform")
+            if (not isinstance(transform, list) or len(transform) != 6
+                    or any(isinstance(n, bool) or not isinstance(n, (int, float))
+                           or not math.isfinite(n) for n in transform)):
+                raise ValueError("PDF transform must contain six finite numbers")
+            if abs(transform[0] * transform[3] - transform[1] * transform[2]) < 1e-12:
+                raise ValueError("PDF transform must be invertible")
+            hall["sourcePage"] = source_page
+            hall["pdfPreview"] = {"image": image, "width": width, "height": height, "transform": list(transform)}
         if "hallLabels" in page:
             hall["labels"] = [
                 {

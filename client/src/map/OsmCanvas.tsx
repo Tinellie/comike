@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  Accordion, AccordionDetails, AccordionSummary, Box, Checkbox, FormControlLabel,
-  FormGroup, MenuItem, Paper, Slider, TextField, Typography,
+  Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, FormControlLabel,
+  FormGroup, LinearProgress, MenuItem, Paper, Slider, Switch, TextField, Typography,
 } from '@mui/material'
 import type { OsmMapData } from './osm'
 import { OsmMapRenderer } from './OsmMapRenderer'
@@ -31,10 +31,66 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
   const [rotation, setRotation] = useState(0)
   const [levels, setLevels] = useState<number[]>([1, 2])
   const [hoverLabel, setHoverLabel] = useState('')
+  const [pdfVisible, setPdfVisible] = useState(false)
+  const [pdfImages, setPdfImages] = useState<ReadonlyMap<MapHall, HTMLImageElement>>(new Map())
+  const [pdfError, setPdfError] = useState<string | null>(null)
+  const [pdfAttempt, setPdfAttempt] = useState(0)
+  const pdfCache = useRef(new WeakMap<MapHall, HTMLImageElement>())
+  const pdfState = useRef<ReadonlyMap<MapHall, HTMLImageElement>>(new Map())
   const viewState = useRef({ rotation, levels })
   const clickHandler = useRef(onBoothClick)
   const boothState = useRef(boothData)
   useEffect(() => { clickHandler.current = onBoothClick }, [onBoothClick])
+
+  useEffect(() => {
+    pdfState.current = pdfVisible ? pdfImages : new Map()
+    rendererRef.current?.setPdfImages(pdfState.current)
+  }, [pdfVisible, pdfImages])
+
+  useEffect(() => {
+    if (!pdfVisible) return
+    const controller = new AbortController()
+    const urls: string[] = []
+    async function load() {
+      try {
+        const entries = await Promise.all(halls.map(async hall => {
+          const cached = pdfCache.current.get(hall)
+          if (cached) return [hall, cached] as const
+          const pdf = hall.page.pdfPreview
+          if (!pdf) throw new Error(`${hall.name ?? 'Hall'} 缺少 PDF 原图信息，请重新导出地图数据`)
+          const response = await fetch(`/api/preview/${pdf.image}`, { signal: controller.signal, cache: 'no-store' })
+          if (!response.ok) throw new Error(`PDF 原图加载失败（HTTP ${response.status}）`)
+          const blob = await response.blob()
+          if (controller.signal.aborted) throw controller.signal.reason
+          const url = URL.createObjectURL(blob)
+          urls.push(url)
+          const image = new Image()
+          image.src = url
+          await image.decode()
+          if (image.naturalWidth !== pdf.width || image.naturalHeight !== pdf.height) {
+            throw new Error('PDF 原图尺寸与识别坐标不一致，请重新生成识别输出')
+          }
+          if (!controller.signal.aborted) pdfCache.current.set(hall, image)
+          return [hall, image] as const
+        }))
+        if (controller.signal.aborted) return
+        setPdfImages(new Map(entries))
+        setPdfError(null)
+      } catch (reason) {
+        if (controller.signal.aborted) return
+        controller.abort()
+        console.error('Map PDF image loading failed:', reason)
+        setPdfError(reason instanceof Error ? reason.message : 'PDF 原图加载失败')
+      } finally {
+        for (const url of urls) URL.revokeObjectURL(url)
+      }
+    }
+    void load()
+    return () => {
+      controller.abort()
+      for (const url of urls) URL.revokeObjectURL(url)
+    }
+  }, [halls, pdfVisible, pdfAttempt])
 
   useEffect(() => {
     boothState.current = boothData
@@ -73,6 +129,7 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
         renderer.setRotation(viewState.current.rotation)
         renderer.setLevels(viewState.current.levels)
         renderer.setBoothData(boothState.current)
+        renderer.setPdfImages(pdfState.current)
       } catch (reason) {
         console.error('OSM rendering failed:', reason)
         onError(reason instanceof Error ? reason.message : 'OSM 地图绘制失败')
@@ -195,6 +252,13 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
             disabled={!days.length} onChange={event => onDayChange(event.target.value)} sx={{ mb: 2 }}>
             {days.map(day => <MenuItem key={day.weekday} value={day.weekday}>{day.label}（{day.weekday}）</MenuItem>)}
           </TextField>
+          <FormControlLabel label="PDF 原图" control={<Switch checked={pdfVisible}
+            onChange={(_, checked) => { setPdfVisible(checked); setPdfError(null) }} />} />
+          {pdfVisible && !pdfError && halls.some(hall => !pdfImages.has(hall))
+            && <LinearProgress aria-label="加载 PDF 原图" />}
+          {pdfVisible && pdfError && <Alert severity="warning" action={<Button onClick={() => {
+            setPdfError(null); setPdfAttempt(value => value + 1)
+          }}>重试</Button>}>{pdfError}</Alert>}
           <Typography id="map-rotation-label" variant="body2">rotation</Typography>
           <Slider aria-labelledby="map-rotation-label" value={rotation} min={-180} max={180}
             step={1} valueLabelDisplay="auto" valueLabelFormat={value => `${Math.round(value)}°`}

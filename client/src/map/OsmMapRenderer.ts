@@ -69,6 +69,12 @@ export class OsmMapRenderer {
   private hoverFrame: number | null = null
   private occupancy: BoothOccupancy | null = null
   private hover: { hallIndex: number; bbox: PreviewBooth['bbox'] } | null = null
+  private pdfImages: ReadonlyMap<MapHall, HTMLImageElement> = new Map()
+
+  setPdfImages(images: ReadonlyMap<MapHall, HTMLImageElement>) {
+    this.pdfImages = images
+    this.requestDraw()
+  }
 
   setBoothData(data: MapBoothData | null) {
     this.occupancy = data ? new BoothOccupancy(data) : null
@@ -132,7 +138,7 @@ export class OsmMapRenderer {
     const hall = this.halls.find(h => h.index === index)
     const placement = this.transforms.placements.find(p => p.hallIndex === index)
     if (!hall || !placement) throw new Error('找不到 Hall 定位数据')
-    this.view = fitViewport(hallWorldBounds(hall, placement), this.size, this.view?.rotation ?? 0)
+    this.view = fitViewport(hallWorldBounds(hall, placement, this.pdfImages.has(hall)), this.size, this.view?.rotation ?? 0)
     this.requestDraw()
   }
 
@@ -231,7 +237,7 @@ export class OsmMapRenderer {
       for (const placement of this.transforms.placements) {
         const hall = this.halls.find(h => h.index === placement.hallIndex)
         if (!hall) continue
-        const b = hallWorldBounds(hall, placement)
+        const b = hallWorldBounds(hall, placement, this.pdfImages.has(hall))
         bounds.minX = Math.min(bounds.minX, b.minX)
         bounds.minY = Math.min(bounds.minY, b.minY)
         bounds.maxX = Math.max(bounds.maxX, b.maxX)
@@ -302,7 +308,7 @@ export class OsmMapRenderer {
     })
     const hallItems = this.transforms.placements.flatMap(placement => {
       const hall = this.halls.find(h => h.index === placement.hallIndex)
-      if (!hall || !overlaps(hallWorldBounds(hall, placement))) return []
+      if (!hall || !overlaps(hallWorldBounds(hall, placement, this.pdfImages.has(hall)))) return []
       const level = hallMetadata(hall).level
       return [{ hall, placement, level, filtered: !matchesLevels([level], this.selectedLevels) }]
     })
@@ -349,7 +355,7 @@ export class OsmMapRenderer {
       for (const { hall, placement, filtered } of hallItems.filter(item => item.level === level)) {
         this.hallLayer.draw(ctx, hall, placement, this.origin, this.hallDisplay,
           hall.index === this.selectedHall, view.rotation ?? 0, filtered, true, this.occupancy,
-          this.hover?.hallIndex === hall.index ? this.hover.bbox : null)
+          this.hover?.hallIndex === hall.index ? this.hover.bbox : null, this.pdfImages.get(hall))
       }
     }
     const report = this.hallDisplay.visible ? this.registrationReports.find(report => report.hallIndex === this.selectedHall) : undefined
