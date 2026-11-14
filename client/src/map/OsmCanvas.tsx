@@ -116,11 +116,19 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
     let drag: {
       id: number; x: number; y: number; startX: number; startY: number; moved: boolean
     } | null = null
+    let clickable = false
+    function updateCursor() {
+      if (canvas && !drag) canvas.style.cursor = clickable ? 'pointer' : 'grab'
+    }
     const observer = new ResizeObserver(resize)
     function resize() {
       if (!canvas || !container) return
       try {
-        renderer ??= new OsmMapRenderer(canvas, data, () => {}, setRotation, setHoverLabel)
+        renderer ??= new OsmMapRenderer(canvas, data, () => {}, setRotation, (label, canClick) => {
+          setHoverLabel(label)
+          clickable = canClick
+          updateCursor()
+        })
         const state = hallState.current
         renderer.setHalls(state.halls, state.transforms, defaultHallDisplay, null)
         rendererRef.current = renderer
@@ -171,15 +179,17 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
       if (!drag || drag.id !== event.pointerId || !canvas) return
       const clicked = event.type === 'pointerup' && !drag.moved
       drag = null
-      canvas.style.cursor = 'grab'
       if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
       if (clicked) {
         const bounds = canvas.getBoundingClientRect()
         const hit = renderer?.pickBooth({ x: event.clientX - bounds.left, y: event.clientY - bounds.top })
         if (hit) clickHandler.current(hit)
       }
+      updateCursor()
     }
     function pointerLeave() {
+      clickable = false
+      updateCursor()
       renderer?.setPointer(null)
     }
     function wheel(event: WheelEvent) {

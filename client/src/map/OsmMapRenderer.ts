@@ -64,10 +64,11 @@ export class OsmMapRenderer {
   private selectedLevels = new Set<number>()
   private pointer: Point | null = null
   private readonly hitIndexes = new WeakMap<MapHall, HallVisibility>()
-  private readonly onHover: (label: string) => void
+  private readonly onHover: (label: string, clickable: boolean) => void
   private hoverLabel = ''
   private hoverFrame: number | null = null
   private occupancy: BoothOccupancy | null = null
+  private boothData: MapBoothData | null = null
   private hover: { hallIndex: number; bbox: PreviewBooth['bbox'] } | null = null
   private pdfImages: ReadonlyMap<MapHall, HTMLImageElement> = new Map()
 
@@ -77,7 +78,10 @@ export class OsmMapRenderer {
   }
 
   setBoothData(data: MapBoothData | null) {
+    if (this.boothData === data) return
+    this.boothData = data
     this.occupancy = data ? new BoothOccupancy(data) : null
+    for (const hall of this.halls) this.occupancy?.vacancyRegions(hall)
     this.requestDraw()
   }
 
@@ -86,7 +90,7 @@ export class OsmMapRenderer {
     data: OsmMapData,
     onZoom: (percent: number) => void,
     onRotation: (degrees: number) => void = () => {},
-    onHover: (label: string) => void = () => {},
+    onHover: (label: string, clickable: boolean) => void = () => {},
   ) {
     this.canvas = canvas
     this.data = data
@@ -131,6 +135,7 @@ export class OsmMapRenderer {
     this.transforms = transforms
     this.hallDisplay = display
     this.selectedHall = selected
+    for (const hall of halls) this.occupancy?.vacancyRegions(hall)
     this.requestDraw()
   }
 
@@ -212,7 +217,7 @@ export class OsmMapRenderer {
         if (!hit) continue
         const islandCode = hit.block.islandId === null ? null : hall.islandCodes.get(hit.block.islandId)
         const appearance = boothHover(hit, islandCode ?? null, this.occupancy)
-        hover = { hallIndex: hall.index, bbox: appearance.bbox }
+        hover = appearance.bbox ? { hallIndex: hall.index, bbox: appearance.bbox } : null
         label = `${hall.name ?? `Hall ${hall.index + 1}`} / ${islandCode ?? hit.block.islandId ?? '?'} / ${hit.booth.number ?? '?'}${appearance.suffix}`
         if (hall.name && islandCode && hit.booth.number && (hit.half.suffix === 'a' || hit.half.suffix === 'b')) {
           selected = { hallGroup: hall.name, island: islandCode, number: hit.booth.number, suffix: hit.half.suffix }
@@ -222,7 +227,7 @@ export class OsmMapRenderer {
     }
     if (label !== this.hoverLabel) {
       this.hoverLabel = label
-      this.onHover(label)
+      this.onHover(label, selected !== null)
     }
     if (hover?.hallIndex !== this.hover?.hallIndex || hover?.bbox !== this.hover?.bbox) {
       this.hover = hover

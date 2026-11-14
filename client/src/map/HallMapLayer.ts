@@ -56,6 +56,7 @@ export class HallMapLayer {
   private readonly image = new Image()
   private readonly visibility = new WeakMap<MapHall, HallVisibility>()
   private readonly blockBackgrounds = new WeakMap<MapHall, Map<string, Path2D>>()
+  private readonly vacancyPaths = new WeakMap<readonly PreviewBooth['bbox'][], Path2D>()
 
   draw(
     context: CanvasRenderingContext2D, hall: MapHall, placement: HallPlacement,
@@ -126,14 +127,16 @@ export class HallMapLayer {
         context.fill(path)
       }
       if (occupancy) {
-        const parents = new Map(page.booths.map(booth => [booth.id, booth]))
-        context.fillStyle = '#555555'
-        for (const half of page.halfBooths ?? []) {
-          const booth = parents.get(half.boothId)
-          const island = booth?.islandId ? hall.islandCodes.get(booth.islandId) : null
-          if (!island || !booth?.number || !half.suffix || !occupancy.isVacant(island, booth.number, half.suffix)) continue
-          const b = half.bbox
-          context.fillRect(b.x, b.y, b.width, b.height)
+        const regions = occupancy.vacancyRegions(hall)
+        if (regions.length) {
+          let path = this.vacancyPaths.get(regions)
+          if (!path) {
+            path = new Path2D()
+            for (const b of regions) path.rect(b.x, b.y, b.width, b.height)
+            this.vacancyPaths.set(regions, path)
+          }
+          context.fillStyle = '#555555'
+          context.fill(path)
         }
       }
       if (hover) {
