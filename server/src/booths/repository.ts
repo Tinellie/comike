@@ -1,7 +1,7 @@
 import { and, count, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { booths } from '../db/schema.js'
+import { booths, mapVacancies } from '../db/schema.js'
 import { BoothFilterError, eventDays, hallGroup } from './catalog.js'
 import type { BoothQuery, HallGroup } from './catalog.js'
 
@@ -148,6 +148,28 @@ export class MysqlBoothRepository {
     if (!options) throw new Error('详情所属活动不存在')
     return presentation(row, await this.loadGroups(), options.days)
   }
+
+  async atLocation(query: { eventId: string; weekday: string; hallGroup: string; island: string; number: string; suffix: 'a' | 'b' }) {
+    const options = await this.options(query.eventId)
+    if (!options?.event) return null
+    if (!options.days.some(day => day.weekday === query.weekday) || !/^[東西南北]\d+$/.test(query.hallGroup)) {
+      throw new BoothFilterError('地图日期或场馆无效')
+    }
+    const groups = await this.loadGroups()
+    if (hallGroup(groups, query.hallGroup[0]!, query.island) !== query.hallGroup) throw new BoothFilterError('地图位置不属于当前场馆')
+    const rows = await this.database.select().from(booths).where(and(
+      eq(booths.event_id, query.eventId), eq(booths.weekday, query.weekday), eq(booths.hall, query.hallGroup[0]!),
+      sql`binary ${booths.island_code} = ${query.island.normalize('NFKC')}`,
+      eq(booths.booth_number, query.number.padStart(2, '0')),
+      inArray(booths.booth_suffix, [query.suffix, 'ab']),
+    )).orderBy(booths.id)
+    const vacancies = rows.length ? [] : await this.database.select().from(mapVacancies).where(and(
+      eq(mapVacancies.event_id, query.eventId), eq(mapVacancies.weekday, query.weekday),
+      eq(mapVacancies.hall_group, query.hallGroup), sql`binary ${mapVacancies.island_code} = ${query.island.normalize('NFKC')}`,
+      eq(mapVacancies.booth_number, query.number.padStart(2, '0')), eq(mapVacancies.booth_suffix, query.suffix),
+    ))
+    return { circles: rows.map(row => presentation(row, groups, options.days)), vacancy: vacancies[0] ?? null }
+  }
 }
 
-export type BoothStore = Pick<MysqlBoothRepository, 'options' | 'list' | 'detail'>
+export type BoothStore = Pick<MysqlBoothRepository, 'options' | 'list' | 'detail' | 'atLocation'>

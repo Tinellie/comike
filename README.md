@@ -53,6 +53,28 @@ MUI、MySQL 和 Drizzle ORM。
 `server/test/booths.test.ts` 包含地图、日期、参数、自动读音及 HTTP 测试；
 加载 `server/.env` 后运行该文件还会执行真实 MySQL 排序/分页测试，测试记录在事务中回滚，不清空现有数据。
 
+## 地图与社团匹配
+
+- 地图右侧面板提供“日目 / 参展日期”下拉框，使用当前数据库最新活动的日期，默认一日目。
+  单击半摊位后按活动、曜日、场馆、island、编号和 a/b 查询，打开与首页完全相同的
+  `BoothDetail` 组件；a 查询 a/ab，b 查询 b/ab，保留拉丁字母大小写、平假名/片假名差异。
+  同位置有多条记录时可切换社团；拖动、Alt 旋转及取消手势不会打开详情。
+- `server/src/booths/reconcile.ts` 封装地图位置比对：从当前 `final.json` 枚举已识别的半摊位，
+  按活动中每个已采集曜日与 `booths` 比对；ab 同时覆盖 a/b。缺少 a/b/ab 后缀的社团不会推断占位，
+  无法识别的地图编号/island/分割会跳过并警告，位置重复或非法数据明确报错。
+- 未匹配位置存入独立 `map_vacancies` 表：活动、届数、曜日、方向、场馆、island、摊位编号、
+  a/b、地图格子 ID 和比对时间；不伪造社团，也不混入首页列表。
+  每个活动的旧结果在一个事务中替换，稳定 ID 和唯一位置约束避免重复；其他活动不受影响。
+  地图点击这些位置显示未匹配说明；若尚未比对则提示完成采集或重跑，而不声称该处是官方空摊位。
+- 采集全部详情成功后、标记任务完成前自动执行一次比对（使用数据库跳过全部详情的任务也会执行）。
+  比对失败会记录服务端错误并令任务失败，可继续重试；未完成、被停止或有详情失败时不刷新空位结果。
+  比对基于数据库现有社团，不代表官方确认的空摊位；不完整数据会产生更多未匹配位置。
+- 首次部署执行 `npm run db:init`。需要独立更新时运行
+  `npm run db:map-vacancies -w server`，默认最新活动；指定活动可加 `-- 240`。
+  当前仍使用一份地图，没有自动跨届对应；指定其他届前必须确保地图适用。
+- `GET /api/booths/location?eventId=240&weekday=火&hallGroup=東123&island=ア&number=03&suffix=a`
+  返回 `{ circles, vacancy }`，优先使用实时社团记录，防止旧空位结果遮蔽新采集社团。
+
 ## OSM 地图
 
 运行 `npm run dev` 后打开 http://localhost:5173/map。
@@ -381,7 +403,7 @@ Copy-Item server\.env.example server\.env
 
 Drizzle 连接位于 [server/src/db/index.ts](./server/src/db/index.ts)，
 表定义放在 [server/src/db/schema.ts](./server/src/db/schema.ts)。
-已定义 `booths`、`crawl_jobs` 和 `circle_list_cache`。首次运行时使用具有建库权限的账号执行：
+已定义 `booths`、`crawl_jobs`、`circle_list_cache` 和 `map_vacancies`。首次运行时使用具有建库权限的账号执行：
 
 ```powershell
 npm run db:init
@@ -426,7 +448,7 @@ npm run db:studio
 | 停止 | 请求停止当前采集，保留已保存数据、图片和进度 |
 | 打开登录窗口 | 打开服务器浏览器的登录画面 |
 | 清除登录会话 | 清除网站登录状态，不删除 booth、图片或列表缓存 |
-| 清空数据和图片 | 删除全部 booth、全部采集任务记录及 `<MEDIA_ROOT>/booths` 下的爬虫图片；保留表结构、完整列表缓存和登录会话 |
+| 清空数据和图片 | 删除全部 booth、地图未匹配位置、全部采集任务记录及 `<MEDIA_ROOT>/booths` 下的爬虫图片；保留表结构、完整列表缓存和登录会话 |
 
 “清空数据和图片”仅在没有正在运行/停止中的任务时可用，需在弹窗输入“清空”再次确认。
 后端同样验证确认文字并禁止与开始/继续/再次清空并发执行，不因前端按钮被绕过而允许冲突操作。

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Accordion, AccordionDetails, AccordionSummary, Box, Checkbox, FormControlLabel,
-  FormGroup, Paper, Slider, Typography,
+  FormGroup, MenuItem, Paper, Slider, TextField, Typography,
 } from '@mui/material'
 import type { OsmMapData } from './osm'
 import { OsmMapRenderer } from './OsmMapRenderer'
+import type { MapBoothHit } from './OsmMapRenderer'
 import type { HallTransforms, MapHall } from './halls'
 import { defaultHallDisplay } from './HallMapLayer'
 import { dragRotation } from './viewport'
@@ -14,9 +15,13 @@ interface OsmCanvasProps {
   halls: MapHall[]
   transforms: HallTransforms
   onError: (message: string) => void
+  onBoothClick: (hit: MapBoothHit) => void
+  days: { weekday: string; label: string }[]
+  weekday: string
+  onDayChange: (weekday: string) => void
 }
 
-export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanvasProps) {
+export default function OsmCanvas({ data, halls, transforms, onError, onBoothClick, days, weekday, onDayChange }: OsmCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<OsmMapRenderer | null>(null)
@@ -25,6 +30,8 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
   const [levels, setLevels] = useState<number[]>([1, 2])
   const [hoverLabel, setHoverLabel] = useState('')
   const viewState = useRef({ rotation, levels })
+  const clickHandler = useRef(onBoothClick)
+  useEffect(() => { clickHandler.current = onBoothClick }, [onBoothClick])
 
   useEffect(() => {
     viewState.current = { rotation, levels }
@@ -43,7 +50,7 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
     if (!canvas || !container) return
     let renderer: OsmMapRenderer | null = null
     let drag: {
-      id: number; x: number; y: number
+      id: number; x: number; y: number; startX: number; startY: number; moved: boolean
     } | null = null
     const observer = new ResizeObserver(resize)
     function resize() {
@@ -69,6 +76,7 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
       canvas.setPointerCapture(event.pointerId)
       drag = {
         id: event.pointerId, x: event.clientX, y: event.clientY,
+        startX: event.clientX, startY: event.clientY, moved: event.altKey,
       }
       canvas.style.cursor = event.altKey ? 'crosshair' : 'grabbing'
     }
@@ -78,6 +86,7 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
         renderer?.setPointer({ x: event.clientX - bounds.left, y: event.clientY - bounds.top })
       }
       if (!drag || drag.id !== event.pointerId) return
+      if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) drag.moved = true
       const dx = event.clientX - drag.x, dy = event.clientY - drag.y
       if (event.altKey && canvas) {
         const bounds = canvas.getBoundingClientRect()
@@ -94,9 +103,15 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
     }
     function pointerEnd(event: PointerEvent) {
       if (!drag || drag.id !== event.pointerId || !canvas) return
+      const clicked = event.type === 'pointerup' && !drag.moved
       drag = null
       canvas.style.cursor = 'grab'
       if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
+      if (clicked) {
+        const bounds = canvas.getBoundingClientRect()
+        const hit = renderer?.pickBooth({ x: event.clientX - bounds.left, y: event.clientY - bounds.top })
+        if (hit) clickHandler.current(hit)
+      }
     }
     function pointerLeave() {
       renderer?.setPointer(null)
@@ -166,6 +181,11 @@ export default function OsmCanvas({ data, halls, transforms, onError }: OsmCanva
           position: 'absolute', right: 16, top: 72, width: 180, p: 2,
           maxHeight: 'calc(100% - 120px)', overflow: 'auto',
         }}>
+          <Typography variant="body2" sx={{ mb: 1 }}>日目</Typography>
+          <TextField select fullWidth size="small" label="参展日期" value={weekday}
+            disabled={!days.length} onChange={event => onDayChange(event.target.value)} sx={{ mb: 2 }}>
+            {days.map(day => <MenuItem key={day.weekday} value={day.weekday}>{day.label}（{day.weekday}）</MenuItem>)}
+          </TextField>
           <Typography id="map-rotation-label" variant="body2">rotation</Typography>
           <Slider aria-labelledby="map-rotation-label" value={rotation} min={-180} max={180}
             step={1} valueLabelDisplay="auto" valueLabelFormat={value => `${Math.round(value)}°`}

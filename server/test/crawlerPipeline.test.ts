@@ -71,6 +71,35 @@ async function finished(service: CrawlerService) {
   return service.status()
 }
 
+test('successful completed crawls reconcile map vacancies and reconciliation errors remain explicit', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'comike-reconcile-pipeline-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const repository = new Repository()
+  const booth = parseDetail(fixture, '24031654').booth
+  repository.records.set(booth.id, booth)
+  repository.cache = { ids: [booth.id], eventId: booth.event_id, comiket: booth.comiket, completedAt: new Date().toISOString() }
+  let reconciliations = 0
+  let reject = false
+  const service = new CrawlerService(session(), repository, directory, join(directory, 'work'), {
+    list: async () => { throw new Error('Complete cache should bypass listing') },
+    details: async () => { throw new Error('Saved circles should bypass details') },
+  }, async eventId => {
+    assert.equal(eventId, booth.event_id)
+    reconciliations++
+    if (reject) throw new Error('Map fixture unavailable')
+  })
+  t.after(() => service.close())
+  await service.start()
+  assert.equal((await finished(service)).status, 'completed')
+  assert.equal(reconciliations, 1)
+  reject = true
+  await service.start()
+  const failure = await finished(service)
+  assert.equal(failure.status, 'failed')
+  assert.match(failure.action, /Map fixture unavailable/)
+  assert.equal(reconciliations, 2)
+})
+
 test('full pipeline: exactly five simultaneous detail requests, images, progress, failure retry and persisted resume', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'comike-pipeline-'))
   t.after(() => rm(directory, { recursive: true, force: true }))

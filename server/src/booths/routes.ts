@@ -6,6 +6,27 @@ import type { BoothStore } from './repository.js'
 export function boothRouter(store: BoothStore, mediaRoot: string) {
   const router = Router()
   router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
+  router.get('/location', async (req, res) => {
+    const params = new URL(req.originalUrl, 'http://localhost').searchParams
+    const eventId = params.get('eventId') ?? '', weekday = params.get('weekday') ?? ''
+    const hallGroup = params.get('hallGroup') ?? '', island = params.get('island') ?? ''
+    const number = params.get('number') ?? '', suffix = params.get('suffix')
+    if ([...params.keys()].some(key => !['eventId', 'weekday', 'hallGroup', 'island', 'number', 'suffix'].includes(key) || params.getAll(key).length !== 1)
+      || !/^\d{1,32}$/.test(eventId) || !/^[月火水木金土日]$/.test(weekday) || !/^[東西南北]\d+$/.test(hallGroup)
+      || !island || island.length > 32 || !/^\d{1,2}$/.test(number) || (suffix !== 'a' && suffix !== 'b')) {
+      console.warn('Rejected invalid map booth location')
+      res.status(400).json({ message: '地图位置参数无效' })
+      return
+    }
+    try {
+      const result = await store.atLocation({ eventId, weekday, hallGroup, island, number, suffix })
+      if (!result) res.status(404).json({ message: '活动不存在' })
+      else res.json(result)
+    } catch (error) {
+      console.error('Map booth lookup failed:', error)
+      res.status(error instanceof BoothFilterError ? 400 : 503).json({ message: error instanceof BoothFilterError ? error.message : '地图社团信息读取失败，请检查数据库迁移及日志' })
+    }
+  })
   router.get('/options', async (req, res) => {
     const params = new URL(req.originalUrl, 'http://localhost').searchParams
     const eventId = params.get('eventId') ?? undefined

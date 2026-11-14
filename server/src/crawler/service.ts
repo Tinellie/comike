@@ -33,6 +33,7 @@ export class CrawlerService {
   private readonly mediaRoot: string
   private readonly workDirectory: string
   private readonly runners: CrawlerRunners
+  private readonly reconcile: ((eventId: string) => Promise<unknown>) | undefined
 
   constructor(
     login: LoginSession,
@@ -40,12 +41,14 @@ export class CrawlerService {
     mediaRoot: string,
     workDirectory: string,
     runners: CrawlerRunners = { list: collectList, details: collectDetails },
+    reconcile?: (eventId: string) => Promise<unknown>,
   ) {
     this.login = login
     this.repository = repository
     this.mediaRoot = mediaRoot
     this.workDirectory = workDirectory
     this.runners = runners
+    this.reconcile = reconcile
   }
 
   private async restore() {
@@ -261,6 +264,14 @@ export class CrawlerService {
       throw new Error('部分详情未处理完成，请点击继续；任务不会被标记为成功')
     }
     this.job!.status = failed ? 'failed' : 'completed'
+    if (!failed && this.reconcile && this.job!.eventId) {
+      this.job!.status = 'details'
+      this.job!.action = '社团采集完成，正在比对地图空位'
+      await this.persist()
+      await this.reconcile(this.job!.eventId)
+      signal.throwIfAborted()
+      this.job!.status = 'completed'
+    }
     this.job!.action = failed
       ? `采集结束，${failed} 个社团失败；点击继续重试失败项`
       : `采集完成，已保存 ${this.job!.completedIds.length} 个社团及对应图片`

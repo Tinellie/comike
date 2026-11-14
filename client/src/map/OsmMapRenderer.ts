@@ -20,6 +20,13 @@ interface StyledFeature {
   levels: number[]
 }
 
+export interface MapBoothHit {
+  hallGroup: string
+  island: string
+  number: string
+  suffix: 'a' | 'b'
+}
+
 function localPath(paths: Point[][], origin: Point, closed: boolean): Path2D {
   const path = new Path2D()
   for (const points of paths) {
@@ -152,8 +159,14 @@ export class OsmMapRenderer {
     })
   }
 
-  private updateHover() {
+  pickBooth(point: Point): MapBoothHit | null {
+    this.pointer = point
+    return this.updateHover()
+  }
+
+  private updateHover(): MapBoothHit | null {
     let label = ''
+    let selected: MapBoothHit | null = null
     if (this.pointer && this.view && this.hallDisplay.visible && this.hallDisplay.boxes
       && this.pointer.x >= 0 && this.pointer.y >= 0
       && this.pointer.x <= this.size.width && this.pointer.y <= this.size.height) {
@@ -182,6 +195,9 @@ export class OsmMapRenderer {
         if (!hit) continue
         const islandCode = hit.block.islandId === null ? null : hall.islandCodes.get(hit.block.islandId)
         label = `${hall.name ?? `Hall ${hall.index + 1}`} / ${islandCode ?? hit.block.islandId ?? '?'} / ${hit.booth.number ?? '?'}${hit.half.suffix ?? '?'}`
+        if (hall.name && islandCode && hit.booth.number && (hit.half.suffix === 'a' || hit.half.suffix === 'b')) {
+          selected = { hallGroup: hall.name, island: islandCode, number: hit.booth.number, suffix: hit.half.suffix }
+        }
         break
       }
     }
@@ -189,6 +205,7 @@ export class OsmMapRenderer {
       this.hoverLabel = label
       this.onHover(label)
     }
+    return selected
   }
 
   private sceneBounds(): Bounds {

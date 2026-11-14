@@ -9,6 +9,7 @@ import { MysqlJobRepository } from './crawler/repository.js'
 import { initializeDatabase } from './db/initialize.js'
 import { createHallGroupsLoader } from './booths/catalog.js'
 import { MysqlBoothRepository } from './booths/repository.js'
+import { reconcileMapVacancies } from './booths/reconcile.js'
 
 const port = Number(process.env.PORT ?? 3001)
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -33,6 +34,8 @@ const crawler = new CrawlerService(
   new MysqlJobRepository(),
   resolve(projectRoot, process.env.MEDIA_ROOT ?? 'storage'),
   resolve(privateRoot, 'work'),
+  undefined,
+  eventId => reconcileMapVacancies(resolve(recognitionDirectory, 'final.json'), eventId),
 )
 console.warn('Crawler dashboard has no authentication. Restrict network access before using real login sessions.')
 const app = createApp({

@@ -9,10 +9,11 @@ import { count, eq } from 'drizzle-orm'
 import { createApp } from '../src/app.js'
 import { BoothFilterError, eventDays, hallGroup, parseBoothQuery, parseHallGroups } from '../src/booths/catalog.js'
 import { nameReading } from '../src/booths/reading.js'
+import { reconcileMapVacancies } from '../src/booths/reconcile.js'
 import { MysqlBoothRepository } from '../src/booths/repository.js'
 import type { BoothStore } from '../src/booths/repository.js'
 import { db, pool } from '../src/db/index.js'
-import { booths } from '../src/db/schema.js'
+import { booths, mapVacancies } from '../src/db/schema.js'
 import type { Booth } from '../src/db/schema.js'
 
 const groups = parseHallGroups({ halls: [
@@ -89,6 +90,9 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
       return query.eventId === '240' ? { items: [], total: 0, nextOffset: null } : null
     },
     async detail() { return null },
+    async atLocation(query) {
+      return query.eventId === '240' ? { circles: [], vacancy: null } : null
+    },
   }
   const server = createApp({ checkDatabase: async () => {}, boothStore: store, mediaRoot: directory }).listen(0, '127.0.0.1')
   await once(server, 'listening')
@@ -110,6 +114,8 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
     ['/invalid', 400], ['/24001', 404], ['/images/c109/24001_0.png', 400],
     ['/images/c109/%2e%2e%2fsecret.png', 400], ['/images/c109/24001_2.png', 404],
     ['/images/c0/24001_1.png', 400],
+    ['/location?eventId=240', 400],
+    ['/location?eventId=240&weekday=土&hallGroup=東123&island=ア&number=01&suffix=ab', 400],
   ] as const) {
     const response = await fetch(base + path)
     assert.equal(response.status, status, path)
@@ -119,6 +125,9 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
   assert.equal(response.status, 200)
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), image)
+  const location = await fetch(`${base}/location?eventId=240&weekday=土&hallGroup=東123&island=ア&number=01&suffix=a`)
+  assert.equal(location.status, 200)
+  assert.deepEqual(await location.json(), { circles: [], vacancy: null })
 })
 
 test('MySQL sorts, filters and paginates actual booth rows without changing existing data',
@@ -146,6 +155,13 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
       make(10, { booth_number: '10', tags: '长'.repeat(800), circle_appeal: '詳細\nテスト' }),
     ]
     const query = parseBoothQuery(new URLSearchParams({ eventId }))
+    const directory = await mkdtemp(join(tmpdir(), 'comike-map-reconcile-sql-'))
+    t.after(() => rm(directory, { recursive: true }))
+    const mapFile = join(directory, 'map.json')
+    await writeFile(mapFile, JSON.stringify({ halls: [{ name: '東123', islands: [{ code: 'ア', blocks: [{ booths: [
+      { id: 'm1', number: '02', split: { a: 'l', b: 'r' } },
+      { id: 'm2', number: '99', split: { a: 't', b: 'b' } },
+    ] }] }] }] }))
     const rollback = new Error('Rollback synthetic booth test records')
     await assert.rejects(connection.transaction(async transaction => {
       await transaction.insert(booths).values(rows)
@@ -193,6 +209,32 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
       const detail = (await store.detail(rows[9]!.id))!
       assert.equal(detail.tags!.length, 800)
       assert.equal(detail.circle_appeal, '詳細\nテスト')
+      const location = { eventId, weekday: '土', hallGroup: '東123', island: 'ア', number: '02', suffix: 'a' as const }
+      assert.deepEqual((await store.atLocation(location))!.circles.map(row => row.id), ids([2, 3]))
+      assert.deepEqual((await store.atLocation({ ...location, suffix: 'b' }))!.circles.map(row => row.id), ids([3, 4]))
+      await assert.rejects(store.atLocation({ ...location, hallGroup: '東7' }), BoothFilterError)
+      const empty = { ...location, number: '99' }
+      await transaction.insert(mapVacancies).values({
+        id: `${eventId}-vacancy`, event_id: eventId, comiket: 9999, weekday: '土', hall: '東',
+        hall_group: '東123', island_code: 'ア', booth_number: '99', booth_suffix: 'a',
+        map_booth_id: 'test-map-cell', checked_at: '2026-01-01 00:00:00',
+      })
+      assert.equal((await store.atLocation(empty))!.vacancy!.map_booth_id, 'test-map-cell')
+      assert.equal((await store.atLocation({ ...empty, suffix: 'b' }))!.vacancy, null)
+      const reconciliation = await reconcileMapVacancies(mapFile, eventId, transaction)
+      assert.equal(reconciliation.vacancies, 10)
+      const savedVacancies = await transaction.select().from(mapVacancies).where(eq(mapVacancies.event_id, eventId))
+      assert.equal(savedVacancies.length, 10)
+      const firstIds = savedVacancies.map(row => row.id).sort()
+      assert.equal((await reconcileMapVacancies(mapFile, eventId, transaction)).vacancies, 10)
+      assert.deepEqual((await transaction.select().from(mapVacancies).where(eq(mapVacancies.event_id, eventId))).map(row => row.id).sort(), firstIds)
+      await transaction.insert(booths).values(make(11, { booth_number: '99', booth_suffix: 'ab' }))
+      assert.equal((await reconcileMapVacancies(mapFile, eventId, transaction)).vacancies, 8)
+      assert.equal((await store.atLocation(empty))!.circles[0]!.booth_suffix, 'ab')
+      assert.equal((await store.atLocation(empty))!.vacancy, null)
+      await writeFile(mapFile, '{"halls":[]}')
+      await assert.rejects(reconcileMapVacancies(mapFile, eventId, transaction), /Hall/)
+      assert.equal((await transaction.select().from(mapVacancies).where(eq(mapVacancies.event_id, eventId))).length, 8)
       throw rollback
     }), error => error === rollback)
     const [remaining] = await connection.select({ total: count() }).from(booths).where(eq(booths.event_id, eventId))

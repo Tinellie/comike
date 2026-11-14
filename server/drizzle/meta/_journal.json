@@ -36,6 +36,13 @@
       "when": 1794659381186,
       "tag": "0004_broken_silhouette",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1794679705725,
+      "tag": "0005_great_banshee",
+      "breakpoints": true
     }
   ]
 }

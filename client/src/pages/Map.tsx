@@ -1,11 +1,15 @@
-import { useEffect, useState } from 'react'
-import { Box, Button } from '@mui/material'
+import { useEffect, useRef, useState } from 'react'
+import { Alert, Box, Button, LinearProgress, Stack } from '@mui/material'
 import OsmCanvas from '../map/OsmCanvas'
 import { parseOsm } from '../map/osm'
 import type { OsmMapData } from '../map/osm'
 import { parseHalls, parseHallTransforms } from '../map/halls'
 import type { HallTransforms, MapHall } from '../map/halls'
 import { recalculateHallTransforms } from '../map/hallPreparation'
+import type { MapBoothHit } from '../map/OsmMapRenderer'
+import BoothDetail from '../booths/BoothDetail'
+import { readBoothApi } from '../booths/api'
+import type { BoothOptions, BoothSummary, MapVacancy } from '../booths/api'
 
 export default function Map() {
   const [data, setData] = useState<OsmMapData | null>(null)
@@ -14,6 +18,57 @@ export default function Map() {
   const [halls, setHalls] = useState<MapHall[]>([])
   const [transforms, setTransforms] = useState<HallTransforms | null>(null)
   const [saving, setSaving] = useState(false)
+  const [options, setOptions] = useState<BoothOptions | null>(null)
+  const [weekday, setWeekday] = useState('')
+  const [circles, setCircles] = useState<BoothSummary[]>([])
+  const [selected, setSelected] = useState<BoothSummary | null>(null)
+  const [vacancy, setVacancy] = useState<MapVacancy | null>(null)
+  const [lookupError, setLookupError] = useState<string | null>(null)
+  const [lookingUp, setLookingUp] = useState(false)
+  const lookup = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void readBoothApi<BoothOptions>('/options', controller.signal).then(result => {
+      if (controller.signal.aborted) return
+      setOptions(result)
+      setWeekday(result.days[0]?.weekday ?? '')
+    }).catch((reason: unknown) => {
+      if (controller.signal.aborted) return
+      console.error('Map day options failed:', reason)
+      setLookupError(reason instanceof Error ? reason.message : '日目读取失败')
+    })
+    return () => { controller.abort(); lookup.current?.abort() }
+  }, [attempt])
+
+  function changeDay(value: string) {
+    lookup.current?.abort()
+    setWeekday(value); setSelected(null); setVacancy(null); setCircles([]); setLookingUp(false); setLookupError(null)
+  }
+
+  async function selectBooth(hit: MapBoothHit) {
+    lookup.current?.abort()
+    if (!options?.event || !weekday) {
+      setLookupError('没有可用的活动或日目，请先采集社团数据')
+      return
+    }
+    const controller = new AbortController()
+    lookup.current = controller
+    setLookingUp(true); setLookupError(null); setSelected(null); setVacancy(null); setCircles([])
+    try {
+      const query = new URLSearchParams({ eventId: options.event.eventId, weekday, ...hit })
+      const result = await readBoothApi<{ circles: BoothSummary[]; vacancy: MapVacancy | null }>(`/location?${query}`, controller.signal)
+      if (controller.signal.aborted) return
+      setCircles(result.circles); setSelected(result.circles[0] ?? null); setVacancy(result.vacancy)
+      if (!result.circles.length && !result.vacancy) setLookupError('此位置没有社团记录或已保存的空位记录，请完成采集并重新执行地图比对')
+    } catch (reason) {
+      if (controller.signal.aborted) return
+      console.error('Map booth lookup failed:', reason)
+      setLookupError(reason instanceof Error ? reason.message : '地图位置查询失败')
+    } finally {
+      if (!controller.signal.aborted) setLookingUp(false)
+    }
+  }
 
   async function recalculateTransforms() {
     if (saving) return
@@ -94,8 +149,16 @@ export default function Map() {
         {saving ? '计算并保存中…' : error ? '重新计算全部 Hall（失败，重试）' : '重新计算全部 Hall'}
       </Button>
       {data && transforms && (
-        <OsmCanvas data={data} halls={halls} transforms={transforms} onError={setError} />
+        <OsmCanvas data={data} halls={halls} transforms={transforms} onError={setError}
+          days={options?.days ?? []} weekday={weekday} onDayChange={changeDay} onBoothClick={hit => { void selectBooth(hit) }} />
       )}
+      <Stack sx={{ position: 'absolute', top: 16, left: 16, maxWidth: 'min(400px, calc(100% - 32px))', gap: 1 }}>
+        {lookingUp && <LinearProgress aria-label="查询地图社团" />}
+        {lookupError && <Alert severity="warning" action={<Button onClick={() => { setLookupError(null); setAttempt(value => value + 1) }}>重试</Button>}>{lookupError}</Alert>}
+      </Stack>
+      <BoothDetail key={selected?.id ?? vacancy?.id ?? 'closed'} booth={selected} vacancy={vacancy}
+        alternatives={circles} onSelect={setSelected}
+        onClose={() => { setSelected(null); setVacancy(null); setCircles([]) }} />
     </Box>
   )
 }

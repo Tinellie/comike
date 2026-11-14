@@ -44,6 +44,19 @@ export interface BoothPage {
   nextOffset: number | null
 }
 
+export interface MapVacancy {
+  id: string
+  event_id: string
+  comiket: number
+  weekday: string
+  hall: string
+  hall_group: string
+  island_code: string
+  booth_number: string
+  booth_suffix: string
+  checked_at: string
+}
+
 export async function readBoothApi<T>(path: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(`/api/booths${path}`, {
     cache: 'no-store', signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
@@ -55,6 +68,6 @@ export async function readBoothApi<T>(path: string, signal: AbortSignal): Promis
   return response.json()
 }
 
-export function locationLabel(booth: BoothSummary) {
+export function locationLabel(booth: Pick<BoothSummary, 'hall' | 'island_code' | 'booth_number' | 'booth_suffix'>) {
   return `${booth.hall}${booth.island_code}${booth.booth_number}${booth.booth_suffix ?? ''}`
 }

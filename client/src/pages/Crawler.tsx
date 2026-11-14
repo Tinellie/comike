@@ -359,7 +359,7 @@ export default function Crawler() {
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <Alert severity="warning">
-              此操作不可撤销：删除全部 booth 数据、采集任务记录和 storage 中 booths 目录下的爬虫图片。
+              此操作不可撤销：删除全部 booth 数据、地图未匹配位置、采集任务记录和 storage 中 booths 目录下的爬虫图片。
               保留数据库表结构、完整 ID 列表缓存、登录会话及其他资源，不会自动重新采集。
             </Alert>
             <TextField
