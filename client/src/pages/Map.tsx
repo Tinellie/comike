@@ -179,7 +179,7 @@ export default function Map() {
       {data && transforms && (
         <OsmCanvas data={data} halls={halls} transforms={transforms} onError={setError}
           boothData={boothData}
-          loadBooth={locationLookup.load}
+          loadBooth={locationLookup.preview}
           days={options?.days ?? []} weekday={weekday} onDayChange={changeDay} onBoothClick={hit => { void selectBooth(hit) }} />
       )}
       <Stack sx={{ position: 'absolute', top: 16, left: 16, maxWidth: 'min(400px, calc(100% - 32px))', gap: 1 }}>

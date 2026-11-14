@@ -50,3 +50,54 @@ test('location caches distinguish half booths and dates, and dispose cancels pen
   await rejected
   second.dispose()
 })
+
+test('previews cache pending and decoded images across positions, and disposal clears them', async t => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'Image')
+  let decodes = 0
+  Object.defineProperty(globalThis, 'Image', { configurable: true, value: class {
+    src = ''
+    async decode() { decodes++ }
+  } })
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, 'Image', previous)
+    else Reflect.deleteProperty(globalThis, 'Image')
+  })
+  const fetch = t.mock.method(globalThis, 'fetch', async () => Response.json({
+    circles: [{ imageUrls: ['/test.png', '/test.png'] }], vacancy: null,
+  }))
+  const lookup = new MapBoothLookup('240', '火')
+  const first = lookup.preview(hit)
+  assert.equal(lookup.preview({ ...hit }), first)
+  await first
+  await lookup.preview({ ...hit, suffix: 'b' })
+  await lookup.load(hit)
+  assert.equal(fetch.mock.callCount(), 2)
+  assert.equal(decodes, 1)
+  assert.equal(lookup.preview(hit), first)
+  lookup.dispose()
+  await lookup.preview(hit)
+  assert.equal(decodes, 2)
+  lookup.dispose()
+})
+
+test('failed image decoding retries without repeating successful data queries', async t => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'Image')
+  let decodes = 0
+  Object.defineProperty(globalThis, 'Image', { configurable: true, value: class {
+    src = ''
+    async decode() { if (++decodes === 1) throw new Error('test image unavailable') }
+  } })
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, 'Image', previous)
+    else Reflect.deleteProperty(globalThis, 'Image')
+  })
+  const fetch = t.mock.method(globalThis, 'fetch', async () => Response.json({
+    circles: [{ imageUrls: ['/test.png'] }], vacancy: null,
+  }))
+  const lookup = new MapBoothLookup('240', '火')
+  await assert.rejects(lookup.preview(hit), /图片加载失败/)
+  await lookup.preview(hit)
+  assert.equal(decodes, 2)
+  assert.equal(fetch.mock.callCount(), 1)
+  lookup.dispose()
+})

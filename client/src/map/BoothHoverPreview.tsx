@@ -1,6 +1,6 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { Ref } from 'react'
-import { Box, LinearProgress, Paper, Popper, Typography } from '@mui/material'
+import { Box, Paper, Popper, Typography } from '@mui/material'
 import type { Instance } from '@popperjs/core'
 import { BoothImages } from '../booths/BoothMedia'
 import { locationLabel } from '../booths/api'
@@ -34,21 +34,19 @@ export default function BoothHoverPreview({ hit, load, ref }: Props) {
   useEffect(() => {
     if (!hit) return
     let active = true
-    const timer = window.setTimeout(() => {
-      void load(hit).then(data => {
-        if (active) setResult({ hit, load, data })
-      }).catch((reason: unknown) => {
-        if (!active) return
-        console.error('Map hover preview failed:', reason)
-        setResult({ hit, load, error: reason instanceof Error ? reason.message : '社团预览加载失败' })
-      })
-    }, 100)
-    return () => { active = false; window.clearTimeout(timer) }
+    void load(hit).then(data => {
+      if (active) setResult({ hit, load, data })
+    }).catch((reason: unknown) => {
+      if (!active) return
+      console.error('Map hover preview failed:', reason)
+      setResult({ hit, load, error: reason instanceof Error ? reason.message : '社团预览加载失败' })
+    })
+    return () => { active = false }
   }, [hit, load])
 
   useEffect(() => { void popper.current?.update() }, [current])
 
-  return <Popper open={hit !== null} anchorEl={anchor} placement="top" popperRef={popper} aria-label="社团预览"
+  return <Popper open={hit !== null && current !== null} anchorEl={anchor} placement="top" popperRef={popper} aria-label="社团预览"
     modifiers={[
       { name: 'offset', options: { offset: [0, 18] } },
       { name: 'flip', enabled: false },
@@ -62,10 +60,6 @@ export default function BoothHoverPreview({ hit, load, ref }: Props) {
         width: 14, height: 14, bgcolor: 'background.paper', transform: 'rotate(45deg)',
       },
     }}>
-      {!current && <>
-        <Typography variant="body2">{hit && `${hit.hallGroup}${hit.island}${hit.number}${hit.suffix}`}</Typography>
-        <LinearProgress aria-label="加载社团预览" sx={{ mt: 1 }} />
-      </>}
       {current?.error && <>
         <Typography variant="body2" color="error">{current.error}</Typography>
         <Typography variant="caption" color="text.secondary">移开鼠标后重新悬浮可重试</Typography>
