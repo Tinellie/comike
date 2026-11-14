@@ -4,6 +4,7 @@ import { parseHalls, parseHallTransforms, hallMatrix, hallWorldBounds, hallTextR
 import { hallBoothAspectRatio, correctHallAspectRatios } from '../../client/src/map/hallPreparation.ts'
 import { projectCoordinate, worldToScreen, fitViewport } from '../../client/src/map/viewport.ts'
 import { validHallTransforms } from '../src/hallTransforms.ts'
+import { inverseTransform, transformPoint } from '../../client/src/preview/pdfPreview.ts'
 
 function finalData() {
   return { halls: [{
@@ -47,6 +48,31 @@ test('final adapter retains all geometry, matrix borders, half letters, centers,
   assert.deepEqual(hall.labels[0].center, { x: 40, y: 30 })
   assert.equal(page.islandAssignment, null)
   assert.equal(page.pdfPreview, undefined)
+})
+
+test('Hall PDF metadata uses the original source page and expands only display bounds, never Booth geometry', () => {
+  const source = finalData()
+  const pdf = { image: 'page-007-pdf.png', width: 400, height: 320, transform: [0, 2, -2, 0, 280, 30] }
+  Reflect.set(source.halls[0], 'sourcePage', 7)
+  Reflect.set(source.halls[0], 'pdfPreview', pdf)
+  const [hall] = parseHalls(source)
+  assert.equal(hall.page.page, 7)
+  assert.deepEqual(hall.page.pdfPreview, pdf)
+  const [legacy] = parseHalls(finalData())
+  const placement = parseHallTransforms(transforms(), [hall]).placements[0]
+  assert.deepEqual(hall.bounds, legacy.bounds)
+  assert.deepEqual(hall.pivot, legacy.pivot)
+  assert.deepEqual(hall.page.booths, legacy.page.booths)
+  assert.deepEqual(hallWorldBounds(hall, placement), hallWorldBounds(legacy, placement))
+  const bounds = hallWorldBounds(hall, placement, true)
+  const matrix = hallMatrix(hall, placement), inverse = inverseTransform(hall.page.pdfPreview!.transform)
+  for (const [x, y] of [[0, 0], [400, 0], [400, 320], [0, 320]]) {
+    const p = transformPoint(inverse, x, y), world = transformPoint(matrix, p.x, p.y)
+    assert.ok(world.x >= bounds.minX - 1e-8 && world.x <= bounds.maxX + 1e-8)
+    assert.ok(world.y >= bounds.minY - 1e-8 && world.y <= bounds.maxY + 1e-8)
+  }
+  Reflect.set(source.halls[0], 'sourcePage', 1)
+  assert.throws(() => parseHalls(source), /PDF/)
 })
 
 test('irregular block geometry and unknown split/labels are kept without inventing half letters', () => {

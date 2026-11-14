@@ -1,0 +1,69 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1794603467663,
+      "tag": "0000_steady_talon",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1794603722459,
+      "tag": "0001_closed_enchantress",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1794645888607,
+      "tag": "0002_clumsy_triton",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1794658125433,
+      "tag": "0003_salty_red_hulk",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1794659381186,
+      "tag": "0004_broken_silhouette",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1794679705725,
+      "tag": "0005_great_banshee",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1794680642720,
+      "tag": "0006_youthful_monster_badoon",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1794682665192,
+      "tag": "0007_absent_eternity",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1794688937640,
+      "tag": "0008_right_spyke",
+      "breakpoints": true
+    }
+  ]
+}

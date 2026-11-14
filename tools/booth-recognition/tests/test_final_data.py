@@ -39,6 +39,25 @@ def fixture() -> dict:
 
 
 class FinalDataTests(unittest.TestCase):
+    def test_pdf_metadata_preserves_source_page_and_registration_without_mutation(self) -> None:
+        source = fixture()
+        source["pages"][0]["page"] = 7
+        pdf = {"image": "page-007-pdf.png", "width": 400, "height": 320, "transform": [1, 0, 0, 1, 30, 40]}
+        source["pages"][0]["pdfPreview"] = pdf
+        original = copy.deepcopy(source)
+        hall = simplify_result(source)["halls"][0]
+        self.assertEqual(hall["sourcePage"], 7)
+        self.assertEqual(hall["pdfPreview"], pdf)
+        self.assertEqual(source, original)
+        for patch in (
+            {"image": "page-001-pdf.png"}, {"width": 0}, {"height": True},
+            {"transform": [1, 0]}, {"transform": [1, 2, 2, 4, 0, 0]},
+            {"transform": [1, 0, 0, 1, float("nan"), 0]},
+        ):
+            source["pages"][0]["pdfPreview"] = {**pdf, **patch}
+            with self.subTest(patch=patch), self.assertRaisesRegex(ValueError, "PDF"):
+                simplify_result(source)
+
     def test_hall_labels_export_text_code_and_source_center_only(self) -> None:
         source = fixture()
         source["pages"][0]["hallLabels"] = [{

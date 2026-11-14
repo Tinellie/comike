@@ -35,7 +35,7 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
     let objectUrl: string | undefined
     async function load() {
       try {
-        const response = await fetch(`/api/preview/${background.image}`, { signal: controller.signal })
+        const response = await fetch(`/api/preview/${background.image}`, { signal: controller.signal, cache: 'no-store' })
         if (!response.ok) throw new Error(`背景图片加载失败（HTTP ${response.status}）`)
         const blob = await response.blob()
         if (!active) return

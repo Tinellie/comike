@@ -8,11 +8,14 @@ import { PreviewRepository, statusColors } from '../preview/data'
 import type { PreviewPage } from '../preview/data'
 import type { PreviewOptions } from '../preview/layers'
 
-const islandTypeNames = {
-  uppercase: '大写字母', lowercase: '小写字母', hiragana: '平假名', katakana: '片假名',
+interface Generation {
+  status: 'idle' | 'running' | 'succeeded' | 'failed'
+  message?: string
 }
 
 export default function Preview() {
+  const [generation, setGeneration] = useState<Generation>({ status: 'idle' })
+  const [starting, setStarting] = useState(false)
   const [pages, setPages] = useState<PreviewPage[] | null>(null)
   const [pageNumber, setPageNumber] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -22,6 +25,51 @@ export default function Preview() {
     background: true, boxes: true, blockFrames: true, numbers: true, islands: true,
     groups: true, gaps: true, halfBooths: true, hallOutline: true, hallLabels: true, selectedIsland: null,
   })
+
+  useEffect(() => {
+    if (generation.status !== 'idle' && generation.status !== 'running') return
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    async function poll() {
+      try {
+        const response = await fetch('/api/preview/regenerate', { signal: controller.signal, cache: 'no-store' })
+        if (!response.ok) throw new Error(`生成状态加载失败（HTTP ${response.status}）`)
+        const result: Generation = await response.json()
+        if (controller.signal.aborted) return
+        setGeneration(result)
+        if (result.status === 'running') timer = setTimeout(() => { void poll() }, 2000)
+        if (result.status === 'succeeded') {
+          setError(null)
+          setOptions(previous => ({ ...previous, selectedIsland: null }))
+          setAttempt(value => value + 1)
+        }
+      } catch (reason) {
+        if (controller.signal.aborted) return
+        console.error('Preview generation status failed:', reason)
+        setGeneration({ status: 'failed', message: reason instanceof Error ? reason.message : '生成状态加载失败' })
+      }
+    }
+    void poll()
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+    }
+  }, [generation.status])
+
+  async function regenerate() {
+    setStarting(true)
+    try {
+      const response = await fetch('/api/preview/regenerate', { method: 'POST' })
+      const result: Generation = await response.json()
+      if (!response.ok && response.status !== 409) throw new Error(result.message ?? `重新生成失败（HTTP ${response.status}）`)
+      setGeneration({ status: 'running' })
+    } catch (reason) {
+      console.error('Preview regeneration failed:', reason)
+      setGeneration({ status: 'failed', message: reason instanceof Error ? reason.message : '重新生成失败' })
+    } finally {
+      setStarting(false)
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -47,7 +95,15 @@ export default function Preview() {
 
   return (
     <Stack spacing={2} sx={{ p: { xs: 2, md: 3 } }}>
-      <Typography variant="h5" component="h1">地图预览</Typography>
+      <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+        <Typography variant="h5" component="h1">地图预览</Typography>
+        <Button variant="contained" disabled={starting || generation.status === 'running'} onClick={() => { void regenerate() }}>
+          {starting || generation.status === 'running' ? '正在重新生成…' : '重新生成'}
+        </Button>
+      </Stack>
+      {generation.status === 'running' && <Alert severity="info">正在从 PDF 重新生成全部地图数据，可能需要数分钟。完成后自动刷新。</Alert>}
+      {generation.status === 'failed' && <Alert severity="error">{generation.message}</Alert>}
+      {generation.status === 'succeeded' && <Alert severity="success">地图数据已重新生成。</Alert>}
       {error && (
         <Alert severity="error" action={<Button color="inherit" onClick={() => {
           setError(null)
@@ -116,87 +172,6 @@ export default function Preview() {
               />
             ))}
           </Stack>
-          {page.venue && (
-            <Typography variant="body2" color={page.venue.status === 'recognized' ? 'text.secondary' : 'warning.main'}>
-              场馆：{page.venue.label ?? (page.venue.status === 'not_run' ? '未执行 OCR' : '未识别')}
-              {page.venue.status === 'needs_review' && '（待复核）'}
-              {page.venue.recognitionScore !== null && ` · OCR 置信度 ${Math.round(page.venue.recognitionScore * 100)}%`}
-            </Typography>
-          )}
-          {page.halfBooths && (
-            <Typography variant="body2" color="text.secondary">
-              步骤 6：{page.halfBooths.length} 个 half-booth；
-              {page.halfBooths.filter(h => h.status === 'needs_review').length / 2} 个原 Booth 的分割建议待复核。
-              内部 Block 两端采用平行切线，端部外半：相邻编号小取 a，大取 b；壁摊不改变端部切线。
-            </Typography>
-          )}
-          {page.hallOutline && (
-            <Typography variant="body2" color="text.secondary">
-              Hall 边框：{page.hallOutline.method === 'closed_frame'
-                ? '原图连续闭合外框（红色实线）'
-                : '未检测到闭合外框，使用全部非白色像素的包围矩形（红色虚线）'}。
-            </Typography>
-          )}
-          {page.hallLabels && (
-            <Typography variant="body2" color="text.secondary">
-              场馆标签：{page.hallLabels.length} 处，蓝色框标出文字范围；
-              {page.hallLabels.filter(label => label.status === 'needs_review').length} 处待复核，
-              {page.hallLabels.filter(label => label.status === 'not_run').length} 处未执行 OCR。
-              同一场馆的重复标签按位置分别保留。
-            </Typography>
-          )}
-          <Typography variant="body2" color="text.secondary">
-            {page.pdfPreview && `完整 PDF 页面：${page.pdfPreview.width} × ${page.pdfPreview.height} px · 识别图：`}
-            {page.width} × {page.height} px · {page.booths.length} 个{page.islandAssignment ? ' Booth' : '候选图格'}
-            {page.islandMarkers !== null && ` · ${page.islandMarkers.length} 个 Island 标记`}
-            {page.blocks !== null && ` · ${page.blocks.length} 个 Block`}
-            {' · 放大后可滚动查看'}
-          </Typography>
-          {page.islandMarkers === null ? (
-            <Alert severity="info">当前是旧版 Booth 结果，重新运行主识别脚本可加入 Island 标记。</Alert>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              Island：紫色实线为已识别，橙色虚线待复核，红色虚线未识别。
-              共 {page.islandMarkers.filter(marker => marker.status === 'needs_review').length} 个待复核，
-              {page.islandMarkers.filter(marker => marker.status === 'unrecognized').length} 个未识别；
-              重复标记分别保留{page.islandAssignment ? '。' : '，尚未分配 Booth 归属。'}
-            </Typography>
-          )}
-          {page.islandAssignment && (
-            <Typography variant="body2" color="text.secondary">
-              {page.blocks === null ? '步骤 3' : '步骤 4'}：{page.booths.length} 个 Booth 已全部划分至 {page.islandAssignment.islands.length} 个 Island，
-              同岛编号不重复、同一 {page.blocks === null ? '相接组件' : 'Block'} 不拆分。
-              排除 {page.islandAssignment.excludedCount} 个未识别候选；
-              {page.islandAssignment.reviewCount} 个归属建议待复核；
-              共 {page.islandAssignment.gapCount} 处缺号，橙色引线在格外标注缺号后的编号，不修改 Booth。
-            </Typography>
-          )}
-          {page.blocks !== null && (
-            <Typography variant="body2" color="text.secondary">
-              步骤 2：仅合并边框像素直接接触的 Booth，不跨过道；先绘制 Block 外轮廓，再绘制去重的内部横竖分割线。
-              蓝色虚线为额外外扩 6 px 的 Block 包围框，可独立关闭。
-            </Typography>
-          )}
-          {page.markerAlignment && (
-            <Typography variant="body2" color="text.secondary">
-              步骤 5：Island 标记仅使用中心点；
-              {page.markerAlignment.status === 'centers_only' ? '尚无 Island 归属，未移动中心点。' : (
-                <> {page.markerAlignment.aligned} 个标记参与附近行列对齐，
-                  {page.markerAlignment.centered} 个尝试后可按 Island 中点居中。
-                  壁摊只与附近同向、同侧壁摊标记对齐，不向 Island 中心移动。</>
-              )}
-            </Typography>
-          )}
-          {page.islandInference && (
-            <Typography variant="body2" color="text.secondary">
-              {page.blocks === null ? '步骤 2' : '步骤 3'}：页面编号类型
-              {page.islandInference.type ? `为${islandTypeNames[page.islandInference.type]}` : '证据不足，未确定'}
-              {' · 类型加权票占比 '}{Math.round(page.islandInference.confidence * 100)}%
-              {' · 修正 '}{page.islandInference.outcomes.corrected ?? 0}
-              {' 项，确认 '}{page.islandInference.outcomes.confirmed ?? 0}
-              {' 项 · * 表示经过上下文修正/确认，仍有其他问题的标记保持待复核。'}
-            </Typography>
-          )}
           <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: 'wrap' }}>
             {([
               ['recognized', '已识别'], ['needs_review', '待复核'],
@@ -207,7 +182,7 @@ export default function Preview() {
               </Box>
             ))}
           </Stack>
-          <MapCanvas key={page.page} page={page} options={options} zoom={zoom} />
+          <MapCanvas key={`${attempt}-${page.page}`} page={page} options={options} zoom={zoom} />
         </>
       )}
     </Stack>

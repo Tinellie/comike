@@ -3,6 +3,7 @@ import type { PreviewBooth, PreviewBlock, PreviewPage, PreviewIslandMarker } fro
 import type { PreviewHalfBooth } from '../preview/halfBooths'
 import type { Bounds, Point } from './viewport'
 import { projectCoordinate } from './viewport'
+import { inverseTransform, parsePdfPreview, transformPoint } from '../preview/pdfPreview'
 
 export interface HallPlacement {
   hallIndex: number
@@ -86,6 +87,8 @@ export function parseHalls(value: unknown): MapHall[] {
   if (!halls.length) throw new Error('final.json 没有 Hall')
   return halls.map((raw, index) => {
     const hall = object(raw), name = text(hall.name)
+    const sourcePage = hall.sourcePage === undefined ? index + 1 : number(hall.sourcePage)
+    if (!Number.isSafeInteger(sourcePage) || sourcePage < 1) throw new Error('Hall PDF 来源页码无效')
     const textRotation = number(hall.textRotation)
     if (![0, 90, 180, 270].includes(textRotation)) throw new Error('Hall 文字基础角度必须是 90° 的倍数')
     const boundary = list(hall.boundary).map(point)
@@ -161,7 +164,8 @@ export function parseHalls(value: unknown): MapHall[] {
     ]
     const extent = pointsBounds(allPoints)
     const page: PreviewPage = {
-      page: index + 1, image: '', width: Math.ceil(extent.maxX + 1), height: Math.ceil(extent.maxY + 1),
+      page: sourcePage, image: '', width: Math.ceil(extent.maxX + 1), height: Math.ceil(extent.maxY + 1),
+      ...(hall.pdfPreview === undefined ? {} : { pdfPreview: parsePdfPreview(hall.pdfPreview, sourcePage) }),
       booths, blocks, islandMarkers: markers, islandInference: null, islandAssignment: null,
       venue: null, markerAlignment: null, halfBooths: halves,
       hallOutline: {
@@ -222,8 +226,21 @@ export function hallMatrix(hall: MapHall, placement: HallPlacement): [number, nu
   ]
 }
 
-export function hallWorldBounds(hall: MapHall, placement: HallPlacement): Bounds {
-  const [a, b, c, d, e, f] = hallMatrix(hall, placement), bounds = hall.bounds
+export function hallWorldBounds(hall: MapHall, placement: HallPlacement, includePdf = false): Bounds {
+  const [a, b, c, d, e, f] = hallMatrix(hall, placement)
+  let bounds = hall.bounds
+  const pdf = hall.page.pdfPreview
+  if (includePdf && pdf) {
+    const inverse = inverseTransform(pdf.transform)
+    const pdfBounds = pointsBounds([
+      transformPoint(inverse, 0, 0), transformPoint(inverse, pdf.width, 0),
+      transformPoint(inverse, pdf.width, pdf.height), transformPoint(inverse, 0, pdf.height),
+    ])
+    bounds = {
+      minX: Math.min(bounds.minX, pdfBounds.minX), minY: Math.min(bounds.minY, pdfBounds.minY),
+      maxX: Math.max(bounds.maxX, pdfBounds.maxX), maxY: Math.max(bounds.maxY, pdfBounds.maxY),
+    }
+  }
   return pointsBounds([
     { x: bounds.minX, y: bounds.minY }, { x: bounds.maxX, y: bounds.minY },
     { x: bounds.maxX, y: bounds.maxY }, { x: bounds.minX, y: bounds.maxY },

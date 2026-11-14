@@ -11,6 +11,9 @@ import { HallVisibility, intersectsBounds } from './hallVisibility'
 import type { HallTransforms, MapHall } from './halls'
 import type { Bounds } from './viewport'
 import type { HallRegistrationReport } from './hallRegistration'
+import { boothHover, BoothOccupancy } from './boothOccupancy'
+import type { MapBoothData } from '../booths/api'
+import type { PreviewBooth } from '../preview/data'
 
 interface StyledFeature {
   feature: OsmFeature
@@ -18,6 +21,13 @@ interface StyledFeature {
   arrows: Path2D
   style: MapStyle
   levels: number[]
+}
+
+export interface MapBoothHit {
+  hallGroup: string
+  island: string
+  number: string
+  suffix: 'a' | 'b'
 }
 
 function localPath(paths: Point[][], origin: Point, closed: boolean): Path2D {
@@ -54,16 +64,38 @@ export class OsmMapRenderer {
   private selectedLevels = new Set<number>()
   private pointer: Point | null = null
   private readonly hitIndexes = new WeakMap<MapHall, HallVisibility>()
-  private readonly onHover: (label: string) => void
+  private readonly onHover: (label: string, clickable: boolean, hit: MapBoothHit | null) => void
   private hoverLabel = ''
   private hoverFrame: number | null = null
+  private occupancy: BoothOccupancy | null = null
+  private boothData: MapBoothData | null = null
+  private genreDisplay: { enabled: boolean; selected: ReadonlySet<string> | null } = { enabled: false, selected: null }
+
+  setGenreDisplay(enabled: boolean, selected: string[] | null) {
+    this.genreDisplay = { enabled, selected: selected ? new Set(selected) : null }
+    this.requestDraw()
+  }
+  private hover: { hallIndex: number; bbox: PreviewBooth['bbox'] } | null = null
+  private pdfImages: ReadonlyMap<MapHall, HTMLImageElement> = new Map()
+
+  setPdfImages(images: ReadonlyMap<MapHall, HTMLImageElement>) {
+    this.pdfImages = images
+    this.requestDraw()
+  }
+
+  setBoothData(data: MapBoothData | null) {
+    if (this.boothData === data) return
+    this.boothData = data
+    this.occupancy = data ? new BoothOccupancy(data) : null
+    this.requestDraw()
+  }
 
   constructor(
     canvas: HTMLCanvasElement,
     data: OsmMapData,
     onZoom: (percent: number) => void,
     onRotation: (degrees: number) => void = () => {},
-    onHover: (label: string) => void = () => {},
+    onHover: (label: string, clickable: boolean, hit: MapBoothHit | null) => void = () => {},
   ) {
     this.canvas = canvas
     this.data = data
@@ -115,7 +147,7 @@ export class OsmMapRenderer {
     const hall = this.halls.find(h => h.index === index)
     const placement = this.transforms.placements.find(p => p.hallIndex === index)
     if (!hall || !placement) throw new Error('找不到 Hall 定位数据')
-    this.view = fitViewport(hallWorldBounds(hall, placement), this.size, this.view?.rotation ?? 0)
+    this.view = fitViewport(hallWorldBounds(hall, placement, this.pdfImages.has(hall)), this.size, this.view?.rotation ?? 0)
     this.requestDraw()
   }
 
@@ -152,8 +184,15 @@ export class OsmMapRenderer {
     })
   }
 
-  private updateHover() {
+  pickBooth(point: Point): MapBoothHit | null {
+    this.pointer = point
+    return this.updateHover()
+  }
+
+  private updateHover(redraw = true): MapBoothHit | null {
     let label = ''
+    let selected: MapBoothHit | null = null
+    let hover: typeof this.hover = null
     if (this.pointer && this.view && this.hallDisplay.visible && this.hallDisplay.boxes
       && this.pointer.x >= 0 && this.pointer.y >= 0
       && this.pointer.x <= this.size.width && this.pointer.y <= this.size.height) {
@@ -181,14 +220,24 @@ export class OsmMapRenderer {
         })
         if (!hit) continue
         const islandCode = hit.block.islandId === null ? null : hall.islandCodes.get(hit.block.islandId)
-        label = `${hall.name ?? `Hall ${hall.index + 1}`} / ${islandCode ?? hit.block.islandId ?? '?'} / ${hit.booth.number ?? '?'}${hit.half.suffix ?? '?'}`
+        const appearance = boothHover(hit, islandCode ?? null, this.occupancy)
+        hover = appearance.bbox ? { hallIndex: hall.index, bbox: appearance.bbox } : null
+        label = `${hall.name ?? `Hall ${hall.index + 1}`} / ${islandCode ?? hit.block.islandId ?? '?'} / ${hit.booth.number ?? '?'}${appearance.suffix}`
+        if (appearance.bbox && hall.name && islandCode && hit.booth.number && (hit.half.suffix === 'a' || hit.half.suffix === 'b')) {
+          selected = { hallGroup: hall.name, island: islandCode, number: hit.booth.number, suffix: hit.half.suffix }
+        }
         break
       }
     }
     if (label !== this.hoverLabel) {
       this.hoverLabel = label
-      this.onHover(label)
     }
+    this.onHover(label, selected !== null, hover ? selected : null)
+    if (hover?.hallIndex !== this.hover?.hallIndex || hover?.bbox !== this.hover?.bbox) {
+      this.hover = hover
+      if (redraw) this.requestDraw()
+    }
+    return selected
   }
 
   private sceneBounds(): Bounds {
@@ -197,7 +246,7 @@ export class OsmMapRenderer {
       for (const placement of this.transforms.placements) {
         const hall = this.halls.find(h => h.index === placement.hallIndex)
         if (!hall) continue
-        const b = hallWorldBounds(hall, placement)
+        const b = hallWorldBounds(hall, placement, this.pdfImages.has(hall))
         bounds.minX = Math.min(bounds.minX, b.minX)
         bounds.minY = Math.min(bounds.minY, b.minY)
         bounds.maxX = Math.max(bounds.maxX, b.maxX)
@@ -242,7 +291,7 @@ export class OsmMapRenderer {
 
   private draw() {
     if (!this.view) return
-    this.updateHover()
+    this.updateHover(false)
     const { context: ctx, size, view, pixelRatio: dpr } = this
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.fillStyle = mapBackground
@@ -268,7 +317,7 @@ export class OsmMapRenderer {
     })
     const hallItems = this.transforms.placements.flatMap(placement => {
       const hall = this.halls.find(h => h.index === placement.hallIndex)
-      if (!hall || !overlaps(hallWorldBounds(hall, placement))) return []
+      if (!hall || !overlaps(hallWorldBounds(hall, placement, this.pdfImages.has(hall)))) return []
       const level = hallMetadata(hall).level
       return [{ hall, placement, level, filtered: !matchesLevels([level], this.selectedLevels) }]
     })
@@ -314,7 +363,8 @@ export class OsmMapRenderer {
       ctx.restore()
       for (const { hall, placement, filtered } of hallItems.filter(item => item.level === level)) {
         this.hallLayer.draw(ctx, hall, placement, this.origin, this.hallDisplay,
-          hall.index === this.selectedHall, view.rotation ?? 0, filtered)
+          hall.index === this.selectedHall, view.rotation ?? 0, filtered, true, this.occupancy,
+          this.hover?.hallIndex === hall.index ? this.hover.bbox : null, this.pdfImages.get(hall), this.genreDisplay)
       }
     }
     const report = this.hallDisplay.visible ? this.registrationReports.find(report => report.hallIndex === this.selectedHall) : undefined

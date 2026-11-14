@@ -285,11 +285,11 @@
   <node id='-59212' action='modify' visible='true' lat='35.62792290946' lon='139.79557130855' />
   <node id='-59278' action='modify' visible='true' lat='35.62748353005' lon='139.79477026506' />
   <node id='-59279' action='modify' visible='true' lat='35.6267309543' lon='139.79539506745' />
-  <node id='-59308' action='modify' visible='true' lat='35.62905519406' lon='139.79479828835' />
+  <node id='-59308' action='modify' visible='true' lat='35.629006931' lon='139.79483787391' />
   <node id='-59325' action='modify' visible='true' lat='35.62917023565' lon='139.79470829186' />
   <node id='-59332' action='modify' visible='true' lat='35.6292311' lon='139.7948187' />
   <node id='-59333' action='modify' visible='true' lat='35.6292311' lon='139.7948187' />
-  <node id='-59492' action='modify' visible='true' lat='35.62892269515' lon='139.7945558998' />
+  <node id='-59492' action='modify' visible='true' lat='35.62887443201' lon='139.79459548536' />
   <node id='-59493' action='modify' visible='true' lat='35.62862619859' lon='139.79479193419' />
   <node id='-59504' action='modify' visible='true' lat='35.62887909278' lon='139.79524522752' />
   <node id='-59505' action='modify' visible='true' lat='35.62923663149' lon='139.79495018452' />
@@ -350,7 +350,7 @@
   <node id='-59651' action='modify' visible='true' lat='35.62900232906' lon='139.7938081995' />
   <node id='-59652' action='modify' visible='true' lat='35.62887762906' lon='139.7937783995' />
   <node id='-59687' action='modify' visible='true' lat='35.62922137072' lon='139.79462563723' />
-  <node id='-59707' action='modify' visible='true' lat='35.62904238263' lon='139.79477643481' />
+  <node id='-59707' action='modify' visible='true' lat='35.62899411956' lon='139.79481602037' />
   <node id='-59797' action='modify' visible='true' lat='35.6291317592' lon='139.79463660176' />
   <node id='-59820' action='modify' visible='true' lat='35.62798499382' lon='139.79551976441' />
   <node id='-59821' action='modify' visible='true' lat='35.62748229717' lon='139.79460328534' />
@@ -358,14 +358,14 @@
   <node id='-59823' action='modify' visible='true' lat='35.6264244' lon='139.7968154' />
   <node id='-59830' action='modify' visible='true' lat='35.62598501236' lon='139.79601435652' />
   <node id='-59831' action='modify' visible='true' lat='35.6264244' lon='139.7968154' />
-  <node id='-59905' action='modify' visible='true' lat='35.62869378464' lon='139.79413210809' />
-  <node id='-59906' action='modify' visible='true' lat='35.62757537321' lon='139.79506283462' />
-  <node id='-59907' action='modify' visible='true' lat='35.62927369551' lon='139.79519962728' />
-  <node id='-59908' action='modify' visible='true' lat='35.62868942439' lon='139.79565560281' />
-  <node id='-59909' action='modify' visible='true' lat='35.62829482095' lon='139.79493140638' />
-  <node id='-59910' action='modify' visible='true' lat='35.62773888463' lon='139.7953846997' />
-  <node id='-59954' action='modify' visible='true' lat='35.62747072355' lon='139.79486971825' />
-  <node id='-59955' action='modify' visible='true' lat='35.62733555368' lon='139.79497968882' />
+  <node id='-59905' action='modify' visible='true' lat='35.62862851952' lon='139.79413458219' />
+  <node id='-59906' action='modify' visible='true' lat='35.62754191752' lon='139.79503247069' />
+  <node id='-59907' action='modify' visible='true' lat='35.62923640143' lon='139.79526440366' />
+  <node id='-59908' action='modify' visible='true' lat='35.62871501854' lon='139.79569698772' />
+  <node id='-59909' action='modify' visible='true' lat='35.62830578993' lon='139.79495659719' />
+  <node id='-59910' action='modify' visible='true' lat='35.62774985368' lon='139.79540989051' />
+  <node id='-59954' action='modify' visible='true' lat='35.62746012009' lon='139.79488231366' />
+  <node id='-59955' action='modify' visible='true' lat='35.62732933785' lon='139.79498643636' />
   <node id='-59956' action='modify' visible='true' lat='35.62717204144' lon='139.79511111706' />
   <node id='-59980' action='modify' visible='true' lat='35.62706085292' lon='139.79490458697' />
   <node id='-59981' action='modify' visible='true' lat='35.62677088998' lon='139.79514598578' />

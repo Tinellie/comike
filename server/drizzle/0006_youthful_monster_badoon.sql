@@ -1,0 +1,1 @@
+CREATE INDEX `booths_location_idx` ON `booths` (`event_id`,`weekday`,`hall`,`island_code`,`booth_number`,`booth_suffix`);

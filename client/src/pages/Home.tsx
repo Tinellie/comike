@@ -1,3 +1,5 @@
+import BoothList from '../booths/BoothList'
+
 export default function Home() {
-  return null
+  return <BoothList />
 }

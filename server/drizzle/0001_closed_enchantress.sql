@@ -1,0 +1,1 @@
+ALTER TABLE `crawl_jobs` MODIFY COLUMN `state` longtext NOT NULL;

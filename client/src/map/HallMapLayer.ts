@@ -7,6 +7,9 @@ import { hallMatrix, hallTextRotation, object } from './halls'
 import hallMetaSource from '../../../ref/hall-meta.json?raw'
 import { filteredOutline } from './style'
 import { HallVisibility, intersectsBounds, paddedBounds } from './hallVisibility'
+import type { BoothOccupancy } from './boothOccupancy'
+import type { PreviewBooth } from '../preview/data'
+import { inverseTransform } from '../preview/pdfPreview'
 
 const hallMeta = object(JSON.parse(hallMetaSource))
 if (!Array.isArray(hallMeta.halls)) throw new Error('Hall marker 元数据列表无效')
@@ -53,17 +56,38 @@ export class HallMapLayer {
   private readonly image = new Image()
   private readonly visibility = new WeakMap<MapHall, HallVisibility>()
   private readonly blockBackgrounds = new WeakMap<MapHall, Map<string, Path2D>>()
+  private readonly regionPaths = new WeakMap<readonly PreviewBooth['bbox'][], Path2D>()
+
+  private path(rectangles: readonly PreviewBooth['bbox'][]) {
+    let path = this.regionPaths.get(rectangles)
+    if (!path) {
+      path = new Path2D()
+      for (const b of rectangles) path.rect(b.x, b.y, b.width, b.height)
+      this.regionPaths.set(rectangles, path)
+    }
+    return path
+  }
 
   draw(
     context: CanvasRenderingContext2D, hall: MapHall, placement: HallPlacement,
     origin: Point, display: HallDisplay, _selected: boolean, viewRotation = 0, filtered = false,
-    cull = true,
+    cull = true, occupancy: BoothOccupancy | null = null, hover: PreviewBooth['bbox'] | null = null,
+    pdfImage: HTMLImageElement | undefined = undefined,
+    genreDisplay: { enabled: boolean; selected: ReadonlySet<string> | null } = { enabled: false, selected: null },
   ) {
     if (!display.visible || !hall.page.hallOutline) return
     const markerColor = hallMarkerColor(hall)
     const [a, b, c, d, e, f] = hallMatrix(hall, placement)
     context.save()
     context.transform(a, b, c, d, e - origin.x, f - origin.y)
+    if (pdfImage && hall.page.pdfPreview && !filtered) {
+      const pdf = hall.page.pdfPreview
+      context.save()
+      context.transform(...inverseTransform(pdf.transform))
+      context.globalAlpha = 0.35
+      context.drawImage(pdfImage, 0, 0, pdf.width, pdf.height)
+      context.restore()
+    }
     let view: Bounds | null = null
     if (cull) {
       const inverse = context.getTransform().inverse()
@@ -112,6 +136,27 @@ export class HallMapLayer {
         const path = backgrounds.get(block.id)
         if (!path) throw new Error(`Block ${block.id} 缺少背景几何`)
         context.fill(path)
+      }
+      if (occupancy && genreDisplay.enabled) {
+        context.save()
+        context.globalAlpha = 0.65
+        for (const group of occupancy.genreRegions(hall)) {
+          if (genreDisplay.selected && !genreDisplay.selected.has(group.key)) continue
+          context.fillStyle = group.color
+          context.fill(this.path(group.rectangles))
+        }
+        context.restore()
+      }
+      if (occupancy) {
+        const regions = occupancy.vacancyRegions(hall)
+        if (regions.length) {
+          context.fillStyle = '#555555'
+          context.fill(this.path(regions))
+        }
+      }
+      if (hover) {
+        context.fillStyle = 'rgba(255, 193, 7, 0.6)'
+        context.fillRect(hover.x, hover.y, hover.width, hover.height)
       }
     }
     const textRotation = hallTextRotation(hall, placement.rotation + viewRotation)
