@@ -27,7 +27,7 @@ export function boothRouter(store: BoothStore, mediaRoot: string) {
       res.status(error instanceof BoothFilterError ? 400 : 503).json({ message: error instanceof BoothFilterError ? error.message : '地图社团信息读取失败，请检查数据库迁移及日志' })
     }
   })
-  router.get('/options', async (req, res) => {
+  router.get(['/options', '/days'], async (req, res) => {
     const params = new URL(req.originalUrl, 'http://localhost').searchParams
     const eventId = params.get('eventId') ?? undefined
     if ([...params.keys()].some(key => key !== 'eventId') || params.getAll('eventId').length > 1
@@ -37,7 +37,7 @@ export function boothRouter(store: BoothStore, mediaRoot: string) {
       return
     }
     try {
-      const options = await store.options(eventId)
+      const options = await (req.path === '/days' ? store.days(eventId) : store.options(eventId))
       if (!options) res.status(404).json({ message: '活动不存在' })
       else res.json(options)
     } catch (error) {

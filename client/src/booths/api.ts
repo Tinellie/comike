@@ -38,6 +38,8 @@ export interface BoothOptions {
   warnings: string[]
 }
 
+export type BoothDays = Pick<BoothOptions, 'event' | 'days' | 'warnings'>
+
 export interface BoothPage {
   items: BoothSummary[]
   total: number

@@ -62,22 +62,6 @@ function LoginWindow({ open, opening, openingError, onRetry, onClose, onConfirme
     let objectUrl: string | undefined
     async function refresh() {
       try {
-        const state = await api<Status['login']>('login/status', undefined, controller.signal)
-        if (controller.signal.aborted) return
-        if (!state) throw new Error('登录状态接口返回了空内容')
-        if (!state.open && state.authenticated) {
-          onConfirmed()
-          return
-        }
-        if (state.error) throw new Error(state.error)
-        if (!state.open && !state.opening) {
-          setError('服务端登录窗口未打开或服务已重启，请点击“重试打开登录页”')
-          return
-        }
-        if (state.opening) {
-          timer = setTimeout(() => { void refresh() }, 1000)
-          return
-        }
         const response = await fetch('/api/crawler/login/screenshot', {
           cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]),
         })

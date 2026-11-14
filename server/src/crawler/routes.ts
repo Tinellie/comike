@@ -132,7 +132,7 @@ export function crawlerRouter(
       return
     }
     if (!status.open) {
-      res.status(409).json({ message: '登录窗口已关闭，请重新打开登录窗口', authenticated: status.authenticated })
+      res.status(409).json({ message: status.error ?? '登录窗口已关闭，请重新打开登录窗口', authenticated: status.authenticated })
       return
     }
     try { res.type('image/jpeg').send(await service.login.screenshot()) } catch (error) {

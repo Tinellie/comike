@@ -36,8 +36,11 @@ function BoothTable({ options }: { options: BoothOptions }) {
     inFlight.current = true
     return readBoothApi<BoothPage>(`?${queryString}&offset=${offset}`, signal).then(result => {
       if (signal.aborted) return
-      setItems(previous => offset === 0 ? result.items
-        : [...previous, ...result.items.filter(item => !previous.some(existing => existing.id === item.id))])
+      setItems(previous => {
+        if (offset === 0) return result.items
+        const existingIds = new Set(previous.map(item => item.id))
+        return [...previous, ...result.items.filter(item => !existingIds.has(item.id))]
+      })
       setTotal(result.total)
       setNextOffset(result.nextOffset)
     }).catch((reason: unknown) => {

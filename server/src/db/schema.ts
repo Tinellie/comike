@@ -22,7 +22,10 @@ export const booths = mysqlTable('booths', {
   images: text('images').notNull(),
   source_url: text('source_url').notNull(),
   last_crawled_at: datetime('last_crawled_at', { mode: 'string' }).notNull(),
-}, table => [index('booths_event_id_idx').on(table.event_id)])
+}, table => [
+  index('booths_event_id_idx').on(table.event_id),
+  index('booths_location_idx').on(table.event_id, table.weekday, table.hall, table.island_code, table.booth_number, table.booth_suffix),
+])
 
 export const crawlJobs = mysqlTable('crawl_jobs', {
   id: varchar('id', { length: 36 }).primaryKey(),

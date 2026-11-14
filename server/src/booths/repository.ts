@@ -42,29 +42,61 @@ export class MysqlBoothRepository {
 
   private get database() { return this.connection ?? database() }
 
-  async options(eventId?: string) {
-    const groups = await this.loadGroups()
-    const events = await this.database.select({ eventId: booths.event_id, comiket: booths.comiket })
-      .from(booths).groupBy(booths.event_id, booths.comiket).orderBy(sql`${booths.comiket} desc`, booths.event_id)
-    const event = eventId ? events.find(event => event.eventId === eventId) : events[0]
-    if (eventId && !event) return null
-    if (!event) return { event: null, events, days: [], halls: [], genres: [], warnings: [] }
+  private async dates(eventId: string) {
+    const dates = await this.database.selectDistinct({ weekday: booths.weekday })
+      .from(booths).where(eq(booths.event_id, eventId))
+    return eventDays(dates.map(date => date.weekday))
+  }
+
+  async days(eventId?: string) {
+    const [event] = await this.database.select({ eventId: booths.event_id, comiket: booths.comiket }).from(booths)
+      .where(eventId ? eq(booths.event_id, eventId) : undefined)
+      .orderBy(...(eventId ? [] : [sql`${booths.comiket} desc`, booths.event_id])).limit(1)
+    if (!event) return eventId ? null : { event: null, days: [], warnings: [] }
+    const { days, warning } = await this.dates(event.eventId)
+    return { event, days, warnings: warning ? [warning] : [] }
+  }
+
+  private async locationOptions(eventId: string, groups: HallGroup[]) {
     const locations = await this.database.selectDistinct({
-      weekday: booths.weekday, hall: booths.hall, island: booths.island_code,
-    }).from(booths).where(eq(booths.event_id, event.eventId))
+      weekday: booths.weekday, hall: booths.hall, island: booths.island_code, comiket: booths.comiket,
+    }).from(booths).where(eq(booths.event_id, eventId))
+    if (!locations.length) return null
     const { days, warning } = eventDays(locations.map(location => location.weekday))
     const mapped = new Set(locations.map(location => hallGroup(groups, location.hall, location.island)))
     const halls = [...groups.map(group => group.name), ...[...mapped].filter(name => !groups.some(group => group.name === name))]
       .filter(name => mapped.has(name))
     const warnings = warning ? [warning] : []
     if ([...mapped].some(name => name.includes('未匹配'))) warnings.push('部分 island 未在当前地图中匹配到场馆，已单独列为“未匹配”')
+    return { event: { eventId, comiket: locations[0]!.comiket }, days, halls, warnings }
+  }
+
+  private async genres(eventId: string, groups: HallGroup[], days: Day[], ordered: boolean) {
+    if (!ordered) {
+      const rows = await this.database.selectDistinct({ genre: booths.genre }).from(booths).where(eq(booths.event_id, eventId))
+      return rows.map(row => row.genre)
+    }
     const ranked = this.database.select({
       genre: booths.genre,
       position: sql<number>`row_number() over (order by ${sql.join(this.locationOrdering(groups, days), sql`, `)}, ${booths.id} asc)`.as('position'),
-    }).from(booths).where(eq(booths.event_id, event.eventId)).as('ranked')
+    }).from(booths).where(eq(booths.event_id, eventId)).as('ranked')
     const genreRows = days.length ? await this.database.select({ genre: ranked.genre })
       .from(ranked).groupBy(ranked.genre).orderBy(sql`min(${ranked.position})`) : []
-    return { event, events, days, halls, genres: genreRows.map(row => row.genre), warnings }
+    return genreRows.map(row => row.genre)
+  }
+
+  async options(eventId?: string) {
+    const [groups, events] = await Promise.all([
+      this.loadGroups(),
+      this.database.select({ eventId: booths.event_id, comiket: booths.comiket })
+        .from(booths).groupBy(booths.event_id, booths.comiket).orderBy(sql`${booths.comiket} desc`, booths.event_id),
+    ])
+    const event = eventId ? events.find(event => event.eventId === eventId) : events[0]
+    if (eventId && !event) return null
+    if (!event) return { event: null, events, days: [], halls: [], genres: [], warnings: [] }
+    const options = await this.locationOptions(event.eventId, groups)
+    if (!options) return null
+    return { ...options, events, genres: await this.genres(event.eventId, groups, options.days, true) }
   }
 
   private groupExpression(groups: HallGroup[]) {
@@ -92,13 +124,19 @@ export class MysqlBoothRepository {
   }
 
   async list(query: BoothQuery) {
-    const options = await this.options(query.eventId)
+    const groups = await this.loadGroups()
+    const options = await this.locationOptions(query.eventId, groups)
     if (!options?.event) return null
+    const emptySelection = query.days?.length === 0 || query.halls?.length === 0 || query.genres?.length === 0
+    const orderedGenres = query.sort === 'genre' && !emptySelection
+    const genres = orderedGenres || query.genres?.length
+      ? await this.genres(query.eventId, groups, options.days, orderedGenres) : []
     if (query.days?.some(day => !options.days.some(option => option.weekday === day))
       || query.halls?.some(hall => !options.halls.includes(hall))
-      || query.genres?.some(genre => !options.genres.includes(genre))) throw new BoothFilterError('筛选项不属于当前活动')
-    if (!options.days.length || !options.genres.length) return { items: [], total: 0, nextOffset: null }
-    const groups = await this.loadGroups()
+      || query.genres?.some(genre => !genres.includes(genre))) throw new BoothFilterError('筛选项不属于当前活动')
+    if (!options.days.length || emptySelection) {
+      return { items: [], total: 0, nextOffset: null }
+    }
     const group = this.groupExpression(groups)
     const filters = [eq(booths.event_id, query.eventId)]
     if (query.days) filters.push(query.days.length ? inArray(booths.weekday, query.days) : sql`false`)
@@ -118,8 +156,8 @@ export class MysqlBoothRepository {
     const ordering = query.sort === 'name'
       ? [order(sql`coalesce(${booths.circle_name_reading}, ${booths.circle_name}) collate utf8mb4_unicode_ci`)]
       : query.sort === 'genre'
-        ? [order(sql`case ${sql.join(options.genres.map((genre, index) =>
-          sql`when ${booths.genre} <=> ${genre} then ${index}`), sql` `)} else ${options.genres.length} end`),
+        ? [order(sql`case ${sql.join(genres.map((genre, index) =>
+          sql`when ${booths.genre} <=> ${genre} then ${index}`), sql` `)} else ${genres.length} end`),
           ...this.locationOrdering(groups, options.days)]
         : this.locationOrdering(groups, options.days, !ascending)
     const [rows, totals] = await Promise.all([
@@ -144,21 +182,20 @@ export class MysqlBoothRepository {
   async detail(id: string) {
     const [row] = await this.database.select().from(booths).where(eq(booths.id, id)).limit(1)
     if (!row) return null
-    const options = await this.options(row.event_id)
-    if (!options) throw new Error('详情所属活动不存在')
-    return presentation(row, await this.loadGroups(), options.days)
+    const [dates, groups] = await Promise.all([this.dates(row.event_id), this.loadGroups()])
+    return presentation(row, groups, dates.days)
   }
 
   async atLocation(query: { eventId: string; weekday: string; hallGroup: string; island: string; number: string; suffix: 'a' | 'b' }) {
-    const options = await this.options(query.eventId)
+    const [options, groups] = await Promise.all([this.days(query.eventId), this.loadGroups()])
     if (!options?.event) return null
     if (!options.days.some(day => day.weekday === query.weekday) || !/^[東西南北]\d+$/.test(query.hallGroup)) {
       throw new BoothFilterError('地图日期或场馆无效')
     }
-    const groups = await this.loadGroups()
     if (hallGroup(groups, query.hallGroup[0]!, query.island) !== query.hallGroup) throw new BoothFilterError('地图位置不属于当前场馆')
     const rows = await this.database.select().from(booths).where(and(
       eq(booths.event_id, query.eventId), eq(booths.weekday, query.weekday), eq(booths.hall, query.hallGroup[0]!),
+      eq(booths.island_code, query.island.normalize('NFKC')),
       sql`binary ${booths.island_code} = ${query.island.normalize('NFKC')}`,
       eq(booths.booth_number, query.number.padStart(2, '0')),
       inArray(booths.booth_suffix, [query.suffix, 'ab']),
@@ -172,4 +209,4 @@ export class MysqlBoothRepository {
   }
 }
 
-export type BoothStore = Pick<MysqlBoothRepository, 'options' | 'list' | 'detail' | 'atLocation'>
+export type BoothStore = Pick<MysqlBoothRepository, 'options' | 'days' | 'list' | 'detail' | 'atLocation'>

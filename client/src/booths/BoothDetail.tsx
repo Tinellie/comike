@@ -4,19 +4,20 @@ import { locationLabel, readBoothApi } from './api'
 import type { BoothDetail as Detail, BoothSummary, MapVacancy } from './api'
 import { BoothImages, BoothLinks } from './BoothMedia'
 
-export default function BoothDetail({ booth, vacancy, alternatives, onSelect, onClose }: {
+export default function BoothDetail({ booth, initialDetail, vacancy, alternatives, onSelect, onClose }: {
   booth: BoothSummary | null
+  initialDetail?: Detail | null
   vacancy?: MapVacancy | null
   alternatives?: BoothSummary[]
   onSelect?: (booth: BoothSummary) => void
   onClose: () => void
 }) {
-  const [detail, setDetail] = useState<Detail | null>(null)
+  const [detail, setDetail] = useState<Detail | null>(initialDetail ?? null)
   const [error, setError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
   const id = booth?.id
   useEffect(() => {
-    if (!id) return
+    if (!id || initialDetail?.id === id) return
     const controller = new AbortController()
     void readBoothApi<Detail>(`/${id}`, controller.signal).then(result => {
       if (!controller.signal.aborted) { setDetail(result); setError(null) }
@@ -27,7 +28,7 @@ export default function BoothDetail({ booth, vacancy, alternatives, onSelect, on
       }
     })
     return () => controller.abort()
-  }, [id, retry])
+  }, [id, retry, initialDetail?.id])
   const current = detail?.id === id ? detail : null
   return <Drawer anchor="right" open={!!booth || !!vacancy} onClose={onClose} slotProps={{ paper: { sx: { width: 560, maxWidth: '100vw' } } }}>
     {vacancy && !booth && <Stack spacing={2} sx={{ p: 3 }}>

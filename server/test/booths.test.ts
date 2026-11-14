@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { count, eq } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/mysql2'
 import { createApp } from '../src/app.js'
 import { BoothFilterError, eventDays, hallGroup, parseBoothQuery, parseHallGroups } from '../src/booths/catalog.js'
 import { nameReading } from '../src/booths/reading.js'
@@ -90,6 +91,9 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
       return query.eventId === '240' ? { items: [], total: 0, nextOffset: null } : null
     },
     async detail() { return null },
+    async days(eventId) {
+      return eventId ? null : { event: null, days: [], warnings: [] }
+    },
     async atLocation(query) {
       return query.eventId === '240' ? { circles: [], vacancy: null } : null
     },
@@ -128,11 +132,17 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
   const location = await fetch(`${base}/location?eventId=240&weekday=土&hallGroup=東123&island=ア&number=01&suffix=a`)
   assert.equal(location.status, 200)
   assert.deepEqual(await location.json(), { circles: [], vacancy: null })
+  const days = await fetch(`${base}/days`)
+  assert.equal(days.status, 200)
+  assert.deepEqual(await days.json(), { event: null, days: [], warnings: [] })
+  assert.equal((await fetch(`${base}/days?eventId=123`)).status, 404)
+  assert.equal((await fetch(`${base}/days?extra=1`)).status, 400)
 })
 
 test('MySQL sorts, filters and paginates actual booth rows without changing existing data',
   { skip: !db && 'Run with the server .env loaded for the MySQL integration check' }, async t => {
-    const connection = db!
+    const queries: string[] = []
+    const connection = drizzle({ client: pool!, logger: { logQuery(query) { queries.push(query) } } })
     t.after(async () => { await pool!.end() })
     const eventId = `${Date.now()}${Math.floor(Math.random() * 1000)}`
     const make = (index: number, patch: Partial<Booth> = {}): Booth => ({
@@ -170,8 +180,16 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
       assert.deepEqual(options.days.map(day => day.weekday), ['土', '日', '月'])
       assert.deepEqual(options.halls, ['東123', '東7', '西12', '南12'])
       assert.deepEqual(options.genres, ['Zeta', 'Alpha,Two', 'test', null, ''])
+      t.mock.method(store, 'options', async () => { throw new Error('Non-options paths must not recompute full filter options') })
       const ids = (indices: number[]) => indices.map(index => rows[index - 1]!.id)
+      queries.length = 0
       const full = (await store.list(query))!
+      assert.equal(queries.length, 3)
+      assert.ok(queries.every(query => !/row_number/i.test(query)))
+      queries.length = 0
+      assert.equal((await store.list({ ...query, sort: 'genre', genres: [] }))!.total, 0)
+      assert.equal(queries.length, 1)
+      assert.ok(queries.every(query => !/row_number/i.test(query)))
       assert.deepEqual(full.items.map(item => item.id), ids([2, 3, 4, 10, 1, 5, 6, 7, 8, 9]))
       assert.equal(full.total, 10)
       assert.equal(full.nextOffset, null)
@@ -206,11 +224,17 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
       assert.equal((await store.list({ ...query, halls: [] }))!.total, 0)
       await assert.rejects(store.list({ ...query, halls: ['東999'] }), BoothFilterError)
       await assert.rejects(store.list({ ...query, days: ['火'] }), BoothFilterError)
+      queries.length = 0
       const detail = (await store.detail(rows[9]!.id))!
+      assert.equal(queries.length, 2)
+      assert.ok(queries.every(query => !/row_number|group by|order by/i.test(query)))
       assert.equal(detail.tags!.length, 800)
       assert.equal(detail.circle_appeal, '詳細\nテスト')
       const location = { eventId, weekday: '土', hallGroup: '東123', island: 'ア', number: '02', suffix: 'a' as const }
+      queries.length = 0
       assert.deepEqual((await store.atLocation(location))!.circles.map(row => row.id), ids([2, 3]))
+      assert.equal(queries.length, 3)
+      assert.ok(queries.every(query => !/row_number|group by/i.test(query)))
       assert.deepEqual((await store.atLocation({ ...location, suffix: 'b' }))!.circles.map(row => row.id), ids([3, 4]))
       await assert.rejects(store.atLocation({ ...location, hallGroup: '東7' }), BoothFilterError)
       const empty = { ...location, number: '99' }
