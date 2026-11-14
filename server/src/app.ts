@@ -8,6 +8,8 @@ import { validHallTransforms } from './hallTransforms.js'
 import type { RequestHandler } from 'express'
 import type { CrawlerService } from './crawler/service.js'
 import { crawlerRouter } from './crawler/routes.js'
+import { boothRouter } from './booths/routes.js'
+import type { BoothStore } from './booths/repository.js'
 
 interface AppOptions {
   checkDatabase: () => Promise<void>
@@ -20,16 +22,20 @@ interface AppOptions {
   crawler?: CrawlerService
   initializeDatabase?: () => Promise<void>
   authorizeCrawler?: RequestHandler
+  boothStore?: BoothStore
+  mediaRoot?: string
 }
 
 export function createApp({
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
   regeneratePreview,
   crawler, initializeDatabase, authorizeCrawler,
+  boothStore, mediaRoot,
 }: AppOptions) {
   const app = express()
   app.disable('x-powered-by')
   app.use(express.json())
+  if (boothStore && mediaRoot) app.use('/api/booths', boothRouter(boothStore, mediaRoot))
   if (crawler && initializeDatabase) {
     app.use('/api/crawler', crawlerRouter(crawler, initializeDatabase, hallEditorOrigin, authorizeCrawler))
   }

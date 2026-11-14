@@ -153,6 +153,8 @@ test('full pipeline: exactly five simultaneous detail requests, images, progress
     assert.deepEqual(JSON.parse(booth.images), [`${id}_1.png`, `${id}_2.png`])
     assert.equal(booth.comiket, 109)
     assert.equal(booth.weekday.length, 1)
+    assert.equal(booth.circle_appeal, parseDetail(fixture, '24031654').booth.circle_appeal)
+    assert.equal(booth.tags, null)
     assert.equal('location' in booth, false)
   }
   const files = await readdir(join(directory, 'booths', 'c109'), { withFileTypes: true })

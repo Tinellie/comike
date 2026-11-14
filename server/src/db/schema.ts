@@ -1,10 +1,11 @@
-import { char, datetime, int, longtext, mysqlTable, text, varchar } from 'drizzle-orm/mysql-core'
+import { char, datetime, index, int, longtext, mysqlTable, text, varchar } from 'drizzle-orm/mysql-core'
 
 export const booths = mysqlTable('booths', {
   id: varchar('id', { length: 32 }).primaryKey(),
   event_id: varchar('event_id', { length: 32 }).notNull(),
   comiket: int('comiket').notNull(),
   circle_name: varchar('circle_name', { length: 255 }).notNull(),
+  circle_name_reading: varchar('circle_name_reading', { length: 1024 }),
   author_name: varchar('author_name', { length: 255 }),
   weekday: char('weekday', { length: 1 }).notNull(),
   hall: varchar('hall', { length: 16 }).notNull(),
@@ -16,10 +17,12 @@ export const booths = mysqlTable('booths', {
   circle_id: varchar('circle_id', { length: 32 }),
   pixiv_id: varchar('pixiv_id', { length: 32 }),
   twitter_id: varchar('twitter_id', { length: 64 }),
+  circle_appeal: longtext('circle_appeal'),
+  tags: longtext('tags'),
   images: text('images').notNull(),
   source_url: text('source_url').notNull(),
   last_crawled_at: datetime('last_crawled_at', { mode: 'string' }).notNull(),
-})
+}, table => [index('booths_event_id_idx').on(table.event_id)])
 
 export const crawlJobs = mysqlTable('crawl_jobs', {
   id: varchar('id', { length: 36 }).primaryKey(),

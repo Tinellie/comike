@@ -7,6 +7,8 @@ import { RemoteLogin } from './crawler/login.js'
 import { CrawlerService } from './crawler/service.js'
 import { MysqlJobRepository } from './crawler/repository.js'
 import { initializeDatabase } from './db/initialize.js'
+import { createHallGroupsLoader } from './booths/catalog.js'
+import { MysqlBoothRepository } from './booths/repository.js'
 
 const port = Number(process.env.PORT ?? 3001)
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -37,6 +39,8 @@ const app = createApp({
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
   regeneratePreview: () => regeneratePreview(fileURLToPath(new URL('../../', import.meta.url)), recognitionDirectory),
   crawler,
+  boothStore: new MysqlBoothRepository(createHallGroupsLoader(resolve(recognitionDirectory, 'final.json'))),
+  mediaRoot: resolve(projectRoot, process.env.MEDIA_ROOT ?? 'storage'),
   initializeDatabase: async () => {
     if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not configured')
     await initializeDatabase(process.env.DATABASE_URL)

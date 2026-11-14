@@ -33,12 +33,38 @@ test('real detail fixture: IDs, hashtag edition, single weekday and all type-2 c
   assert.equal(booth.circle_id, '10091582')
   assert.equal(booth.pixiv_id, '2131660')
   assert.equal(booth.twitter_id, 'ogipote')
+  assert.equal(booth.circle_appeal, 'サークル名を変更いたしました！頒布物や内容の傾向は変化ございません！\n(旧Milky Been!)\nアニメ塗りを基調としたイラスト集や様々なグッズを作っております。')
+  assert.equal(booth.tags, null)
   assert.equal('location' in booth, false)
   assert.equal(booth.images, '[]')
   assert.deepEqual(images.map(image => image.stem), ['24031654_1', '24031654_2'])
   assert.deepEqual(images.map(image => new URL(image.url).pathname.split('/').slice(0, 5).join('/')), [
     '/Spa/CachedImage/24031653/2', '/Spa/CachedImage/24031654/2',
   ])
+})
+
+test('appeal and tags retain plain multiline text, decode entities and discard scripts and styles', () => {
+  const html = fixture
+    .replace(/(<th>タグ<\/th>\s*<td\b[^>]*>)[\s\S]*?(<\/td>)/, '$1<a href="/tag/1">創作 &amp; 漫画</a><a href="/tag/2">イラスト</a><br>全年齢<script>ignored()</script><style>.ignored{}</style>$2')
+    .replace(/(<th>補足説明\/サークルアピール<\/th>\s*<td\b[^>]*>)[\s\S]*?(<\/td>)/, '$1<p>第一段落 &amp; 説明</p><p>第二段落<br>続き</p><script>ignored()</script>$2')
+  const { booth } = parseDetail(html, '24031654')
+  assert.equal(booth.circle_appeal, '第一段落 & 説明\n\n第二段落\n続き')
+  assert.equal(booth.tags, '創作 & 漫画\nイラスト\n\n全年齢')
+  assert.equal(booth.circle_appeal?.includes('<'), false)
+  assert.equal(booth.tags?.includes('ignored'), false)
+})
+
+test('empty appeal and tags save null; long text is not truncated and missing field labels are explicit errors', () => {
+  const empty = fixture.replace(/(<th>補足説明\/サークルアピール<\/th>\s*<td\b[^>]*>)[\s\S]*?(<\/td>)/, '$1 <br> $2')
+  assert.equal(parseDetail(empty, '24031654').booth.circle_appeal, null)
+  assert.equal(parseDetail(empty, '24031654').booth.tags, null)
+  const longText = '長文'.repeat(40_000)
+  const html = empty.replace(/(<th>タグ<\/th>\s*<td\b[^>]*>)[\s\S]*?(<\/td>)/, `$1${longText}$2`)
+    .replace(/(<th>補足説明\/サークルアピール<\/th>\s*<td\b[^>]*>)[\s\S]*?(<\/td>)/, `$1${longText}$2`)
+  const { booth } = parseDetail(html, '24031654')
+  assert.equal(booth.circle_appeal, longText)
+  assert.equal(booth.tags, longText)
+  assert.throws(() => parseDetail(fixture.replace('<th>タグ</th>', '<th>Unknown</th>'), '24031654'), /详情缺少字段：タグ/)
 })
 
 test('detail without a circle homepage ID is valid and saves null', () => {

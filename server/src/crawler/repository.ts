@@ -3,6 +3,7 @@ import { db, checkDatabase } from '../db/index.js'
 import { booths, circleListCache, crawlJobs } from '../db/schema.js'
 import type { Booth } from '../db/schema.js'
 import type { CircleListCache, CrawlJob, JobRepository } from './types.js'
+import { nameReading } from '../booths/reading.js'
 
 function database() {
   if (!db) throw new Error('DATABASE_URL is not configured; run db:init before crawling')
@@ -33,6 +34,7 @@ export class MysqlJobRepository implements JobRepository {
   }
 
   async saveBooth(booth: Booth) {
+    booth.circle_name_reading = await nameReading(booth.circle_name)
     await database().insert(booths).values(booth).onDuplicateKeyUpdate({ set: booth })
   }
 

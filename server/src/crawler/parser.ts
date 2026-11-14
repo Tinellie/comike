@@ -40,9 +40,16 @@ export function parseDetail(html: string, expectedId: string) {
     if (!th.length) throw new Error(`详情缺少字段：${label}`)
     return th.next('td')
   }
-  function text(label: string) {
+  function text(label: string, multiline = false) {
     const element = cell(label).clone()
     element.find('a[href*="google."], script, style').remove()
+    if (multiline) {
+      element.find('br').replaceWith('\n')
+      element.find('p, div, li, blockquote, pre').before('\n').after('\n')
+      if (label === 'タグ') element.find('a').after('\n')
+      return element.text().replace(/\r\n?/g, '\n').split('\n')
+        .map(line => line.replace(/[^\S\n]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim()
+    }
     return element.text().replace(/\s+/g, ' ').trim()
   }
   const circleName = text('サークル名')
@@ -103,6 +110,8 @@ export function parseDetail(html: string, expectedId: string) {
     circle_id: circleId ?? null,
     pixiv_id: pixivId,
     twitter_id: twitterId,
+    circle_appeal: text('補足説明/サークルアピール', true) || null,
+    tags: text('タグ', true) || null,
     images: '[]',
     source_url: sourceUrl,
     last_crawled_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
