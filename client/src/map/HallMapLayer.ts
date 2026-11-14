@@ -7,6 +7,8 @@ import { hallMatrix, hallTextRotation, object } from './halls'
 import hallMetaSource from '../../../ref/hall-meta.json?raw'
 import { filteredOutline } from './style'
 import { HallVisibility, intersectsBounds, paddedBounds } from './hallVisibility'
+import type { BoothOccupancy } from './boothOccupancy'
+import type { PreviewBooth } from '../preview/data'
 
 const hallMeta = object(JSON.parse(hallMetaSource))
 if (!Array.isArray(hallMeta.halls)) throw new Error('Hall marker 元数据列表无效')
@@ -57,7 +59,7 @@ export class HallMapLayer {
   draw(
     context: CanvasRenderingContext2D, hall: MapHall, placement: HallPlacement,
     origin: Point, display: HallDisplay, _selected: boolean, viewRotation = 0, filtered = false,
-    cull = true,
+    cull = true, occupancy: BoothOccupancy | null = null, hover: PreviewBooth['bbox'] | null = null,
   ) {
     if (!display.visible || !hall.page.hallOutline) return
     const markerColor = hallMarkerColor(hall)
@@ -112,6 +114,21 @@ export class HallMapLayer {
         const path = backgrounds.get(block.id)
         if (!path) throw new Error(`Block ${block.id} 缺少背景几何`)
         context.fill(path)
+      }
+      if (occupancy) {
+        const parents = new Map(page.booths.map(booth => [booth.id, booth]))
+        context.fillStyle = '#555555'
+        for (const half of page.halfBooths ?? []) {
+          const booth = parents.get(half.boothId)
+          const island = booth?.islandId ? hall.islandCodes.get(booth.islandId) : null
+          if (!island || !booth?.number || !half.suffix || !occupancy.isVacant(island, booth.number, half.suffix)) continue
+          const b = half.bbox
+          context.fillRect(b.x, b.y, b.width, b.height)
+        }
+      }
+      if (hover) {
+        context.fillStyle = 'rgba(255, 193, 7, 0.6)'
+        context.fillRect(hover.x, hover.y, hover.width, hover.height)
       }
     }
     const textRotation = hallTextRotation(hall, placement.rotation + viewRotation)

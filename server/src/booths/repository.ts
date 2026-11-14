@@ -186,6 +186,26 @@ export class MysqlBoothRepository {
     return presentation(row, groups, dates.days)
   }
 
+  async mapData(eventId: string, weekday: string) {
+    const [mergedRows, vacancyRows] = await Promise.all([
+      this.database.select({ island: booths.island_code, number: booths.booth_number })
+        .from(booths).where(and(eq(booths.event_id, eventId), eq(booths.weekday, weekday), eq(booths.booth_suffix, 'ab'))),
+      this.database.select({ island: mapVacancies.island_code, number: mapVacancies.booth_number, suffix: mapVacancies.booth_suffix })
+        .from(mapVacancies).where(and(eq(mapVacancies.event_id, eventId), eq(mapVacancies.weekday, weekday))),
+    ])
+    function group(rows: { island: string; number: string; suffix?: string }[]) {
+      const islands = new Map<string, Set<string>>()
+      for (const row of rows) {
+        const code = row.island.normalize('NFKC')
+        const values = islands.get(code) ?? new Set<string>()
+        values.add(`${row.number.padStart(2, '0')}${row.suffix ?? ''}`)
+        islands.set(code, values)
+      }
+      return Object.fromEntries([...islands].map(([island, values]) => [island, [...values].sort()]))
+    }
+    return { merged: group(mergedRows), vacancies: group(vacancyRows) }
+  }
+
   async atLocation(query: { eventId: string; weekday: string; hallGroup: string; island: string; number: string; suffix: 'a' | 'b' }) {
     const [options, groups] = await Promise.all([this.days(query.eventId), this.loadGroups()])
     if (!options?.event) return null
@@ -209,4 +229,4 @@ export class MysqlBoothRepository {
   }
 }
 
-export type BoothStore = Pick<MysqlBoothRepository, 'options' | 'days' | 'list' | 'detail' | 'atLocation'>
+export type BoothStore = Pick<MysqlBoothRepository, 'options' | 'days' | 'list' | 'detail' | 'atLocation' | 'mapData'>

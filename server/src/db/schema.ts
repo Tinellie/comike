@@ -1,4 +1,4 @@
-import { char, datetime, index, int, longtext, mysqlTable, text, uniqueIndex, varchar } from 'drizzle-orm/mysql-core'
+import { char, datetime, index, int, longtext, mysqlTable, primaryKey, text, varchar } from 'drizzle-orm/mysql-core'
 
 export const booths = mysqlTable('booths', {
   id: varchar('id', { length: 32 }).primaryKey(),
@@ -41,7 +41,6 @@ export const circleListCache = mysqlTable('circle_list_cache', {
 export type Booth = typeof booths.$inferInsert
 
 export const mapVacancies = mysqlTable('map_vacancies', {
-  id: varchar('id', { length: 64 }).primaryKey(),
   event_id: varchar('event_id', { length: 32 }).notNull(),
   comiket: int('comiket').notNull(),
   weekday: char('weekday', { length: 1 }).notNull(),
@@ -53,4 +52,4 @@ export const mapVacancies = mysqlTable('map_vacancies', {
   map_booth_id: varchar('map_booth_id', { length: 128 }).notNull(),
   checked_at: datetime('checked_at', { mode: 'string' }).notNull(),
 }, table => [index('map_vacancies_event_idx').on(table.event_id),
-  uniqueIndex('map_vacancies_location_idx').on(table.event_id, table.weekday, table.hall_group, table.island_code, table.booth_number, table.booth_suffix)])
+  primaryKey({ columns: [table.event_id, table.weekday, table.hall_group, table.island_code, table.booth_number, table.booth_suffix] })])

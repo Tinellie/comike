@@ -40,6 +40,11 @@ export interface BoothOptions {
 
 export type BoothDays = Pick<BoothOptions, 'event' | 'days' | 'warnings'>
 
+export interface MapBoothData {
+  merged: Record<string, string[]>
+  vacancies: Record<string, string[]>
+}
+
 export interface BoothPage {
   items: BoothSummary[]
   total: number
@@ -47,7 +52,6 @@ export interface BoothPage {
 }
 
 export interface MapVacancy {
-  id: string
   event_id: string
   comiket: number
   weekday: string

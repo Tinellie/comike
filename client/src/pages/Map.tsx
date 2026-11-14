@@ -9,7 +9,7 @@ import { recalculateHallTransforms } from '../map/hallPreparation'
 import type { MapBoothHit } from '../map/OsmMapRenderer'
 import BoothDetail from '../booths/BoothDetail'
 import { readBoothApi } from '../booths/api'
-import type { BoothDays, BoothDetail as Detail, MapVacancy } from '../booths/api'
+import type { BoothDays, BoothDetail as Detail, MapBoothData, MapVacancy } from '../booths/api'
 
 export default function Map() {
   const [data, setData] = useState<OsmMapData | null>(null)
@@ -26,6 +26,11 @@ export default function Map() {
   const [lookupError, setLookupError] = useState<string | null>(null)
   const [lookingUp, setLookingUp] = useState(false)
   const [dayAttempt, setDayAttempt] = useState(0)
+  const [mapAttempt, setMapAttempt] = useState(0)
+  const [preload, setPreload] = useState<{ eventId: string; weekday: string; data: MapBoothData } | null>(null)
+  const [preloadError, setPreloadError] = useState<string | null>(null)
+  const eventId = options?.event?.eventId
+  const boothData = preload?.eventId === eventId && preload?.weekday === weekday ? preload.data : null
   const lookup = useRef<AbortController | null>(null)
   const lastHit = useRef<MapBoothHit | null>(null)
 
@@ -43,9 +48,26 @@ export default function Map() {
     return () => { controller.abort(); lookup.current?.abort() }
   }, [dayAttempt])
 
+  useEffect(() => {
+    if (!eventId || !weekday) return
+    const controller = new AbortController()
+    const query = new URLSearchParams({ eventId, weekday })
+    void readBoothApi<MapBoothData>(`/map-data?${query}`, controller.signal).then(data => {
+      if (controller.signal.aborted) return
+      setPreload({ eventId, weekday, data })
+      setPreloadError(null)
+    }).catch((reason: unknown) => {
+      if (controller.signal.aborted) return
+      console.error('Map booth preload failed:', reason)
+      setPreloadError(reason instanceof Error ? reason.message : '地图摊位预加载失败')
+    })
+    return () => controller.abort()
+  }, [eventId, weekday, mapAttempt])
+
   function changeDay(value: string) {
     lookup.current?.abort()
     lastHit.current = null
+    setPreloadError(null)
     setWeekday(value); setSelected(null); setVacancy(null); setCircles([]); setLookingUp(false); setLookupError(null)
   }
 
@@ -154,9 +176,14 @@ export default function Map() {
       </Button>
       {data && transforms && (
         <OsmCanvas data={data} halls={halls} transforms={transforms} onError={setError}
+          boothData={boothData}
           days={options?.days ?? []} weekday={weekday} onDayChange={changeDay} onBoothClick={hit => { void selectBooth(hit) }} />
       )}
       <Stack sx={{ position: 'absolute', top: 16, left: 16, maxWidth: 'min(400px, calc(100% - 32px))', gap: 1 }}>
+        {eventId && weekday && !boothData && !preloadError && <LinearProgress aria-label="预加载地图摊位" />}
+        {preloadError && <Alert severity="warning" action={<Button onClick={() => {
+          setPreloadError(null); setMapAttempt(value => value + 1)
+        }}>重试</Button>}>{preloadError}</Alert>}
         {lookingUp && <LinearProgress aria-label="查询地图社团" />}
         {lookupError && <Alert severity="warning" action={<Button onClick={() => {
           setLookupError(null)
@@ -164,7 +191,7 @@ export default function Map() {
           else setDayAttempt(value => value + 1)
         }}>重试</Button>}>{lookupError}</Alert>}
       </Stack>
-      <BoothDetail key={selected?.id ?? vacancy?.id ?? 'closed'} booth={selected} vacancy={vacancy}
+      <BoothDetail key={selected?.id ?? 'no-circle'} booth={selected} vacancy={vacancy}
         initialDetail={selected} alternatives={circles} onSelect={circle => setSelected(circles.find(item => item.id === circle.id) ?? null)}
         onClose={() => { setSelected(null); setVacancy(null); setCircles([]) }} />
     </Box>

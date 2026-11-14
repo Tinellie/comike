@@ -6,6 +6,22 @@ import type { BoothStore } from './repository.js'
 export function boothRouter(store: BoothStore, mediaRoot: string) {
   const router = Router()
   router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
+  router.get('/map-data', async (req, res) => {
+    const params = new URL(req.originalUrl, 'http://localhost').searchParams
+    const eventId = params.get('eventId') ?? '', weekday = params.get('weekday') ?? ''
+    if ([...params.keys()].some(key => !['eventId', 'weekday'].includes(key) || params.getAll(key).length !== 1)
+      || !/^\d{1,32}$/.test(eventId) || !/^[月火水木金土日]$/.test(weekday)) {
+      console.warn('Rejected invalid map preload query')
+      res.status(400).json({ message: '地图预加载参数无效' })
+      return
+    }
+    try {
+      res.json(await store.mapData(eventId, weekday))
+    } catch (error) {
+      console.error('Map booth preload failed:', error)
+      res.status(503).json({ message: '地图摊位预加载失败，请检查数据库和服务端日志' })
+    }
+  })
   router.get('/location', async (req, res) => {
     const params = new URL(req.originalUrl, 'http://localhost').searchParams
     const eventId = params.get('eventId') ?? '', weekday = params.get('weekday') ?? ''

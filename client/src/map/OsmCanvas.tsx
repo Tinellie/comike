@@ -9,6 +9,7 @@ import type { MapBoothHit } from './OsmMapRenderer'
 import type { HallTransforms, MapHall } from './halls'
 import { defaultHallDisplay } from './HallMapLayer'
 import { dragRotation } from './viewport'
+import type { MapBoothData } from '../booths/api'
 
 interface OsmCanvasProps {
   data: OsmMapData
@@ -19,9 +20,10 @@ interface OsmCanvasProps {
   days: { weekday: string; label: string }[]
   weekday: string
   onDayChange: (weekday: string) => void
+  boothData: MapBoothData | null
 }
 
-export default function OsmCanvas({ data, halls, transforms, onError, onBoothClick, days, weekday, onDayChange }: OsmCanvasProps) {
+export default function OsmCanvas({ data, halls, transforms, onError, onBoothClick, days, weekday, onDayChange, boothData }: OsmCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<OsmMapRenderer | null>(null)
@@ -31,7 +33,13 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
   const [hoverLabel, setHoverLabel] = useState('')
   const viewState = useRef({ rotation, levels })
   const clickHandler = useRef(onBoothClick)
+  const boothState = useRef(boothData)
   useEffect(() => { clickHandler.current = onBoothClick }, [onBoothClick])
+
+  useEffect(() => {
+    boothState.current = boothData
+    rendererRef.current?.setBoothData(boothData)
+  }, [boothData])
 
   useEffect(() => {
     viewState.current = { rotation, levels }
@@ -64,6 +72,7 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
         renderer.resize(bounds.width, bounds.height, window.devicePixelRatio || 1)
         renderer.setRotation(viewState.current.rotation)
         renderer.setLevels(viewState.current.levels)
+        renderer.setBoothData(boothState.current)
       } catch (reason) {
         console.error('OSM rendering failed:', reason)
         onError(reason instanceof Error ? reason.message : 'OSM 地图绘制失败')

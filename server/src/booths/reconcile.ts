@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index.js'
@@ -104,7 +103,6 @@ export async function reconcileMapVacancies(
     for (let offset = 0; offset < missing.length; offset += 500) {
       await transaction.insert(mapVacancies).values(missing.slice(offset, offset + 500).map(slot => ({
         ...slot, event_id: eventId, comiket: circles[0]!.comiket, checked_at,
-        id: createHash('sha256').update(JSON.stringify([eventId, slot.weekday, slotKey(slot)])).digest('hex'),
       })))
     }
     const result = { eventId, days: new Set(circles.map(circle => circle.weekday)).size, mapHalfBooths: slots.length, vacancies: missing.length }
