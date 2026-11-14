@@ -5,6 +5,9 @@ import { join } from 'node:path'
 import { readFile, writeFile, rename, unlink } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { validHallTransforms } from './hallTransforms.js'
+import type { RequestHandler } from 'express'
+import type { CrawlerService } from './crawler/service.js'
+import { crawlerRouter } from './crawler/routes.js'
 
 interface AppOptions {
   checkDatabase: () => Promise<void>
@@ -14,15 +17,22 @@ interface AppOptions {
   hallTransformsFile?: string
   hallEditorOrigin?: string
   regeneratePreview?: () => Promise<void>
+  crawler?: CrawlerService
+  initializeDatabase?: () => Promise<void>
+  authorizeCrawler?: RequestHandler
 }
 
 export function createApp({
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
   regeneratePreview,
+  crawler, initializeDatabase, authorizeCrawler,
 }: AppOptions) {
   const app = express()
   app.disable('x-powered-by')
   app.use(express.json())
+  if (crawler && initializeDatabase) {
+    app.use('/api/crawler', crawlerRouter(crawler, initializeDatabase, hallEditorOrigin, authorizeCrawler))
+  }
 
   let generation: { status: 'idle' | 'running' | 'succeeded' | 'failed'; message?: string } = { status: 'idle' }
   app.get('/api/preview/regenerate', (_req, res) => {

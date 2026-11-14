@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1794603467663,
+      "tag": "0000_steady_talon",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1794603722459,
+      "tag": "0001_closed_enchantress",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1794645888607,
+      "tag": "0002_clumsy_triton",
+      "breakpoints": true
+    }
+  ]
+}

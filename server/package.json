@@ -11,12 +11,16 @@
     "test": "tsx --test test/*.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:init": "tsx --env-file-if-exists=.env src/db/init.ts"
   },
   "dependencies": {
+    "cheerio": "^1.1.2",
+    "crawlee": "^3.15.3",
     "drizzle-orm": "^0.45.4",
     "express": "^5.3.0",
-    "mysql2": "^3.24.6"
+    "mysql2": "^3.24.6",
+    "playwright": "^1.56.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
