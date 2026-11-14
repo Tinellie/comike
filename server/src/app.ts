@@ -11,6 +11,8 @@ import { boothRouter } from './booths/routes.js'
 import type { BoothStore } from './booths/repository.js'
 import type { AuthStore } from './auth/repository.js'
 import { createAuth, sameOrigin } from './auth/routes.js'
+import type { FavoritesService } from './favorites/service.js'
+import { favoritesRouter } from './favorites/routes.js'
 
 export interface AppOptions {
   checkDatabase: () => Promise<void>
@@ -26,13 +28,14 @@ export interface AppOptions {
   secureCookie?: boolean
   boothStore?: BoothStore
   mediaRoot?: string
+  favorites?: FavoritesService
 }
 
 export function createApp({
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
   regeneratePreview,
   crawler, initializeDatabase, authStore, secureCookie,
-  boothStore, mediaRoot,
+  boothStore, mediaRoot, favorites,
 }: AppOptions) {
   const app = express()
   app.disable('x-powered-by')
@@ -43,6 +46,8 @@ export function createApp({
     if (req.method === 'GET' || req.method === 'HEAD') next()
     else originCheck(req, res, next)
   }, auth.router)
+  app.use('/api/import', auth.requireUser, originCheck)
+  if (favorites) app.use('/api/import', favoritesRouter(favorites, auth.userFor))
   app.use('/api/preview', (req, res, next) => {
     // Map also uses the original PDF images; these read-only assets remain public.
     if ((req.method === 'GET' || req.method === 'HEAD') && /^\/page-\d{3}-pdf\.png$/.test(req.path)) next()

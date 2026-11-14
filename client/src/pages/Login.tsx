@@ -8,7 +8,7 @@ export default function Login() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const destination = params.get('next')
-  const next = destination === '/preview' || destination === '/crawler' ? destination : '/'
+  const next = destination === '/preview' || destination === '/crawler' || destination === '/import' ? destination : '/'
   const [registering, setRegistering] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)

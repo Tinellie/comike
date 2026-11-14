@@ -39,7 +39,8 @@ export function createAuth(store?: AuthStore, secureCookie = false) {
     return store.sessionUser(tokenHash(token))
   }
 
-  const requireAdmin: RequestHandler = async (req, res, next) => {
+  const identities = new WeakMap<Request, AuthUser>()
+  const requireUser: RequestHandler = async (req, res, next) => {
     res.set('Cache-Control', 'no-store')
     let user
     try { user = await currentUser(req) } catch (error) {
@@ -47,14 +48,31 @@ export function createAuth(store?: AuthStore, secureCookie = false) {
       res.status(503).json({ message: '认证服务不可用，请检查数据库配置和迁移' })
       return
     }
-    if (!user || !user.isAdmin) {
-      console.warn('Rejected administrator-only request:', req.method, req.path)
-      res.status(user ? 403 : 401).json({ message: user ? '仅管理员可访问' : '请先登录' })
+    if (!user) {
+      console.warn('Rejected unauthenticated request:', req.method, req.path)
+      res.status(401).json({ message: '请先登录' })
       return
     }
+    identities.set(req, user)
     next()
   }
 
+  function userFor(req: Request): AuthUser {
+    const user = identities.get(req)
+    if (!user) throw new Error('Authentication middleware is missing')
+    return user
+  }
+  const requireAdmin: RequestHandler = (req, res, next) => {
+    void requireUser(req, res, error => {
+      if (error) { next(error); return }
+      if (!userFor(req).isAdmin) {
+        console.warn('Rejected administrator-only request:', req.method, req.path)
+        res.status(403).json({ message: '仅管理员可访问' })
+        return
+      }
+      next()
+    })
+  }
   const router = Router()
   router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
   router.get('/me', async (req, res) => {
@@ -143,5 +161,5 @@ export function createAuth(store?: AuthStore, secureCookie = false) {
       res.status(503).json({ message: '退出失败，请稍后重试' })
     }
   })
-  return { router, requireAdmin }
+  return { router, requireAdmin, requireUser, userFor }
 }

@@ -25,6 +25,7 @@ export default function Layout() {
             {[
               { to: '/', label: 'Home' },
               { to: '/map', label: 'Map' },
+              ...(user ? [{ to: '/import', label: 'Import' }] : []),
               ...(user?.isAdmin ? [
                 { to: '/preview', label: 'Preview' },
                 { to: '/crawler', label: 'Crawler' },
@@ -47,11 +48,11 @@ export default function Layout() {
           </Box>
           {user ? <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
             <Typography variant="body2">{user.username}{user.isAdmin ? '（管理员）' : ''}</Typography>
-            <Button color="inherit" variant="outlined" disabled={loggingOut}
-              onClick={() => { void signOut() }}>退出</Button>
-          </Box> : <Button component={NavLink} to="/login" color="inherit" variant="outlined" disabled={loading}
+            <Button color="inherit" disabled={loggingOut}
+              onClick={() => { void signOut() }}>Logout</Button>
+          </Box> : <Button component={NavLink} to="/login" color="inherit" disabled={loading}
             sx={{ ml: 'auto', flexShrink: 0, '&.active': { backgroundColor: 'rgba(255, 255, 255, 0.18)' } }}>
-            登录
+            Login
           </Button>}
         </Toolbar>
       </AppBar>

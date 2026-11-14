@@ -2,6 +2,7 @@ import { boolean, char, datetime, index, int, json, longtext, mysqlTable, primar
 
 export const users = mysqlTable('users', {
   id: char('id', { length: 36 }).primaryKey(),
+  internal_id: int('internal_id').autoincrement().notNull().unique(),
   username: varchar('username', { length: 32 }).notNull().unique(),
   password_hash: varchar('password_hash', { length: 255 }).notNull(),
   is_admin: boolean('is_admin').notNull().default(false),
@@ -13,6 +14,13 @@ export const sessions = mysqlTable('sessions', {
   user_id: char('user_id', { length: 36 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
   expires_at: datetime('expires_at').notNull(),
 }, table => [index('sessions_expiry_idx').on(table.expires_at)])
+
+export const userFavorites = mysqlTable('user_favorites', {
+  user_id: int('user_id').notNull().references(() => users.internal_id, { onDelete: 'cascade' }),
+  booth_id: varchar('booth_id', { length: 32 }).notNull(),
+  colour: char('colour', { length: 7 }).notNull(),
+  memo: text('memo').notNull(),
+}, table => [primaryKey({ columns: [table.user_id, table.booth_id] })])
 
 export interface MapRectangle { x: number; y: number; width: number; height: number }
 
