@@ -5,6 +5,9 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 
 const theme = createTheme({
+  typography: {
+    fontFamily: '"BIZ UDPGothic", "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif',
+  },
   palette: {
     primary: { main: '#1976d2' },
     background: { default: '#ffffff' },
