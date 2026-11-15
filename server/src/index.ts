@@ -16,6 +16,7 @@ import { MysqlAuthStore } from './auth/repository.js'
 import { FavoritesService } from './favorites/service.js'
 import { MysqlFavoritesStore } from './favorites/repository.js'
 import { favoritesUrl } from './favorites/parser.js'
+import { MysqlColourStore } from './colours/repository.js'
 
 const port = Number(process.env.PORT ?? 3001)
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -51,6 +52,7 @@ const crawler = new CrawlerService(
 const favorites = new FavoritesService(new MysqlFavoritesStore(),
   () => new RemoteLogin(undefined, undefined, favoritesUrl, 'table.t-user-favorites'))
 const app = createApp({
+  colourStore: new MysqlColourStore(),
   favorites,
   authStore: new MysqlAuthStore(),
   secureCookie: process.env.NODE_ENV === 'production' || process.env.AUTH_COOKIE_SECURE === 'true',

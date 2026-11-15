@@ -14,6 +14,7 @@ import type { HallRegistrationReport } from './hallRegistration'
 import { boothHover, BoothOccupancy } from './boothOccupancy'
 import type { MapBoothData } from '../booths/api'
 import type { PreviewBooth } from '../preview/data'
+import type { FavoriteHighlights } from './favoriteHighlights'
 
 interface StyledFeature {
   feature: OsmFeature
@@ -69,6 +70,7 @@ export class OsmMapRenderer {
   private hoverFrame: number | null = null
   private occupancy: BoothOccupancy | null = null
   private boothData: MapBoothData | null = null
+  private favoriteHighlights: FavoriteHighlights | null = null
   private genreDisplay: { enabled: boolean; selected: ReadonlySet<string> | null } = { enabled: false, selected: null }
 
   setGenreDisplay(enabled: boolean, selected: string[] | null) {
@@ -87,6 +89,12 @@ export class OsmMapRenderer {
     if (this.boothData === data) return
     this.boothData = data
     this.occupancy = data ? new BoothOccupancy(data) : null
+    this.requestDraw()
+  }
+
+  setFavoriteHighlights(highlights: FavoriteHighlights | null) {
+    if (this.favoriteHighlights === highlights) return
+    this.favoriteHighlights = highlights
     this.requestDraw()
   }
 
@@ -384,6 +392,12 @@ export class OsmMapRenderer {
         ctx.stroke(localPath([[report.alignment.source.start, report.alignment.source.end]], this.origin, false))
       }
       ctx.restore()
+    }
+    if (this.hallDisplay.visible && this.favoriteHighlights) {
+      for (const { hall, placement, filtered } of hallItems) {
+        const highlights = this.favoriteHighlights.byHall.get(hall.index)
+        if (!filtered && highlights?.length) this.hallLayer.drawFavorites(ctx, hall, placement, this.origin, highlights)
+      }
     }
     this.onZoom(Math.round(view.scale / fitViewport(this.data.bounds, size).scale * 100))
   }

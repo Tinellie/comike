@@ -22,6 +22,12 @@ export const userFavorites = mysqlTable('user_favorites', {
   memo: text('memo').notNull(),
 }, table => [primaryKey({ columns: [table.user_id, table.booth_id] })])
 
+export const userColourPriorities = mysqlTable('user_colour_priorities', {
+  user_id: int('user_id').notNull().references(() => users.internal_id, { onDelete: 'cascade' }),
+  colour: char('colour', { length: 7 }).notNull(),
+  priority: int('priority').notNull(),
+}, table => [primaryKey({ columns: [table.user_id, table.colour] })])
+
 export interface MapRectangle { x: number; y: number; width: number; height: number }
 
 export const booths = mysqlTable('booths', {

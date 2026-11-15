@@ -9,6 +9,29 @@ export function boothRouter(store: BoothStore, mediaRoot: string,
   currentUser: (req: Request) => Promise<AuthUser | null> = async () => null) {
   const router = Router()
   router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
+  router.get('/map-favorites', async (req, res) => {
+    res.set('Cache-Control', 'private, no-store').vary('Cookie')
+    const params = new URL(req.originalUrl, 'http://localhost').searchParams
+    const eventId = params.get('eventId') ?? '', weekday = params.get('weekday') ?? ''
+    if ([...params.keys()].some(key => !['eventId', 'weekday'].includes(key) || params.getAll(key).length !== 1)
+      || !/^\d{1,32}$/.test(eventId) || !/^[月火水木金土日]$/.test(weekday)) {
+      console.warn('Rejected invalid personal map favorites query')
+      res.status(400).json({ message: '收藏地图参数无效' })
+      return
+    }
+    try {
+      const user = await currentUser(req)
+      if (!user) {
+        console.warn('Rejected unauthenticated map favorites request')
+        res.status(401).json({ message: '请先登录' })
+        return
+      }
+      res.json({ favorites: await store.mapFavorites(eventId, weekday, user.id) })
+    } catch (error) {
+      console.error('Personal map favorites unavailable:', error)
+      res.status(503).json({ message: '收藏摊位位置读取失败，请检查数据库和服务端日志后重试' })
+    }
+  })
   router.get('/map-data', async (req, res) => {
     const params = new URL(req.originalUrl, 'http://localhost').searchParams
     const eventId = params.get('eventId') ?? '', weekday = params.get('weekday') ?? ''
@@ -47,6 +70,7 @@ export function boothRouter(store: BoothStore, mediaRoot: string,
     }
   })
   router.get(['/options', '/days'], async (req, res) => {
+    if (req.path === '/options') res.set('Cache-Control', 'private, no-store').vary('Cookie')
     const params = new URL(req.originalUrl, 'http://localhost').searchParams
     const eventId = params.get('eventId') ?? undefined
     if ([...params.keys()].some(key => key !== 'eventId') || params.getAll('eventId').length > 1
@@ -56,7 +80,7 @@ export function boothRouter(store: BoothStore, mediaRoot: string,
       return
     }
     try {
-      const options = await (req.path === '/days' ? store.days(eventId) : store.options(eventId))
+      const options = await (req.path === '/days' ? store.days(eventId) : store.options(eventId, (await currentUser(req))?.id))
       if (!options) res.status(404).json({ message: '活动不存在' })
       else res.json(options)
     } catch (error) {
