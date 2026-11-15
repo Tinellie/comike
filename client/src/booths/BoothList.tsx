@@ -5,10 +5,11 @@ import {
   Paper, Popover, Stack, SvgIcon, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TableSortLabel, TextField, Tooltip, Typography,
 } from '@mui/material'
-import type { BoothOptions, BoothPage, BoothSummary } from './api'
+import type { BoothListItem, BoothOptions, BoothPage, BoothSummary } from './api'
 import { locationLabel, readBoothApi } from './api'
 import BoothDetail from './BoothDetail'
 import { BoothImages, BoothLinks } from './BoothMedia'
+import { useAuth } from '../auth/context'
 
 function BoothHeader({ children }: { children?: ReactNode }) {
   return <Stack direction="row" sx={{ mb: 2, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
@@ -18,6 +19,7 @@ function BoothHeader({ children }: { children?: ReactNode }) {
 }
 
 function BoothTable({ options, eventControl }: { options: BoothOptions; eventControl: ReactNode }) {
+  const { user } = useAuth()
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<'name' | 'location' | 'genre'>('location')
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc')
@@ -26,7 +28,7 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
   const [genres, setGenres] = useState<(string | null)[] | null>(null)
   const [filterKind, setFilterKind] = useState<'location' | 'genre'>('location')
   const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null)
-  const [items, setItems] = useState<BoothSummary[]>([])
+  const [items, setItems] = useState<BoothListItem[]>([])
   const [total, setTotal] = useState(0)
   const [nextOffset, setNextOffset] = useState<number | null>(0)
   const [loading, setLoading] = useState(true)
@@ -112,7 +114,7 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
   return <>
     <BoothHeader>
       {eventControl}
-      <TextField type="search" size="small" label="搜索" placeholder="社团名、作者名、genre、tags" value={search}
+      <TextField type="search" size="small" label="搜索" placeholder={user ? '社团名、作者名、genre、tags、memo' : '社团名、作者名、genre、tags'} value={search}
         slotProps={{ htmlInput: { maxLength: 255 } }} sx={{ width: 320, maxWidth: '100%' }}
         onChange={event => {
           const value = event.target.value
@@ -167,7 +169,8 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
                 event.preventDefault(); setSelected(booth)
               }
             }} sx={{ cursor: 'pointer', '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
-            <TableCell><Box role="img" aria-label="红色标记（预留）" sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: '#d83b40' }} /></TableCell>
+            <TableCell>{booth.colour && <Box role="img" aria-label={`颜色标记 ${booth.colour}`}
+              sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: booth.colour }} />}</TableCell>
             <TableCell><BoothImages booth={booth} /></TableCell>
             <TableCell>
               <Typography sx={{ fontWeight: 700, overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{booth.circle_name}</Typography>
@@ -176,7 +179,9 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
             <TableCell><Typography>{locationLabel(booth)}</Typography><Typography variant="caption" color="text.secondary">{booth.dayLabel}</Typography></TableCell>
             <TableCell><Typography sx={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }}>{booth.genre || '—'}</Typography><Typography variant="caption" color="text.secondary"
               sx={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{booth.tags || '—'}</Typography></TableCell>
-            <TableCell><Typography sx={{ whiteSpace: 'pre-line' }}>{'暂无备注\nMemo 功能预留'}</Typography></TableCell>
+            <TableCell><Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+              {booth.memo?.trim() ? booth.memo : '—'}
+            </Typography></TableCell>
             <TableCell><BoothLinks booth={booth} /></TableCell>
             <TableCell><Tooltip title="操作预留 · 点击查看详情"><IconButton size="small" aria-label={`${booth.circle_name} 操作（预留）`}>⋯</IconButton></Tooltip></TableCell>
           </TableRow>)}
@@ -234,6 +239,7 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
 }
 
 export default function BoothList() {
+  const { user, loading: authLoading } = useAuth()
   const [options, setOptions] = useState<BoothOptions | null>(null)
   const [eventId, setEventId] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -257,10 +263,10 @@ export default function BoothList() {
   return <Box sx={{ maxWidth: 1700, mx: 'auto', p: { xs: 1.5, md: 3 } }}>
     {!options?.event && <BoothHeader>{eventControl}</BoothHeader>}
     {error && <Alert severity="error" action={<Button onClick={() => { setError(null); setRetry(value => value + 1) }}>重试</Button>}>{error}</Alert>}
-    {!options && !error && <CircularProgress aria-label="加载活动和筛选项" size={24} />}
+    {(!options || authLoading) && !error && <CircularProgress aria-label="加载活动和筛选项" size={24} />}
     {options?.warnings.map(warning => <Alert key={warning} severity="warning" sx={{ mb: 2 }}>{warning}</Alert>)}
-    {options && (options.event
-      ? <BoothTable key={options.event.eventId} options={options} eventControl={eventControl} />
+    {options && !authLoading && (options.event
+      ? <BoothTable key={JSON.stringify([options.event.eventId, user?.id ?? null])} options={options} eventControl={eventControl} />
       : <Alert severity="info">数据库中还没有 booth 数据，请先在爬虫 Dashboard 采集。</Alert>)}
   </Box>
 }

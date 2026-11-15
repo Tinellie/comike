@@ -161,5 +161,5 @@ export function createAuth(store?: AuthStore, secureCookie = false) {
       res.status(503).json({ message: '退出失败，请稍后重试' })
     }
   })
-  return { router, requireAdmin, requireUser, userFor }
+  return { router, requireAdmin, requireUser, userFor, currentUser }
 }

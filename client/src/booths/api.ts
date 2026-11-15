@@ -29,6 +29,11 @@ export interface BoothDetail extends BoothSummary {
   last_crawled_at: string
 }
 
+export interface BoothListItem extends BoothSummary {
+  colour: string | null
+  memo: string | null
+}
+
 export interface BoothOptions {
   event: { eventId: string; comiket: number } | null
   events: { eventId: string; comiket: number }[]
@@ -53,7 +58,7 @@ export interface MapBoothData {
 export interface MapRectangle { x: number; y: number; width: number; height: number }
 
 export interface BoothPage {
-  items: BoothSummary[]
+  items: BoothListItem[]
   total: number
   nextOffset: number | null
 }
