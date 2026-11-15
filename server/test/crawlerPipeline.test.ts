@@ -157,7 +157,8 @@ test('full pipeline: exactly five simultaneous detail requests, images, progress
   let peak = 0
   let rejectLast = true
   let releaseFirstBatch: () => void = () => {}
-  const firstBatch = new Promise<void>(resolve => { releaseFirstBatch = resolve })
+  // Cross the one-second persistence interval even on fast CI runners.
+  const firstBatch = new Promise<void>(resolve => { releaseFirstBatch = resolve }).then(() => delay(1100))
   const server = createServer(async (request, response) => {
     const id = request.url!.split('/').at(-1)!
     attempts.set(id, (attempts.get(id) ?? 0) + 1)
