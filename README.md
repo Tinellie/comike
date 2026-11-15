@@ -39,7 +39,7 @@ git push -u origin HEAD
 |---|---|
 | `VULTR_SSH_KEY` | Actions 连接 deploy 用户的私钥，可用现有 `vultr_deploy`，建议单独授权一把部署密钥 |
 | `VULTR_SSH_PASSPHRASE` | 上述私钥口令，无则不填 |
-| `VULTR_HOST_FINGERPRINT` | 从可信 SSH 会话执行 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`，填写输出的 `SHA256:...` 字段 |
+| `VULTR_HOST_FINGERPRINT` | 当前 SSH Action 使用 ECDSA；从可信 SSH 会话执行 `ssh-keygen -lf /etc/ssh/ssh_host_ecdsa_key.pub`，填写 `SHA256:...` 字段 |
 
 公开仓库可通过 HTTPS 克隆；公开 GHCR 镜像不需要服务器登录。
 私有仓库须授予服务器 GitHub **读取权限**，私有镜像还需要 `read:packages` 权限。
