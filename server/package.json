@@ -13,6 +13,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:init": "tsx --env-file-if-exists=.env src/db/init.ts",
+    "auth:admin": "tsx --env-file-if-exists=.env src/auth/admin.ts",
     "db:readings": "tsx --env-file-if-exists=.env src/booths/backfill.ts",
     "db:map-vacancies": "tsx --env-file-if-exists=.env src/booths/reconcileCli.ts",
     "db:map-genres": "tsx --env-file-if-exists=.env src/booths/reconcileCli.ts --genres"

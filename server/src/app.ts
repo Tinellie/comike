@@ -5,13 +5,16 @@ import { join } from 'node:path'
 import { readFile, writeFile, rename, unlink } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { validHallTransforms } from './hallTransforms.js'
-import type { RequestHandler } from 'express'
 import type { CrawlerService } from './crawler/service.js'
 import { crawlerRouter } from './crawler/routes.js'
 import { boothRouter } from './booths/routes.js'
 import type { BoothStore } from './booths/repository.js'
+import type { AuthStore } from './auth/repository.js'
+import { createAuth, sameOrigin } from './auth/routes.js'
+import type { FavoritesService } from './favorites/service.js'
+import { favoritesRouter } from './favorites/routes.js'
 
-interface AppOptions {
+export interface AppOptions {
   checkDatabase: () => Promise<void>
   clientDirectory?: string
   recognitionDirectory?: string
@@ -21,23 +24,46 @@ interface AppOptions {
   regeneratePreview?: () => Promise<void>
   crawler?: CrawlerService
   initializeDatabase?: () => Promise<void>
-  authorizeCrawler?: RequestHandler
+  authStore?: AuthStore
+  secureCookie?: boolean
   boothStore?: BoothStore
   mediaRoot?: string
+  favorites?: FavoritesService
 }
 
 export function createApp({
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
   regeneratePreview,
-  crawler, initializeDatabase, authorizeCrawler,
-  boothStore, mediaRoot,
+  crawler, initializeDatabase, authStore, secureCookie,
+  boothStore, mediaRoot, favorites,
 }: AppOptions) {
   const app = express()
   app.disable('x-powered-by')
   app.use(express.json())
-  if (boothStore && mediaRoot) app.use('/api/booths', boothRouter(boothStore, mediaRoot))
+  const auth = createAuth(authStore, secureCookie)
+  const originCheck = sameOrigin(hallEditorOrigin)
+  app.use('/api/auth', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') next()
+    else originCheck(req, res, next)
+  }, auth.router)
+  app.use('/api/import', auth.requireUser, originCheck)
+  if (favorites) app.use('/api/import', favoritesRouter(favorites, auth.userFor))
+  app.use('/api/preview', (req, res, next) => {
+    // Map also uses the original PDF images; these read-only assets remain public.
+    if ((req.method === 'GET' || req.method === 'HEAD') && /^\/page-\d{3}-pdf\.png$/.test(req.path)) next()
+    else auth.requireAdmin(req, res, next)
+  })
+  app.use('/api/crawler', auth.requireAdmin)
+  app.use('/api/map', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') next()
+    else auth.requireAdmin(req, res, next)
+  }, (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') next()
+    else originCheck(req, res, next)
+  })
+  if (boothStore && mediaRoot) app.use('/api/booths', boothRouter(boothStore, mediaRoot, auth.currentUser))
   if (crawler && initializeDatabase) {
-    app.use('/api/crawler', crawlerRouter(crawler, initializeDatabase, hallEditorOrigin, authorizeCrawler))
+    app.use('/api/crawler', crawlerRouter(crawler, initializeDatabase, hallEditorOrigin))
   }
 
   let generation: { status: 'idle' | 'running' | 'succeeded' | 'failed'; message?: string } = { status: 'idle' }

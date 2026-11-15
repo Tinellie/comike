@@ -1,9 +1,12 @@
 import { Router } from 'express'
+import type { Request } from 'express'
 import { join } from 'node:path'
 import { BoothFilterError, parseBoothQuery } from './catalog.js'
 import type { BoothStore } from './repository.js'
+import type { AuthUser } from '../auth/repository.js'
 
-export function boothRouter(store: BoothStore, mediaRoot: string) {
+export function boothRouter(store: BoothStore, mediaRoot: string,
+  currentUser: (req: Request) => Promise<AuthUser | null> = async () => null) {
   const router = Router()
   router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
   router.get('/map-data', async (req, res) => {
@@ -62,6 +65,7 @@ export function boothRouter(store: BoothStore, mediaRoot: string) {
     }
   })
   router.get('/', async (req, res) => {
+    res.set('Cache-Control', 'private, no-store').vary('Cookie')
     let query
     try { query = parseBoothQuery(new URL(req.originalUrl, 'http://localhost').searchParams) } catch (error) {
       console.warn('Rejected invalid booth list query:', error)
@@ -69,7 +73,8 @@ export function boothRouter(store: BoothStore, mediaRoot: string) {
       return
     }
     try {
-      const result = await store.list(query)
+      const user = await currentUser(req)
+      const result = await store.list(query, user?.id)
       if (!result) res.status(404).json({ message: '活动不存在' })
       else res.json(result)
     } catch (error) {

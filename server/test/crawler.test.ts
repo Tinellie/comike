@@ -4,7 +4,7 @@ import { readFile, mkdtemp, mkdir, readdir, rm, symlink, writeFile } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { createApp } from '../src/app.js'
+import { createAdminApp as createApp } from './authFixture.js'
 import { imageExtension, listStoredBoothImages, saveImage } from '../src/crawler/images.js'
 import { isLoginPage, LoginRequiredError, parseDetail, parseLocation } from '../src/crawler/parser.js'
 import { parseBrowserInput } from '../src/crawler/routes.js'

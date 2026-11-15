@@ -1,7 +1,7 @@
 import { and, count, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import { db } from '../db/index.js'
-import { booths, mapVacancies, mapVacancyRegions, mapGenres, mapGenreRegions } from '../db/schema.js'
+import { booths, mapVacancies, mapVacancyRegions, mapGenres, mapGenreRegions, userFavorites, users } from '../db/schema.js'
 import { BoothFilterError, eventDays, hallGroup } from './catalog.js'
 import type { BoothQuery, HallGroup } from './catalog.js'
 
@@ -123,7 +123,7 @@ export class MysqlBoothRepository {
     return expressions.map(({ value, reverse }) => sql`${value} ${sql.raw(descending !== !!reverse ? 'desc' : 'asc')}`)
   }
 
-  async list(query: BoothQuery) {
+  async list(query: BoothQuery, userId?: string) {
     const groups = await this.loadGroups()
     const options = await this.locationOptions(query.eventId, groups)
     if (!options?.event) return null
@@ -138,10 +138,16 @@ export class MysqlBoothRepository {
       return { items: [], total: 0, nextOffset: null }
     }
     const group = this.groupExpression(groups)
+    const favorites = userId ? this.database.select({
+      boothId: userFavorites.booth_id, colour: userFavorites.colour, memo: userFavorites.memo,
+    }).from(userFavorites).innerJoin(users, eq(users.internal_id, userFavorites.user_id))
+      .where(eq(users.id, userId)).as('favorites') : undefined
     const filters = [eq(booths.event_id, query.eventId)]
     if (query.search) {
-      filters.push(or(...[booths.circle_name, booths.author_name, booths.genre, booths.tags]
-        .map(column => sql`locate(${query.search}, ${column}) > 0`))!)
+      const matches = [booths.circle_name, booths.author_name, booths.genre, booths.tags]
+        .map(column => sql`locate(${query.search}, ${column}) > 0`)
+      if (favorites) matches.push(sql`locate(${query.search}, ${favorites.memo}) > 0`)
+      filters.push(or(...matches)!)
     }
     if (query.days) filters.push(query.days.length ? inArray(booths.weekday, query.days) : sql`false`)
     if (query.halls) filters.push(query.halls.length ? inArray(group, query.halls) : sql`false`)
@@ -164,8 +170,7 @@ export class MysqlBoothRepository {
           sql`when ${booths.genre} <=> ${genre} then ${index}`), sql` `)} else ${genres.length} end`),
           ...this.locationOrdering(groups, options.days)]
         : this.locationOrdering(groups, options.days, !ascending)
-    const [rows, totals] = await Promise.all([
-      this.database.select({
+    const rowQuery = this.database.select({
         id: booths.id, event_id: booths.event_id, comiket: booths.comiket,
         circle_name: booths.circle_name, circle_name_reading: booths.circle_name_reading, author_name: booths.author_name,
         weekday: booths.weekday, hall: booths.hall, island_code: booths.island_code,
@@ -173,8 +178,15 @@ export class MysqlBoothRepository {
         genre: booths.genre, tags: sql<string | null>`substring(${booths.tags}, 1, 512)`,
         circle_id: booths.circle_id, pixiv_id: booths.pixiv_id, twitter_id: booths.twitter_id,
         images: booths.images,
-      }).from(booths).where(where).orderBy(...ordering, query.sort === 'genre' ? sql`${booths.id} asc` : order(booths.id)).limit(query.limit).offset(query.offset),
-      this.database.select({ total: count() }).from(booths).where(where),
+        colour: favorites ? favorites.colour : sql<null>`null`,
+        memo: favorites ? favorites.memo : sql<null>`null`,
+      }).from(booths)
+    const totalQuery = this.database.select({ total: count() }).from(booths)
+    const rowsSource = favorites ? rowQuery.leftJoin(favorites, eq(favorites.boothId, booths.id)) : rowQuery
+    const totalsSource = favorites && query.search ? totalQuery.leftJoin(favorites, eq(favorites.boothId, booths.id)) : totalQuery
+    const [rows, totals] = await Promise.all([
+      rowsSource.where(where).orderBy(...ordering, query.sort === 'genre' ? sql`${booths.id} asc` : order(booths.id)).limit(query.limit).offset(query.offset),
+      totalsSource.where(where),
     ])
     const total = totals[0]!.total
     return {

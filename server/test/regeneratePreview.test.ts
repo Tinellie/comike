@@ -6,7 +6,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { createApp } from '../src/app.js'
+import { createAdminApp as createApp } from './authFixture.js'
 import { regeneratePreview } from '../src/regeneratePreview.js'
 
 test('regeneration runs the existing PDF pipeline with fixed paths and all pages', async t => {
