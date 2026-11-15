@@ -1,0 +1,107 @@
+name: comike
+
+services:
+  app:
+    image: ${COMIKE_IMAGE:?Set COMIKE_IMAGE in .env}
+    build:
+      context: .
+      target: ${COMIKE_BUILD_TARGET:-runtime}
+    init: true
+    restart: unless-stopped
+    user: "${APP_UID:?Set APP_UID}:${APP_GID:?Set APP_GID}"
+    read_only: true
+    shm_size: 256mb
+    mem_limit: 768m
+    stop_grace_period: 75s
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_HOST: db
+      DATABASE_USER: comike
+      DATABASE_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      DATABASE_NAME: comike
+      HALL_EDITOR_ORIGIN: https://cm.suzutsuki.com
+      AUTH_COOKIE_SECURE: "true"
+      TRUST_PROXY: "true"
+      MEDIA_ROOT: storage
+      CRAWLER_STATE_DIR: .local/crawler
+    volumes:
+      - type: bind
+        source: ./data/storage
+        target: /app/storage
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data/state
+        target: /app/.local
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data/map
+        target: /app/tools/booth-recognition/output/official-map
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data/ref
+        target: /app/ref
+        bind:
+          create_host_path: false
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health/db').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    networks:
+      default:
+      gateway:
+        aliases: [comike-web]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      MYSQL_DATABASE: comike
+      MYSQL_USER: comike
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=128M
+      - --max-connections=40
+      - --performance-schema=OFF
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql -h 127.0.0.1 -u \"$$MYSQL_USER\" -D \"$$MYSQL_DATABASE\" -Nse 'SELECT 1'"]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 30
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  gateway:
+    external: true
+    name: gateway
+
+volumes:
+  mysql_data:

@@ -10,6 +10,7 @@ import type { PreviewOptions } from '../preview/layers'
 
 interface Generation {
   status: 'idle' | 'running' | 'succeeded' | 'failed'
+  enabled?: boolean
   message?: string
 }
 
@@ -97,10 +98,11 @@ export default function Preview() {
     <Stack spacing={2} sx={{ p: { xs: 2, md: 3 } }}>
       <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
         <Typography variant="h5" component="h1">地图预览</Typography>
-        <Button variant="contained" disabled={starting || generation.status === 'running'} onClick={() => { void regenerate() }}>
+        <Button variant="contained" disabled={generation.enabled === false || starting || generation.status === 'running'} onClick={() => { void regenerate() }}>
           {starting || generation.status === 'running' ? '正在重新生成…' : '重新生成'}
         </Button>
       </Stack>
+      {generation.enabled === false && <Alert severity="info">此服务器未启用 PDF OCR。请在本地生成地图并上传结果，或切换至完整 OCR 镜像。</Alert>}
       {generation.status === 'running' && <Alert severity="info">正在从 PDF 重新生成全部地图数据，可能需要数分钟。完成后自动刷新。</Alert>}
       {generation.status === 'failed' && <Alert severity="error">{generation.message}</Alert>}
       {generation.status === 'succeeded' && <Alert severity="success">地图数据已重新生成。</Alert>}

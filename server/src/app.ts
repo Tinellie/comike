@@ -28,6 +28,7 @@ export interface AppOptions {
   initializeDatabase?: () => Promise<void>
   authStore?: AuthStore
   secureCookie?: boolean
+  trustProxy?: boolean
   boothStore?: BoothStore
   mediaRoot?: string
   favorites?: FavoritesService
@@ -37,11 +38,12 @@ export interface AppOptions {
 export function createApp({
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
   regeneratePreview,
-  crawler, initializeDatabase, authStore, secureCookie,
+  crawler, initializeDatabase, authStore, secureCookie, trustProxy,
   boothStore, mediaRoot, favorites, colourStore,
 }: AppOptions) {
   const app = express()
   app.disable('x-powered-by')
+  app.set('trust proxy', trustProxy ? 1 : false)
   app.use(express.json())
   const auth = createAuth(authStore, secureCookie)
   const originCheck = sameOrigin(hallEditorOrigin)
@@ -73,7 +75,7 @@ export function createApp({
 
   let generation: { status: 'idle' | 'running' | 'succeeded' | 'failed'; message?: string } = { status: 'idle' }
   app.get('/api/preview/regenerate', (_req, res) => {
-    res.set('Cache-Control', 'no-store').json(generation)
+    res.set('Cache-Control', 'no-store').json({ ...generation, enabled: Boolean(regeneratePreview) })
   })
   app.post('/api/preview/regenerate', (req, res) => {
     const origin = req.get('origin')
@@ -84,7 +86,7 @@ export function createApp({
       return
     }
     if (!regeneratePreview) {
-      res.status(503).json({ message: 'Preview regeneration is not configured' })
+      res.status(503).json({ message: '此服务器未启用 PDF OCR，请在本地生成地图后上传，或使用完整 OCR 镜像' })
       return
     }
     if (generation.status === 'running') {

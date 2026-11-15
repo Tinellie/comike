@@ -1,0 +1,144 @@
+name: Test, build and deploy Comike
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: comike-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-password
+          MYSQL_DATABASE: comike
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      DATABASE_URL: mysql://root:ci-only-password@127.0.0.1:3306/comike
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run db:migrate
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: Validate deployment scripts and Compose
+        env:
+          COMIKE_IMAGE: ghcr.io/example/comike:ci
+          APP_UID: "1000"
+          APP_GID: "1000"
+          MYSQL_PASSWORD: ci-only-password
+          MYSQL_ROOT_PASSWORD: ci-only-root-password
+        run: |
+          set -euo pipefail
+          bash -n deploy/compose.sh deploy/backup.sh deploy/restore.sh deploy/deploy.sh
+          node --check deploy/entrypoint.mjs
+          node --check deploy/export-local.mjs
+          docker compose config --quiet
+          docker compose -f compose.yaml -f compose.ocr.yaml config --quiet
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      reference: ${{ steps.reference.outputs.image }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Image settings
+        id: settings
+        env:
+          BUILD_TARGET: ${{ vars.DOCKER_TARGET || 'runtime' }}
+        run: |
+          set -euo pipefail
+          case "$BUILD_TARGET" in runtime|ocr) ;; *) echo "DOCKER_TARGET must be runtime or ocr" >&2; exit 1 ;; esac
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "target=$BUILD_TARGET" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build image
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: ${{ steps.settings.outputs.target }}
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: |
+            ${{ steps.settings.outputs.image }}:${{ github.sha }}
+            ${{ steps.settings.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Published immutable image
+        id: reference
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ steps.settings.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "image=$IMAGE@$DIGEST" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: image
+    if: github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    concurrency:
+      group: comike-production
+      cancel-in-progress: false
+    steps:
+      - name: Require pinned SSH host key
+        env:
+          HOST_FINGERPRINT: ${{ secrets.VULTR_HOST_FINGERPRINT }}
+        run: test -n "$HOST_FINGERPRINT" || { echo "Set VULTR_HOST_FINGERPRINT before enabling deployment" >&2; exit 1; }
+      - name: Deploy immutable image over SSH
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        env:
+          DEPLOY_COMMIT: ${{ github.sha }}
+          DEPLOY_IMAGE: ${{ needs.image.outputs.reference }}
+        with:
+          host: 139.180.203.201
+          username: deploy
+          port: 22
+          key: ${{ secrets.VULTR_SSH_KEY }}
+          passphrase: ${{ secrets.VULTR_SSH_PASSPHRASE }}
+          fingerprint: ${{ secrets.VULTR_HOST_FINGERPRINT }}
+          envs: DEPLOY_COMMIT,DEPLOY_IMAGE
+          command_timeout: 12m
+          script: |
+            set -eu
+            cd /opt/comike
+            git diff --quiet
+            git diff --cached --quiet
+            git fetch origin "$DEPLOY_COMMIT"
+            git merge --ff-only "$DEPLOY_COMMIT"
+            test "$(git rev-parse HEAD)" = "$DEPLOY_COMMIT"
+            bash deploy/deploy.sh "$DEPLOY_IMAGE"

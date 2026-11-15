@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -29,9 +30,20 @@ const groups = parseHallGroups({ halls: [
 ] })
 const emptyMapRegions = { vacancyRegions: [], genres: [], genreRegions: [], vacancyReady: false, genreReady: false }
 
-test('hall groups use the actual map and preserve Latin case and kana distinctions', async () => {
+test('hall groups preserve Latin case and kana distinctions', () => {
+  assert.equal(hallGroup(groups, '東', 'Ａ'), '東7')
+  assert.equal(hallGroup(groups, '南', 'a'), '南12')
+  assert.equal(hallGroup(groups, '東', 'a'), '東（未匹配）')
+  assert.equal(hallGroup(groups, '西', 'ア'), '西（未匹配）')
+  assert.throws(() => parseHallGroups({ halls: [{ name: '東123', islands: [{ code: 'A' }, { code: 'Ａ' }] }] }), /重复/)
+  assert.throws(() => parseHallGroups({ halls: [] }), /Hall/)
+})
+
+const actualMap = new URL('../../tools/booth-recognition/output/official-map/final.json', import.meta.url)
+test('hall groups use the actual locally generated map',
+  { skip: !existsSync(actualMap) && 'Local OCR output is not included in Git or CI' }, async () => {
   const actual = parseHallGroups(JSON.parse(await readFile(
-    new URL('../../tools/booth-recognition/output/official-map/final.json', import.meta.url), 'utf8',
+    actualMap, 'utf8',
   )))
   assert.equal(hallGroup(actual, '東', 'ア'), '東123')
   assert.equal(hallGroup(actual, '東', 'Ａ'), '東7')
@@ -40,8 +52,6 @@ test('hall groups use the actual map and preserve Latin case and kana distinctio
   assert.equal(hallGroup(actual, '東', 'a'), '東（未匹配）')
   assert.equal(hallGroup(actual, '南', 'A'), '南（未匹配）')
   assert.equal(hallGroup(actual, '西', 'ア'), '西（未匹配）')
-  assert.throws(() => parseHallGroups({ halls: [{ name: '東123', islands: [{ code: 'A' }, { code: 'Ａ' }] }] }), /重复/)
-  assert.throws(() => parseHallGroups({ halls: [] }), /Hall/)
 })
 
 test('event days infer consecutive dates across the Sunday boundary and report ambiguity', () => {

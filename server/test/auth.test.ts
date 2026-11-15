@@ -17,6 +17,21 @@ test('passwords use distinct salted hashes and reject wrong passwords', async ()
   await assert.rejects(verifyPassword('password', 'invalid'), /Invalid stored/)
 })
 
+for (const trustProxy of [false, true]) {
+  test(`login limits ${trustProxy ? 'trust only the nearest proxy address' : 'ignore untrusted forwarded addresses'}`, async t => {
+    const server = createApp({ checkDatabase: async () => {}, trustProxy }).listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())))
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/auth/login`
+    const login = (forwarded: string) => fetch(url, { method: 'POST', headers: { 'X-Forwarded-For': forwarded } })
+    for (let index = 0; index < 20; index++) {
+      assert.equal((await login('203.0.113.99, 203.0.113.1')).status, 400)
+    }
+    assert.equal((await login('203.0.113.98, 203.0.113.1')).status, 429)
+    assert.equal((await login('203.0.113.99, 203.0.113.2')).status, trustProxy ? 400 : 429)
+  })
+}
+
 test('registration, login, session rotation, permissions, revocation and expiry', async t => {
   const store = new MemoryAuthStore()
   let regenerations = 0

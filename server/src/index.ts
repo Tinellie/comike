@@ -56,8 +56,11 @@ const app = createApp({
   favorites,
   authStore: new MysqlAuthStore(),
   secureCookie: process.env.NODE_ENV === 'production' || process.env.AUTH_COOKIE_SECURE === 'true',
+  trustProxy: process.env.TRUST_PROXY === 'true',
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
-  regeneratePreview: () => regeneratePreview(fileURLToPath(new URL('../../', import.meta.url)), recognitionDirectory),
+  ...(process.env.OCR_ENABLED !== 'false' ? {
+    regeneratePreview: () => regeneratePreview(fileURLToPath(new URL('../../', import.meta.url)), recognitionDirectory),
+  } : {}),
   crawler,
   boothStore: new MysqlBoothRepository(createHallGroupsLoader(resolve(recognitionDirectory, 'final.json'))),
   mediaRoot: resolve(projectRoot, process.env.MEDIA_ROOT ?? 'storage'),

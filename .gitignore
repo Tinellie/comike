@@ -14,3 +14,8 @@ tools/booth-recognition/output/
 tools/booth-recognition/build/
 storage/
 .local/
+data/
+backups/
+.release.env
+.release.env.*
+.deploy.lock
