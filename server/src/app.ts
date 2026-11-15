@@ -13,6 +13,8 @@ import type { AuthStore } from './auth/repository.js'
 import { createAuth, sameOrigin } from './auth/routes.js'
 import type { FavoritesService } from './favorites/service.js'
 import { favoritesRouter } from './favorites/routes.js'
+import type { ColourStore } from './colours/repository.js'
+import { coloursRouter } from './colours/routes.js'
 
 export interface AppOptions {
   checkDatabase: () => Promise<void>
@@ -29,13 +31,14 @@ export interface AppOptions {
   boothStore?: BoothStore
   mediaRoot?: string
   favorites?: FavoritesService
+  colourStore?: ColourStore
 }
 
 export function createApp({
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
   regeneratePreview,
   crawler, initializeDatabase, authStore, secureCookie,
-  boothStore, mediaRoot, favorites,
+  boothStore, mediaRoot, favorites, colourStore,
 }: AppOptions) {
   const app = express()
   app.disable('x-powered-by')
@@ -48,6 +51,8 @@ export function createApp({
   }, auth.router)
   app.use('/api/import', auth.requireUser, originCheck)
   if (favorites) app.use('/api/import', favoritesRouter(favorites, auth.userFor))
+  app.use('/api/colours', auth.requireUser, originCheck)
+  if (colourStore) app.use('/api/colours', coloursRouter(colourStore, auth.userFor))
   app.use('/api/preview', (req, res, next) => {
     // Map also uses the original PDF images; these read-only assets remain public.
     if ((req.method === 'GET' || req.method === 'HEAD') && /^\/page-\d{3}-pdf\.png$/.test(req.path)) next()

@@ -13,6 +13,7 @@ import type { MapBoothData, MapBoothLocation } from '../booths/api'
 import BoothHoverPreview from './BoothHoverPreview'
 import type { BoothHoverHandle } from './BoothHoverPreview'
 import { mapBoothKey } from './boothLookup'
+import type { FavoriteHighlights } from './favoriteHighlights'
 
 interface OsmCanvasProps {
   data: OsmMapData
@@ -24,10 +25,11 @@ interface OsmCanvasProps {
   weekday: string
   onDayChange: (weekday: string) => void
   boothData: MapBoothData | null
+  favoriteHighlights: FavoriteHighlights
   loadBooth: (hit: MapBoothHit) => Promise<MapBoothLocation>
 }
 
-export default function OsmCanvas({ data, halls, transforms, onError, onBoothClick, days, weekday, onDayChange, boothData, loadBooth }: OsmCanvasProps) {
+export default function OsmCanvas({ data, halls, transforms, onError, onBoothClick, days, weekday, onDayChange, boothData, favoriteHighlights, loadBooth }: OsmCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<OsmMapRenderer | null>(null)
@@ -50,6 +52,7 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
   const viewState = useRef({ rotation, levels })
   const clickHandler = useRef(onBoothClick)
   const boothState = useRef(boothData)
+  const favoriteState = useRef(favoriteHighlights)
   useEffect(() => { clickHandler.current = onBoothClick }, [onBoothClick])
 
   useEffect(() => {
@@ -113,6 +116,11 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
   }, [boothData])
 
   useEffect(() => {
+    favoriteState.current = favoriteHighlights
+    rendererRef.current?.setFavoriteHighlights(favoriteHighlights)
+  }, [favoriteHighlights])
+
+  useEffect(() => {
     viewState.current = { rotation, levels }
     rendererRef.current?.setRotation(rotation)
     rendererRef.current?.setLevels(levels)
@@ -156,6 +164,7 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
         renderer.setRotation(viewState.current.rotation)
         renderer.setLevels(viewState.current.levels)
         renderer.setBoothData(boothState.current)
+        renderer.setFavoriteHighlights(favoriteState.current)
         renderer.setGenreDisplay(genreState.current.enabled, genreState.current.selected)
         renderer.setPdfImages(pdfState.current)
       } catch (reason) {

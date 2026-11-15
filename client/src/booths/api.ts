@@ -40,6 +40,7 @@ export interface BoothOptions {
   days: { weekday: string; order: number; label: string }[]
   halls: string[]
   genres: (string | null)[]
+  colours: string[]
   warnings: string[]
 }
 
@@ -56,6 +57,15 @@ export interface MapBoothData {
 }
 
 export interface MapRectangle { x: number; y: number; width: number; height: number }
+
+export interface MapFavorite {
+  boothId: string
+  hallGroup: string
+  island: string
+  number: string
+  suffix: string | null
+  colour: string
+}
 
 export interface BoothPage {
   items: BoothListItem[]

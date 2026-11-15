@@ -9,9 +9,12 @@ import { recalculateHallTransforms } from '../map/hallPreparation'
 import type { MapBoothHit } from '../map/OsmMapRenderer'
 import BoothDetail from '../booths/BoothDetail'
 import { readBoothApi } from '../booths/api'
-import type { BoothDays, BoothDetail as Detail, MapBoothData, MapVacancy } from '../booths/api'
+import type { BoothDays, BoothDetail as Detail, MapBoothData, MapFavorite, MapVacancy } from '../booths/api'
 import { MapBoothLookup } from '../map/boothLookup'
 import { useAuth } from '../auth/context'
+import { favoriteHighlights } from '../map/favoriteHighlights'
+
+const noFavorites: MapFavorite[] = []
 
 export default function Map() {
   const { user } = useAuth()
@@ -32,7 +35,15 @@ export default function Map() {
   const [mapAttempt, setMapAttempt] = useState(0)
   const [preload, setPreload] = useState<{ eventId: string; weekday: string; data: MapBoothData } | null>(null)
   const [preloadError, setPreloadError] = useState<string | null>(null)
+  const [favoriteAttempt, setFavoriteAttempt] = useState(0)
+  const [favorites, setFavorites] = useState<{
+    scope: string; items: MapFavorite[]; error: string | null
+  } | null>(null)
   const eventId = options?.event?.eventId
+  const userId = user?.id
+  const favoriteScope = JSON.stringify([userId, eventId, weekday])
+  const personal = userId && favorites?.scope === favoriteScope ? favorites : null
+  const highlights = useMemo(() => favoriteHighlights(halls, personal?.items ?? noFavorites), [halls, personal])
   const boothData = preload?.eventId === eventId && preload?.weekday === weekday ? preload.data : null
   const lookup = useRef<AbortController | null>(null)
   const lastHit = useRef<MapBoothHit | null>(null)
@@ -68,6 +79,20 @@ export default function Map() {
     })
     return () => controller.abort()
   }, [eventId, weekday, mapAttempt])
+
+  useEffect(() => {
+    if (!userId || !eventId || !weekday) return
+    const controller = new AbortController()
+    const query = new URLSearchParams({ eventId, weekday })
+    void readBoothApi<{ favorites: MapFavorite[] }>(`/map-favorites?${query}`, controller.signal).then(result => {
+      if (!controller.signal.aborted) setFavorites({ scope: favoriteScope, items: result.favorites, error: null })
+    }).catch((reason: unknown) => {
+      if (controller.signal.aborted) return
+      console.error('Personal map favorites loading failed:', reason)
+      setFavorites({ scope: favoriteScope, items: [], error: reason instanceof Error ? reason.message : '收藏摊位位置读取失败' })
+    })
+    return () => controller.abort()
+  }, [userId, eventId, weekday, favoriteScope, favoriteAttempt])
 
   function changeDay(value: string) {
     lookup.current?.abort()
@@ -186,6 +211,7 @@ export default function Map() {
       {data && transforms && (
         <OsmCanvas data={data} halls={halls} transforms={transforms} onError={setError}
           boothData={boothData}
+          favoriteHighlights={highlights}
           loadBooth={locationLookup.preview}
           days={options?.days ?? []} weekday={weekday} onDayChange={changeDay} onBoothClick={hit => { void selectBooth(hit) }} />
       )}
@@ -198,6 +224,11 @@ export default function Map() {
         {preloadError && <Alert severity="warning" action={<Button onClick={() => {
           setPreloadError(null); setMapAttempt(value => value + 1)
         }}>重试</Button>}>{preloadError}</Alert>}
+        {userId && eventId && weekday && !personal && <LinearProgress aria-label="加载收藏摊位高亮" />}
+        {personal?.error && <Alert severity="warning" action={<Button onClick={() => {
+          setFavorites(null); setFavoriteAttempt(value => value + 1)
+        }}>重试</Button>}>{personal.error}</Alert>}
+        {highlights.unmatched > 0 && <Alert severity="warning">{highlights.unmatched} 个收藏摊位的位置或半摊位分割无法匹配当前地图，未绘制高亮。</Alert>}
         {lookingUp && <LinearProgress aria-label="查询地图社团" />}
         {lookupError && <Alert severity="warning" action={<Button onClick={() => {
           setLookupError(null)

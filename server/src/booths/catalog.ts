@@ -75,18 +75,19 @@ export interface BoothQuery {
   search: string
   offset: number
   limit: number
-  sort: 'name' | 'location' | 'genre'
+  sort: 'name' | 'location' | 'genre' | 'colour'
   direction: 'asc' | 'desc'
   days: string[] | null
   halls: string[] | null
   genres: (string | null)[] | null
+  colours: (string | null)[] | null
 }
 
 export class BoothFilterError extends Error {}
 
 export function parseBoothQuery(params: URLSearchParams): BoothQuery {
   for (const key of params.keys()) {
-    if (!['eventId', 'search', 'offset', 'limit', 'sort', 'direction', 'days', 'halls', 'genres'].includes(key) || params.getAll(key).length !== 1) {
+    if (!['eventId', 'search', 'offset', 'limit', 'sort', 'direction', 'days', 'halls', 'genres', 'colours'].includes(key) || params.getAll(key).length !== 1) {
       throw new Error('列表查询包含未知或重复参数')
     }
   }
@@ -104,7 +105,7 @@ export function parseBoothQuery(params: URLSearchParams): BoothQuery {
   }
   const sort = params.get('sort') ?? 'location'
   const direction = params.get('direction') ?? 'asc'
-  if (sort !== 'name' && sort !== 'location' && sort !== 'genre') throw new Error('无效的排序字段')
+  if (sort !== 'name' && sort !== 'location' && sort !== 'genre' && sort !== 'colour') throw new Error('无效的排序字段')
   if (direction !== 'asc' && direction !== 'desc') throw new Error('无效的排序方向')
   function filter(key: string, pattern: RegExp) {
     const value = params.get(key)
@@ -123,12 +124,21 @@ export function parseBoothQuery(params: URLSearchParams): BoothQuery {
     }
     genres = [...new Set<string | null>(parsed)]
   }
+  let colours: (string | null)[] | null = null
+  if (params.has('colours')) {
+    const parsed: unknown = JSON.parse(params.get('colours')!)
+    if (!Array.isArray(parsed) || parsed.length > 512
+      || !parsed.every((item: unknown) => item === null || (typeof item === 'string' && /^#[0-9a-f]{6}$/i.test(item)))) {
+      throw new Error('colours 筛选值无效')
+    }
+    colours = [...new Set<string | null>(parsed.map((item: string | null) => item?.toUpperCase() ?? null))]
+  }
   return {
     eventId, search, sort, direction,
     offset: integer('offset', 0, 0, 1_000_000),
     limit: integer('limit', 40, 1, 100),
     days: filter('days', /^[月火水木金土日]$/),
     halls: filter('halls', /^[東西南北](?:\d+|（未匹配）)$/),
-    genres,
+    genres, colours,
   }
 }

@@ -10,6 +10,7 @@ import { HallVisibility, intersectsBounds, paddedBounds } from './hallVisibility
 import type { BoothOccupancy } from './boothOccupancy'
 import type { PreviewBooth } from '../preview/data'
 import { inverseTransform } from '../preview/pdfPreview'
+import type { FavoriteHighlight } from './favoriteHighlights'
 
 const hallMeta = object(JSON.parse(hallMetaSource))
 if (!Array.isArray(hallMeta.halls)) throw new Error('Hall marker 元数据列表无效')
@@ -66,6 +67,21 @@ export class HallMapLayer {
       this.regionPaths.set(rectangles, path)
     }
     return path
+  }
+
+  drawFavorites(
+    context: CanvasRenderingContext2D, hall: MapHall, placement: HallPlacement,
+    origin: Point, highlights: readonly FavoriteHighlight[],
+  ) {
+    const [a, b, c, d, e, f] = hallMatrix(hall, placement)
+    context.save()
+    context.transform(a, b, c, d, e - origin.x, f - origin.y)
+    context.globalAlpha = 0.7
+    for (const highlight of highlights) {
+      context.fillStyle = highlight.colour
+      context.fill(this.path(highlight.rectangles))
+    }
+    context.restore()
   }
 
   draw(
@@ -139,7 +155,7 @@ export class HallMapLayer {
       }
       if (occupancy && genreDisplay.enabled) {
         context.save()
-        context.globalAlpha = 0.65
+        context.globalAlpha = 0.3
         for (const group of occupancy.genreRegions(hall)) {
           if (genreDisplay.selected && !genreDisplay.selected.has(group.key)) continue
           context.fillStyle = group.color
