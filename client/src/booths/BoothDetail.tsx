@@ -57,7 +57,12 @@ export default function BoothDetail({ booth, initialDetail, vacancy, alternative
       </TextField>}
       {error && <Alert severity="error" action={<Button onClick={() => { setError(null); setRetry(value => value + 1) }}>重试</Button>}>{error}</Alert>}
       {!loaded && !error && <LinearProgress aria-label="加载社团详情" />}
-      <Typography color="text.secondary">{booth.author_name || '未提供作者名'}</Typography>
+      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'baseline', gap: 2, flexWrap: 'wrap' }}>
+        <Typography color="text.secondary">{booth.author_name || '未提供作者名'}</Typography>
+        {current && <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', textAlign: 'right' }}>
+          最后采集：{current.last_crawled_at}
+        </Typography>}
+      </Stack>
       <BoothImages booth={current ?? booth} large />
       <BoothLinks booth={current ?? booth} />
       {current && <>
@@ -69,11 +74,11 @@ export default function BoothDetail({ booth, initialDetail, vacancy, alternative
           '& dt': { color: 'text.secondary' }, '& dd': { m: 0, overflowWrap: 'anywhere' },
         }}>
           {[
+            ['位置', locationLabel(current)],
             ['参展记录 ID', current.id],
-            ['社团名读音', current.circle_name_reading], ['位置', locationLabel(current)],
-            ['日期', `${current.dayLabel}（${current.weekday}）`],
+            ['日期', `${current.dayLabel}（${current.weekday}）`], ['社团名读音', current.circle_name_reading],
             ['ジャンル', `${current.genre || '—'}${current.genre_code ? ` (${current.genre_code})` : ''}`],
-            ['Twitter ID', current.twitter_id], ['最后采集', current.last_crawled_at],
+            ['Twitter ID', current.twitter_id],
           ].map(([label, value]) => <Box key={label} sx={{ display: 'contents' }}>
             <Box component="dt">{label}</Box><Box component="dd">{value || '—'}</Box>
           </Box>)}
@@ -85,7 +90,7 @@ export default function BoothDetail({ booth, initialDetail, vacancy, alternative
             mt: label === '補足説明' ? 2 : 0,
           }}>
             <Box component="dt">{label}</Box>
-            <Box component="dd" sx={{ whiteSpace: 'pre-wrap' }}>{value || '—'}</Box>
+            <Box component="dd" sx={{ whiteSpace: 'pre-wrap', color: label === 'Memo' ? 'text.primary' : 'text.secondary' }}>{value || '—'}</Box>
           </Box>)}
         </Box>
         <Button component="a" href={current.source_url} target="_blank" rel="noopener noreferrer">查看 Web Catalog 原页面</Button>
