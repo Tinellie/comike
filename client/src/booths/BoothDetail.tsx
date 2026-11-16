@@ -44,9 +44,19 @@ export default function BoothDetail({ booth, initialDetail, vacancy, alternative
       <Typography color="text.secondary">场馆：{vacancy.hall_group}<br />最后比对：{vacancy.checked_at}</Typography>
     </Stack>}
     {booth && <Stack spacing={2.5} sx={{ p: 3 }}>
+      <Stack spacing={1} sx={{
+        borderLeft: '6px solid', borderColor: loaded?.colour || 'transparent', pl: 1.5,
+      }}>
       <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
         <Typography variant="h5" sx={{ fontWeight: 700 }}>{booth.circle_name}</Typography>
         <Button onClick={onClose}>关闭</Button>
+      </Stack>
+      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'baseline', gap: 2, flexWrap: 'wrap' }}>
+        <Typography color="text.secondary">{booth.author_name || '未提供作者名'}</Typography>
+        {current && <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', textAlign: 'right' }}>
+          最后采集：{current.last_crawled_at}
+        </Typography>}
+      </Stack>
       </Stack>
       {alternatives && alternatives.length > 1 && onSelect && <TextField select label="此位置的社团" size="small" value={booth.id}
         onChange={event => {
@@ -57,12 +67,6 @@ export default function BoothDetail({ booth, initialDetail, vacancy, alternative
       </TextField>}
       {error && <Alert severity="error" action={<Button onClick={() => { setError(null); setRetry(value => value + 1) }}>重试</Button>}>{error}</Alert>}
       {!loaded && !error && <LinearProgress aria-label="加载社团详情" />}
-      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'baseline', gap: 2, flexWrap: 'wrap' }}>
-        <Typography color="text.secondary">{booth.author_name || '未提供作者名'}</Typography>
-        {current && <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto', textAlign: 'right' }}>
-          最后采集：{current.last_crawled_at}
-        </Typography>}
-      </Stack>
       <BoothImages booth={current ?? booth} large />
       <BoothLinks booth={current ?? booth} />
       {current && <>

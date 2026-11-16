@@ -356,11 +356,15 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
         assert.equal(other.items.find(row => row.id === rows[1]!.id)!.colour, '#0000FF')
         assert.equal(other.items.find(row => row.id === rows[1]!.id)!.memo, 'private-second')
         assert.equal((await store.detail(rows[1]!.id, firstId))!.memo, memo)
+        assert.equal((await store.detail(rows[1]!.id, firstId))!.colour, '#FFF700')
+        assert.equal((await store.detail(rows[1]!.id, secondId))!.colour, '#0000FF')
+        assert.equal((await store.detail(rows[2]!.id, firstId))!.colour, null)
         assert.equal((await store.detail(rows[1]!.id, secondId))!.memo, 'private-second')
         assert.equal((await store.detail(rows[2]!.id, firstId))!.memo, null)
         assert.equal((await store.detail(rows[4]!.id, firstId))!.memo, '')
         for (const userId of [undefined, randomUUID()]) {
           assert.equal((await store.detail(rows[1]!.id, userId))!.memo, null)
+          assert.equal((await store.detail(rows[1]!.id, userId))!.colour, null)
           assert.ok((await store.list(query, userId))!.items.every(row => row.colour === null && row.memo === null))
           assert.equal((await store.list({ ...query, search: 'private-first' }, userId))!.total, 0)
         }

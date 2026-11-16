@@ -23,6 +23,7 @@ export interface BoothSummary {
 }
 
 export interface BoothDetail extends BoothSummary {
+  colour?: string | null
   memo?: string | null
   genre_code: string | null
   circle_appeal: string | null
