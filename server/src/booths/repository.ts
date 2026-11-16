@@ -221,11 +221,16 @@ export class MysqlBoothRepository {
     }
   }
 
-  async detail(id: string) {
+  async detail(id: string, userId?: string) {
     const [row] = await this.database.select().from(booths).where(eq(booths.id, id)).limit(1)
     if (!row) return null
-    const [dates, groups] = await Promise.all([this.dates(row.event_id), this.loadGroups()])
-    return presentation(row, groups, dates.days)
+    const [dates, groups, favorites] = await Promise.all([
+      this.dates(row.event_id), this.loadGroups(),
+      userId ? this.database.select({ memo: userFavorites.memo, colour: userFavorites.colour }).from(userFavorites)
+        .innerJoin(users, eq(users.internal_id, userFavorites.user_id))
+        .where(and(eq(users.id, userId), eq(userFavorites.booth_id, id))).limit(1) : [],
+    ])
+    return { ...presentation(row, groups, dates.days), memo: favorites[0]?.memo ?? null, colour: favorites[0]?.colour ?? null }
   }
 
   async mapData(eventId: string, weekday: string) {

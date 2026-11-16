@@ -8,7 +8,7 @@ function BoothImage({ url, name, large }: { url: string; name: string; large: bo
     图片加载失败：{name}
   </Box> : <Box component="img" src={url} alt={name} loading="lazy" decoding="async"
     onError={() => setFailed(true)}
-    sx={{ width: large ? 'calc(50% - 4px)' : 'auto', maxWidth: large ? 'calc(50% - 4px)' : '50%', height: large ? 'auto' : 112, objectFit: 'contain', display: 'block' }} />
+    sx={{ width: 'auto', maxWidth: large ? 'min(200px, calc(50% - 4px))' : '50%', height: large ? 'auto' : 112, maxHeight: large ? 200 : undefined, objectFit: 'contain', display: 'block' }} />
 }
 
 export function BoothImages({ booth, large = false }: { booth: BoothSummary; large?: boolean }) {
@@ -23,7 +23,7 @@ export function BoothLinks({ booth }: { booth: BoothSummary }) {
   const links = [
     { key: 'circlems', label: 'Circle.ms', href: booth.circle_id ? `https://portal.circle.ms/Circle/Index/${encodeURIComponent(booth.circle_id)}` : null },
     { key: 'pixiv', label: 'Pixiv', href: booth.pixiv_id ? `https://www.pixiv.net/users/${encodeURIComponent(booth.pixiv_id)}` : null },
-    { key: 'twitter', label: 'Twitter / X', href: booth.twitter_id ? `https://x.com/${encodeURIComponent(booth.twitter_id)}` : null },
+    { key: 'twitter', label: 'Twitter / X', href: booth.twitter_id ? `https://x.com/${encodeURIComponent(booth.twitter_id)}/media?filter=photo` : null },
   ]
   return <Box sx={{ display: 'flex', gap: 0.75 }} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
     {links.map(link => {

@@ -2,6 +2,8 @@
 
 React + Express + MySQL。生产入口：**https://cm.suzutsuki.com**。
 
+社团详情的 Memo 使用当前登录用户导入的备注；未登录或无备注显示短线，列表和地图入口一致。
+
 ## 本地
 
 Node.js 22、MySQL 8.4。复制 `server/.env.example` 为 `server/.env` 并填写数据库：
