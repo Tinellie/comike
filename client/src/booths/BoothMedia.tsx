@@ -8,7 +8,7 @@ function BoothImage({ url, name, large }: { url: string; name: string; large: bo
     图片加载失败：{name}
   </Box> : <Box component="img" src={url} alt={name} loading="lazy" decoding="async"
     onError={() => setFailed(true)}
-    sx={{ width: large ? 'calc(50% - 4px)' : 'auto', maxWidth: large ? 'calc(50% - 4px)' : '50%', height: large ? 'auto' : 112, objectFit: 'contain', display: 'block' }} />
+    sx={{ width: 'auto', maxWidth: large ? 'min(200px, calc(50% - 4px))' : '50%', height: large ? 'auto' : 112, maxHeight: large ? 200 : undefined, objectFit: 'contain', display: 'block' }} />
 }
 
 export function BoothImages({ booth, large = false }: { booth: BoothSummary; large?: boolean }) {

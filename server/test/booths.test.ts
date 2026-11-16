@@ -131,7 +131,7 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
       if (query.days?.includes('月')) throw new BoothFilterError('筛选项不属于当前活动')
       return query.eventId === '240' ? { items: [], total: 0, nextOffset: null } : null
     },
-    async detail() { return null },
+    async detail(_id, userId) { scopes.push(userId); return null },
     async days(eventId) {
       return eventId ? null : { event: null, days: [], warnings: [] }
     },
@@ -233,6 +233,11 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
       assert.match(response.headers.get('vary') ?? '', /Cookie/)
       assert.equal((await fetch(`${base}/options`, { headers: { Cookie: `comike_session=${token.repeat(64)}` } })).status, 200)
       assert.equal(optionScopes.at(-1), expected)
+      const detail = await fetch(`${base}/24001`, { headers: { Cookie: `comike_session=${token.repeat(64)}` } })
+      assert.equal(detail.status, 404)
+      assert.equal(scopes.at(-1), expected)
+      assert.equal(detail.headers.get('cache-control'), 'private, no-store')
+      assert.match(detail.headers.get('vary') ?? '', /Cookie/)
     }
     for (const parameter of ['userId=second', 'user_id=2', 'internal_id=2']) {
       assert.equal((await fetch(`${base}?eventId=240&${parameter}`, {
@@ -247,6 +252,7 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
     assert.equal((await fetch(`${base}?eventId=240`)).status, 200)
     assert.equal(scopes.at(-1), undefined)
     assert.equal((await fetch(`${base}/options`, { headers: { Cookie: `comike_session=${'a'.repeat(64)}` } })).status, 503)
+    assert.equal((await fetch(`${base}/24001`, { headers: { Cookie: `comike_session=${'a'.repeat(64)}` } })).status, 503)
     assert.equal((await fetch(`${base}/days`, { headers: { Cookie: `comike_session=${'a'.repeat(64)}` } })).status, 200)
     assert.equal((await fetch(`${base}/map-favorites?eventId=240&weekday=土`, { headers: { Cookie: `comike_session=${'a'.repeat(64)}` } })).status, 503)
   })
@@ -349,7 +355,12 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
         const other = (await store.list(query, secondId))!
         assert.equal(other.items.find(row => row.id === rows[1]!.id)!.colour, '#0000FF')
         assert.equal(other.items.find(row => row.id === rows[1]!.id)!.memo, 'private-second')
+        assert.equal((await store.detail(rows[1]!.id, firstId))!.memo, memo)
+        assert.equal((await store.detail(rows[1]!.id, secondId))!.memo, 'private-second')
+        assert.equal((await store.detail(rows[2]!.id, firstId))!.memo, null)
+        assert.equal((await store.detail(rows[4]!.id, firstId))!.memo, '')
         for (const userId of [undefined, randomUUID()]) {
+          assert.equal((await store.detail(rows[1]!.id, userId))!.memo, null)
           assert.ok((await store.list(query, userId))!.items.every(row => row.colour === null && row.memo === null))
           assert.equal((await store.list({ ...query, search: 'private-first' }, userId))!.total, 0)
         }

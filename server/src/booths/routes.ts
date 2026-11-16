@@ -128,13 +128,14 @@ export function boothRouter(store: BoothStore, mediaRoot: string,
     })
   })
   router.get('/:id', async (req, res) => {
+    res.set('Cache-Control', 'private, no-store').vary('Cookie')
     if (!/^\d{1,32}$/.test(req.params.id)) {
       console.warn('Rejected invalid booth ID')
       res.status(400).json({ message: '详情 ID 无效' })
       return
     }
     try {
-      const result = await store.detail(req.params.id)
+      const result = await store.detail(req.params.id, (await currentUser(req))?.id)
       if (!result) res.status(404).json({ message: '社团详情不存在' })
       else res.json(result)
     } catch (error) {
