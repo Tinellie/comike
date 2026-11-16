@@ -23,7 +23,7 @@ export function BoothLinks({ booth }: { booth: BoothSummary }) {
   const links = [
     { key: 'circlems', label: 'Circle.ms', href: booth.circle_id ? `https://portal.circle.ms/Circle/Index/${encodeURIComponent(booth.circle_id)}` : null },
     { key: 'pixiv', label: 'Pixiv', href: booth.pixiv_id ? `https://www.pixiv.net/users/${encodeURIComponent(booth.pixiv_id)}` : null },
-    { key: 'twitter', label: 'Twitter / X', href: booth.twitter_id ? `https://x.com/${encodeURIComponent(booth.twitter_id)}` : null },
+    { key: 'twitter', label: 'Twitter / X', href: booth.twitter_id ? `https://x.com/${encodeURIComponent(booth.twitter_id)}/media?filter=photo` : null },
   ]
   return <Box sx={{ display: 'flex', gap: 0.75 }} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
     {links.map(link => {
