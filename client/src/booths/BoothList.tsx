@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Alert, Box, Button, Checkbox, CircularProgress, FormControlLabel, IconButton, MenuItem,
+  Alert, Box, Button, Checkbox, Chip, CircularProgress, FormControlLabel, IconButton, MenuItem,
   Paper, Popover, Stack, SvgIcon, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TableSortLabel, TextField, Tooltip, Typography,
 } from '@mui/material'
-import type { BoothOptions, BoothPage, BoothSummary } from './api'
+import type { BoothListItem, BoothOptions, BoothPage, BoothSummary } from './api'
 import { locationLabel, readBoothApi } from './api'
 import BoothDetail from './BoothDetail'
 import { BoothImages, BoothLinks } from './BoothMedia'
+import { useAuth } from '../auth/context'
+import ColourPreferences from './ColourPreferences'
 
 function BoothHeader({ children }: { children?: ReactNode }) {
   return <Stack direction="row" sx={{ mb: 2, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
@@ -18,15 +20,20 @@ function BoothHeader({ children }: { children?: ReactNode }) {
 }
 
 function BoothTable({ options, eventControl }: { options: BoothOptions; eventControl: ReactNode }) {
+  const { user } = useAuth()
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<'name' | 'location' | 'genre'>('location')
+  const [sort, setSort] = useState<'name' | 'location' | 'genre' | 'colour'>('location')
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc')
   const [days, setDays] = useState<string[] | null>(null)
   const [halls, setHalls] = useState<string[] | null>(null)
   const [genres, setGenres] = useState<(string | null)[] | null>(null)
-  const [filterKind, setFilterKind] = useState<'location' | 'genre'>('location')
+  const [availableColours, setAvailableColours] = useState(options.colours)
+  const [colourRevision, setColourRevision] = useState(0)
+  const [colours, setColours] = useState<(string | null)[] | null>(() => user ? options.colours : null)
+  const allColours: (string | null)[] = [...availableColours, null]
+  const [filterKind, setFilterKind] = useState<'location' | 'genre' | 'colour'>('location')
   const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null)
-  const [items, setItems] = useState<BoothSummary[]>([])
+  const [items, setItems] = useState<BoothListItem[]>([])
   const [total, setTotal] = useState(0)
   const [nextOffset, setNextOffset] = useState<number | null>(0)
   const [loading, setLoading] = useState(true)
@@ -40,6 +47,7 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
   if (days !== null) query.set('days', days.join(','))
   if (halls !== null) query.set('halls', halls.join(','))
   if (genres !== null) query.set('genres', JSON.stringify(genres))
+  if (colours !== null) query.set('colours', JSON.stringify(colours))
   const queryString = query.toString()
 
   const loadPage = useCallback((offset: number, signal: AbortSignal) => {
@@ -68,7 +76,7 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
     request.current = controller
     void loadPage(0, controller.signal)
     return () => { controller.abort(); request.current?.abort() }
-  }, [loadPage])
+  }, [loadPage, colourRevision])
 
   const loadMore = useCallback(() => {
     if (inFlight.current || nextOffset === null) return
@@ -97,7 +105,7 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
     setLoading(true)
     setError(null)
   }
-  function changeSort(column: 'name' | 'location' | 'genre') {
+  function changeSort(column: 'name' | 'location' | 'genre' | 'colour') {
     resetPage()
     if (sort === column) setDirection(value => value === 'asc' ? 'desc' : 'asc')
     else { setSort(column); setDirection('asc') }
@@ -111,8 +119,13 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
 
   return <>
     <BoothHeader>
+      {user && <ColourPreferences onSaved={ordered => {
+        setAvailableColours(ordered.filter(colour => options.colours.includes(colour)))
+        resetPage()
+        setColourRevision(value => value + 1)
+      }} />}
       {eventControl}
-      <TextField type="search" size="small" label="搜索" placeholder="社团名、作者名、genre、tags" value={search}
+      <TextField type="search" size="small" label="搜索" placeholder={user ? '社团名、作者名、genre、tags、memo' : '社团名、作者名、genre、tags'} value={search}
         slotProps={{ htmlInput: { maxLength: 255 } }} sx={{ width: 320, maxWidth: '100%' }}
         onChange={event => {
           const value = event.target.value
@@ -125,10 +138,10 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
     </Typography>
     <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
       <Table aria-label="Booth 社团列表" sx={{
-        display: 'block', minWidth: 1144,
+        display: 'block', minWidth: 1208,
         '& thead, & tbody': { display: 'block' },
         '& tr': {
-          display: 'grid', gridTemplateColumns: '40px 160px 160px 128px 240px 240px 136px 40px',
+          display: 'grid', gridTemplateColumns: '104px 160px 160px 128px 240px 240px 136px 40px',
           justifyContent: 'space-around', borderBottom: 1, borderColor: 'divider',
         },
         '& td, & th': { boxSizing: 'border-box', minWidth: 0, borderBottom: 0 },
@@ -139,7 +152,17 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
         '& th': { py: 1, px: 1, whiteSpace: 'nowrap' },
       }}>
         <TableHead><TableRow>
-          <TableCell><span aria-label="颜色标记">色</span></TableCell>
+          <TableCell aria-label="颜色标记" sortDirection={sort === 'colour' ? direction : false}
+            sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {user && <>
+              <Tooltip title="按颜色排序"><TableSortLabel aria-label="按颜色排序" active={sort === 'colour'} direction={sort === 'colour' ? direction : 'asc'}
+                sx={{ width: 28, height: 28, justifyContent: 'center', '& .MuiTableSortLabel-icon': { opacity: 1, mx: 0 } }}
+                onClick={() => changeSort('colour')} /></Tooltip>
+              <Tooltip title="按收藏颜色筛选"><IconButton size="small" aria-label="筛选颜色" color={colours !== null ? 'primary' : 'default'} onClick={event => { setFilterKind('colour'); setFilterAnchor(event.currentTarget) }}>
+                <SvgIcon fontSize="small" viewBox="0 0 24 24"><path d="M3 5h18v2H3zm4 6h10v2H7zm3 6h4v2h-4z" /></SvgIcon>
+              </IconButton></Tooltip>
+            </>}
+          </TableCell>
           <TableCell align="center">社团图片</TableCell>
           <TableCell sortDirection={sort === 'name' ? direction : false}>
             <TableSortLabel active={sort === 'name'} direction={sort === 'name' ? direction : 'asc'} onClick={() => changeSort('name')}>社团 / 作者</TableSortLabel>
@@ -167,7 +190,8 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
                 event.preventDefault(); setSelected(booth)
               }
             }} sx={{ cursor: 'pointer', '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 } }}>
-            <TableCell><Box role="img" aria-label="红色标记（预留）" sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: '#d83b40' }} /></TableCell>
+            <TableCell sx={{ alignItems: 'center' }}>{booth.colour && <Box role="img" aria-label={`颜色标记 ${booth.colour}`}
+              sx={{ width: 20, height: 20, borderRadius: '50%', bgcolor: booth.colour }} />}</TableCell>
             <TableCell><BoothImages booth={booth} /></TableCell>
             <TableCell>
               <Typography sx={{ fontWeight: 700, overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{booth.circle_name}</Typography>
@@ -176,7 +200,9 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
             <TableCell><Typography>{locationLabel(booth)}</Typography><Typography variant="caption" color="text.secondary">{booth.dayLabel}</Typography></TableCell>
             <TableCell><Typography sx={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }}>{booth.genre || '—'}</Typography><Typography variant="caption" color="text.secondary"
               sx={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{booth.tags || '—'}</Typography></TableCell>
-            <TableCell><Typography sx={{ whiteSpace: 'pre-line' }}>{'暂无备注\nMemo 功能预留'}</Typography></TableCell>
+            <TableCell><Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+              {booth.memo?.trim() ? booth.memo : '—'}
+            </Typography></TableCell>
             <TableCell><BoothLinks booth={booth} /></TableCell>
             <TableCell><Tooltip title="操作预留 · 点击查看详情"><IconButton size="small" aria-label={`${booth.circle_name} 操作（预留）`}>⋯</IconButton></Tooltip></TableCell>
           </TableRow>)}
@@ -207,7 +233,7 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
           {options.halls.map(hall => <FormControlLabel key={hall} label={hall}
             control={<Checkbox checked={halls === null || halls.includes(hall)} onChange={() => toggle(hall, halls, options.halls, setHalls)} />} />)}
         </Stack>
-        </> : <>
+        </> : filterKind === 'genre' ? <>
           <Typography variant="subtitle2">类别</Typography>
           <Stack direction="row" sx={{ flexWrap: 'wrap', columnGap: 1, rowGap: 0, '& .MuiFormControlLabel-label': { whiteSpace: 'normal', overflowWrap: 'anywhere' }, '& .MuiFormControlLabel-root': { maxWidth: '100%' } }}>
             <FormControlLabel label="全选类别" control={<Checkbox checked={genres === null} indeterminate={genres !== null && !!genres.length}
@@ -215,11 +241,29 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
             {options.genres.map(genre => <FormControlLabel key={JSON.stringify(genre)} label={genre === null ? '未分类' : genre || '未分类（空文本）'}
               control={<Checkbox checked={genres === null || genres.includes(genre)} onChange={() => toggle(genre, genres, options.genres, setGenres)} />} />)}
           </Stack>
+        </> : <>
+          <Typography variant="subtitle2">收藏颜色</Typography>
+          <FormControlLabel label="全选颜色" control={<Checkbox checked={colours === null} indeterminate={colours !== null && !!colours.length}
+            onChange={() => { resetPage(); setColours(colours === null ? [] : null) }} />} />
+          <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+            {availableColours.map(colour => <FormControlLabel key={colour}
+              label={<Chip size="small" label={colour} sx={theme => ({ bgcolor: colour, color: theme.palette.getContrastText(colour) })} />}
+              control={<Checkbox slotProps={{ input: { 'aria-label': `颜色 ${colour}` } }}
+                checked={colours === null || colours.includes(colour)}
+                onChange={() => toggle(colour, colours, allColours, setColours)} />} />)}
+          </Stack>
+          <FormControlLabel label="未收藏" control={<Checkbox checked={colours === null || colours.includes(null)}
+            onChange={() => toggle(null, colours, allColours, setColours)} />} />
         </>}
         <Stack direction="row" sx={{ justifyContent: 'flex-end', gap: 1 }}>
           <Button size="small" onClick={() => {
             if (filterKind === 'genre') {
               if (genres !== null) { resetPage(); setGenres(null) }
+            } else if (filterKind === 'colour') {
+              if (colours === null || colours.length !== availableColours.length || colours.includes(null)) {
+                resetPage()
+                setColours(availableColours)
+              }
             } else {
               if (days !== null || halls !== null) resetPage()
               setDays(null); setHalls(null)
@@ -233,7 +277,8 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
   </>
 }
 
-export default function BoothList() {
+function BoothCatalog() {
+  const { user } = useAuth()
   const [options, setOptions] = useState<BoothOptions | null>(null)
   const [eventId, setEventId] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -255,7 +300,7 @@ export default function BoothList() {
         {options.events.map(event => <MenuItem key={event.eventId} value={event.eventId}>C{event.comiket}</MenuItem>)}
       </TextField>
   return <Box sx={{ maxWidth: 1700, mx: 'auto', p: { xs: 1.5, md: 3 } }}>
-    {!options?.event && <BoothHeader>{eventControl}</BoothHeader>}
+    {!options?.event && <BoothHeader>{user && <ColourPreferences />}{eventControl}</BoothHeader>}
     {error && <Alert severity="error" action={<Button onClick={() => { setError(null); setRetry(value => value + 1) }}>重试</Button>}>{error}</Alert>}
     {!options && !error && <CircularProgress aria-label="加载活动和筛选项" size={24} />}
     {options?.warnings.map(warning => <Alert key={warning} severity="warning" sx={{ mb: 2 }}>{warning}</Alert>)}
@@ -263,4 +308,11 @@ export default function BoothList() {
       ? <BoothTable key={options.event.eventId} options={options} eventControl={eventControl} />
       : <Alert severity="info">数据库中还没有 booth 数据，请先在爬虫 Dashboard 采集。</Alert>)}
   </Box>
+}
+
+export default function BoothList() {
+  const { user, loading } = useAuth()
+  return loading
+    ? <CircularProgress aria-label="加载登录状态" size={24} />
+    : <BoothCatalog key={user?.id ?? 'anonymous'} />
 }

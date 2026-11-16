@@ -3,7 +3,7 @@ import type { Browser, BrowserContext, Page } from 'playwright'
 import { existsSync } from 'node:fs'
 import { chmod, mkdir, rename, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { isLoginPage, listUrl, LoginRequiredError } from './parser.js'
+import { catalogOrigin, isLoginPage, listUrl, LoginRequiredError } from './parser.js'
 import type { CrawlStatus } from './types.js'
 
 export type BrowserInput =
@@ -30,12 +30,18 @@ export class RemoteLogin {
   private listeners = new Set<() => void>()
   readonly width = 1280
   readonly height = 800
-  private readonly stateFile: string
+  private readonly stateFile: string | undefined
   private readonly launchBrowser: () => Promise<Browser>
+  private backgroundOperations = 0
+  private readonly entryUrl: string
+  private readonly authenticatedSelector: string
 
-  constructor(stateFile: string, launchBrowser = () => chromium.launch({ headless: true })) {
+  constructor(stateFile: string | undefined, launchBrowser = () => chromium.launch({ headless: true }),
+    entryUrl = listUrl, authenticatedSelector = '#m-section-body') {
     this.stateFile = stateFile
     this.launchBrowser = launchBrowser
+    this.entryUrl = entryUrl
+    this.authenticatedSelector = authenticatedSelector
   }
 
   status(): CrawlStatus['login'] {
@@ -52,11 +58,11 @@ export class RemoteLogin {
     if (this.opening) return this.opening
     if (this.context) return
     this.opening ??= (async () => {
-      await mkdir(dirname(this.stateFile), { recursive: true, mode: 0o700 })
+      if (this.stateFile) await mkdir(dirname(this.stateFile), { recursive: true, mode: 0o700 })
       this.browser = await this.launchBrowser()
       this.context = await this.browser.newContext({
         viewport: { width: this.width, height: this.height },
-        ...(existsSync(this.stateFile) ? { storageState: this.stateFile } : {}),
+        ...(this.stateFile && existsSync(this.stateFile) ? { storageState: this.stateFile } : {}),
       })
       await this.context.route('**/*', async route => {
         const request = route.request()
@@ -70,7 +76,7 @@ export class RemoteLogin {
         }
         await route.fallback()
       })
-      this.context.on('page', page => { if (!this.confirming) this.page = page })
+      this.context.on('page', page => { if (!this.confirming && !this.backgroundOperations) this.page = page })
       this.page = await this.context.newPage()
     })()
     try {
@@ -94,7 +100,7 @@ export class RemoteLogin {
     this.navigating = (async () => {
       await this.ensureBrowser()
       if (!this.page || this.page.isClosed()) this.page = await this.context!.newPage()
-      const response = await this.page.goto(listUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      const response = await this.page.goto(this.entryUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
       if (response && response.status() >= 500) throw new Error(`登录网站暂时不可用（HTTP ${response.status()}）`)
     })().catch((error: unknown) => {
       this.visible = false
@@ -114,15 +120,17 @@ export class RemoteLogin {
     await this.ensureBrowser()
     const probe = await this.context!.newPage()
     try {
-      const response = await probe.goto(listUrl, { waitUntil: 'domcontentloaded' })
+      const response = await probe.goto(this.entryUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
       if (!response) throw new Error('登录验证没有收到网页响应')
       if ([401, 403].includes(response.status()) || isLoginPage(probe.url(), await probe.content())) throw new LoginRequiredError()
       if (!response.ok()) throw new Error(`登录验证失败：HTTP ${response.status()}`)
-      await probe.locator('#m-section-body').waitFor({ state: 'attached', timeout: 15_000 })
-      const temporary = `${this.stateFile}.tmp`
-      await this.context!.storageState({ path: temporary })
-      await chmod(temporary, 0o600)
-      await rename(temporary, this.stateFile)
+      await probe.locator(this.authenticatedSelector).waitFor({ state: 'attached', timeout: 15_000 })
+      if (this.stateFile) {
+        const temporary = `${this.stateFile}.tmp`
+        await this.context!.storageState({ path: temporary })
+        await chmod(temporary, 0o600)
+        await rename(temporary, this.stateFile)
+      }
       this.authenticated = true
       this.visible = false
       this.version++
@@ -142,7 +150,7 @@ export class RemoteLogin {
   async waitForLogin(signal: AbortSignal) {
     if (this.authenticated) return
     signal.throwIfAborted()
-    if (this.version === 0 && !this.visible && existsSync(this.stateFile)) {
+    if (this.version === 0 && !this.visible && this.stateFile && existsSync(this.stateFile)) {
       try {
         await this.confirm()
         return
@@ -191,10 +199,47 @@ export class RemoteLogin {
     }
   }
 
+  async withPage<T>(action: (page: Page) => Promise<T>): Promise<T> {
+    await this.ensureBrowser()
+    this.backgroundOperations++
+    let page: Page | undefined
+    try {
+      page = await this.context!.newPage()
+      return await action(page)
+    } finally {
+      await page?.close()
+      this.backgroundOperations--
+    }
+  }
+
+  async logout() {
+    await Promise.allSettled([this.opening, this.navigating, this.confirming])
+    if (!this.context) return
+    try {
+      await this.withPage(async page => {
+        const response = await page.goto(this.entryUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+        if (!response) throw new Error('Circle.ms 退出前没有收到响应')
+        if (response.status() === 401 || isLoginPage(page.url(), await page.content())) return
+        if (!response.ok()) throw new Error(`Circle.ms 退出前检查失败（HTTP ${response.status()}）`)
+        const link = page.locator(`a[href="/Account/LogOut"]`).filter({ hasText: 'ログアウト' }).first()
+        await link.waitFor({ timeout: 10_000 })
+        await link.click({ timeout: 30_000 })
+        await page.waitForLoadState('domcontentloaded', { timeout: 30_000 })
+        const url = new URL(page.url())
+        if (url.origin === catalogOrigin && await page.locator('a[href="/Account/LogOut"]').count()) {
+          throw new Error('Circle.ms 退出未完成，仍显示登录状态')
+        }
+      })
+    } finally {
+      this.authenticated = false
+      this.visible = false
+    }
+  }
+
   async clear() {
     if (this.context) await this.context.clearCookies()
     await this.close()
-    await rm(this.stateFile, { force: true })
+    if (this.stateFile) await rm(this.stateFile, { force: true })
     this.authenticated = false
     this.visible = false
     this.lastError = null

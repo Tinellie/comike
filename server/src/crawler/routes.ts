@@ -1,37 +1,15 @@
 import { Router } from 'express'
-import type { RequestHandler } from 'express'
-import type { BrowserInput } from './login.js'
-import { LoginRequiredError } from './parser.js'
 import { CrawlerConflictError } from './service.js'
 import type { CrawlerService } from './service.js'
-
-export function parseBrowserInput(body: unknown): BrowserInput {
-  if (!body || typeof body !== 'object' || !('type' in body)) throw new Error('Invalid browser input')
-  if (body.type === 'click' && 'x' in body && 'y' in body
-    && typeof body.x === 'number' && typeof body.y === 'number'
-    && Number.isFinite(body.x) && Number.isFinite(body.y)
-    && body.x >= 0 && body.x < 1280 && body.y >= 0 && body.y < 800) {
-    return { type: 'click', x: body.x, y: body.y }
-  }
-  if (body.type === 'text' && 'text' in body && typeof body.text === 'string'
-    && body.text.length > 0 && body.text.length <= 2048) return { type: 'text', text: body.text }
-  if (body.type === 'key' && 'key' in body && typeof body.key === 'string'
-    && /^(?:(?:Control|Shift|Alt|Meta)\+)*(?:[a-zA-Z0-9]|Enter|Tab|Backspace|Delete|Escape|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Home|End|PageUp|PageDown|Space)$/.test(body.key)) {
-    return { type: 'key', key: body.key }
-  }
-  if (body.type === 'wheel' && 'deltaY' in body && typeof body.deltaY === 'number'
-    && Number.isFinite(body.deltaY) && Math.abs(body.deltaY) <= 2000) return { type: 'wheel', deltaY: body.deltaY }
-  throw new Error('Invalid browser input')
-}
+import { remoteLoginRouter } from './remoteLoginRoutes.js'
+export { parseBrowserInput } from './remoteLoginRoutes.js'
 
 export function crawlerRouter(
   service: CrawlerService,
   initialize: () => Promise<void>,
   editorOrigin: string | undefined,
-  authorize: RequestHandler = (_req, _res, next) => next(),
 ) {
   const router = Router()
-  router.use(authorize)
   router.use((req, res, next) => {
     res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' })
     const origin = req.get('origin')
@@ -126,17 +104,10 @@ export function crawlerRouter(
       }
     }
   })
-  router.get('/login/status', (_req, res) => { res.json(service.login.status()) })
   router.post('/login/open', async (_req, res) => {
     try { await service.login.open(); res.json(service.login.status()) } catch (error) {
       console.error('Remote login unavailable:', error)
       res.status(503).json({ message: '无法打开登录浏览器，请检查网络及 Playwright Chromium 安装；可在登录窗口中重试' })
-    }
-  })
-  router.post('/login/confirm', async (_req, res, next) => {
-    try { await service.login.confirm(); res.json(service.login.status()) } catch (error) {
-      if (error instanceof LoginRequiredError) res.status(409).json({ message: error.message })
-      else next(error)
     }
   })
   router.post('/login/clear', async (_req, res, next) => {
@@ -149,32 +120,6 @@ export function crawlerRouter(
       res.json(service.login.status())
     } catch (error) { next(error) }
   })
-  router.get('/login/screenshot', async (_req, res, next) => {
-    const status = service.login.status()
-    if (status.opening) {
-      res.status(202).end()
-      return
-    }
-    if (!status.open) {
-      res.status(409).json({ message: status.error ?? '登录窗口已关闭，请重新打开登录窗口', authenticated: status.authenticated })
-      return
-    }
-    try { res.type('image/jpeg').send(await service.login.screenshot()) } catch (error) {
-      const current = service.login.status()
-      if (!current.open || current.authenticated) {
-        console.info('Login screenshot cancelled because the login window closed')
-        res.status(409).json({ message: '登录窗口已关闭', authenticated: current.authenticated })
-      } else next(error)
-    }
-  })
-  router.post('/login/input', async (req, res, next) => {
-    let input: BrowserInput
-    try { input = parseBrowserInput(req.body) } catch {
-      console.warn('Rejected invalid remote browser input')
-      res.status(400).json({ message: '无效的浏览器输入' })
-      return
-    }
-    try { await service.login.input(input); res.sendStatus(204) } catch (error) { next(error) }
-  })
+  router.use('/login', remoteLoginRouter(() => service.login))
   return router
 }

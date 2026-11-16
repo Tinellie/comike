@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { CssBaseline, ThemeProvider, createTheme } from '@mui/material'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
+import AuthProvider from './auth/AuthProvider'
 
 const theme = createTheme({
   typography: {
@@ -24,7 +25,7 @@ createRoot(root).render(
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <BrowserRouter>
-        <App />
+        <AuthProvider><App /></AuthProvider>
       </BrowserRouter>
     </ThemeProvider>
   </StrictMode>,

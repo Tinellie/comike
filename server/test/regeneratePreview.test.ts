@@ -6,7 +6,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { createApp } from '../src/app.js'
+import { createAdminApp as createApp } from './authFixture.js'
 import { regeneratePreview } from '../src/regeneratePreview.js'
 
 test('regeneration runs the existing PDF pipeline with fixed paths and all pages', async t => {
@@ -60,7 +60,7 @@ test('regeneration API reports progress, rejects duplicates, and permits retry a
     assert.equal(response.headers.get('cache-control'), 'no-store')
     return response.json()
   }
-  assert.deepEqual(await status(), { status: 'idle' })
+  assert.deepEqual(await status(), { status: 'idle', enabled: true })
   for (const headers of [{ Origin: 'https://other.example' }, { 'Sec-Fetch-Site': 'cross-site' }]) {
     assert.equal((await fetch(url, { method: 'POST', headers })).status, 403)
   }
@@ -68,12 +68,12 @@ test('regeneration API reports progress, rejects duplicates, and permits retry a
   const started = await fetch(url, { method: 'POST', headers: { Origin: 'http://localhost:5173' } })
   assert.equal(started.status, 202)
   assert.deepEqual(await started.json(), { status: 'running' })
-  assert.deepEqual(await status(), { status: 'running' })
+  assert.deepEqual(await status(), { status: 'running', enabled: true })
   assert.equal((await fetch(url, { method: 'POST' })).status, 409)
   assert.equal(calls, 1)
   assert.ok(finish)
   finish()
-  assert.deepEqual(await status(), { status: 'succeeded' })
+  assert.deepEqual(await status(), { status: 'succeeded', enabled: true })
   assert.equal((await fetch(url, { method: 'POST' })).status, 202)
   assert.ok(fail)
   fail(new Error('OCR failure'))
@@ -84,14 +84,16 @@ test('regeneration API reports progress, rejects duplicates, and permits retry a
   assert.equal(calls, 3)
   assert.ok(finish)
   finish()
-  assert.deepEqual(await status(), { status: 'succeeded' })
+  assert.deepEqual(await status(), { status: 'succeeded', enabled: true })
 })
 
 test('unconfigured regeneration is an explicit service error', async t => {
   const server = createApp({ checkDatabase: async () => {} }).listen(0, '127.0.0.1')
   await once(server, 'listening')
   t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())))
-  const response = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/preview/regenerate`, { method: 'POST' })
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/preview/regenerate`
+  assert.deepEqual(await (await fetch(url)).json(), { status: 'idle', enabled: false })
+  const response = await fetch(url, { method: 'POST' })
   assert.equal(response.status, 503)
-  assert.match((await response.json()).message, /not configured/)
+  assert.match((await response.json()).message, /PDF OCR/)
 })

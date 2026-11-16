@@ -6,7 +6,28 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import type { AddressInfo } from 'node:net'
 import { get } from 'node:http'
-import { createApp } from '../src/app.js'
+import { createAdminApp as createApp } from './authFixture.js'
+import { createApp as createPublicApp } from '../src/app.js'
+
+test('Map PDF originals remain public without exposing other preview assets', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'comike-public-pdf-'))
+  await writeFile(join(directory, 'page-001-pdf.png'), 'pdf image fixture')
+  const server = createPublicApp({ checkDatabase: async () => {}, recognitionDirectory: directory }).listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(async () => {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    await rm(directory, { recursive: true })
+  })
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/preview`
+  const image = await fetch(`${base}/page-001-pdf.png`)
+  assert.equal(image.status, 200)
+  assert.equal(await image.text(), 'pdf image fixture')
+  assert.equal((await fetch(`${base}/page-001-pdf.png`, { method: 'HEAD' })).status, 200)
+  for (const name of ['result.json', 'page-001.png', 'page-001-pdf.png/extra', 'regenerate']) {
+    assert.equal((await fetch(`${base}/${name}`)).status, 401)
+  }
+  assert.equal((await fetch(`${base}/page-001-pdf.png`, { method: 'PUT' })).status, 401)
+})
 
 test('aborted map and preview downloads do not crash the server or modify sent headers', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'comike-abort-test-'))
@@ -150,8 +171,8 @@ test('Express APIs and SPA deep links', async (t) => {
     assert.match(response.headers.get('content-type') ?? '', /application\/json/)
     assert.deepEqual(await response.json(), { message: 'OSM map not found. Add ref/osm-map.osm first.' })
   })
-  await t.test('home, map and preview serve the SPA entry', async () => {
-    for (const path of ['/', '/map', '/preview']) {
+  await t.test('home, map, preview and login serve the SPA entry', async () => {
+    for (const path of ['/', '/map', '/preview', '/login']) {
       const response = await fetch(`${base}${path}`)
       assert.equal(response.status, 200)
       assert.equal(await response.text(), html)

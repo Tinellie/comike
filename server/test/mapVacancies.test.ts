@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import { mapSlots, missingSlots } from '../src/booths/reconcile.js'
@@ -10,7 +11,7 @@ function mapData() {
   ] }] }] }] }
 }
 
-test('map vacancy projection validates map positions and preserves both half-booths', async () => {
+test('map vacancy projection validates map positions and preserves both half-booths', () => {
   const slots = mapSlots(mapData())
   assert.deepEqual(slots.map(slot => [slot.booth_number, slot.booth_suffix]), [['01', 'a'], ['01', 'b'], ['02', 'a'], ['02', 'b']])
   const data = mapData()
@@ -19,7 +20,12 @@ test('map vacancy projection validates map positions and preserves both half-boo
   const invalid = mapData()
   invalid.halls[0]!.islands[0]!.blocks[0]!.booths[0]!.split.b = 'r'
   assert.throws(() => mapSlots(invalid), /分割/)
-  const actual = mapSlots(JSON.parse(await readFile(new URL('../../tools/booth-recognition/output/official-map/final.json', import.meta.url), 'utf8')))
+})
+
+const actualMap = new URL('../../tools/booth-recognition/output/official-map/final.json', import.meta.url)
+test('actual locally generated map contains all expected half-booths',
+  { skip: !existsSync(actualMap) && 'Local OCR output is not included in Git or CI' }, async () => {
+  const actual = mapSlots(JSON.parse(await readFile(actualMap, 'utf8')))
   assert.equal(actual.length, 11202)
 })
 

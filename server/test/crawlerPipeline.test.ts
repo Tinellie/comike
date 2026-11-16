@@ -13,7 +13,7 @@ import type { LoginSession } from '../src/crawler/login.js'
 import type { CircleListCache, CrawlJob, JobRepository } from '../src/crawler/types.js'
 import { parseDetail } from '../src/crawler/parser.js'
 import type { Booth } from '../src/db/schema.js'
-import { createApp } from '../src/app.js'
+import { createAdminApp as createApp } from './authFixture.js'
 
 const fixture = await readFile(new URL('../../ref/circle-detail.html', import.meta.url), 'utf8')
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK1cAAAAASUVORK5CYII=', 'base64')
@@ -157,7 +157,8 @@ test('full pipeline: exactly five simultaneous detail requests, images, progress
   let peak = 0
   let rejectLast = true
   let releaseFirstBatch: () => void = () => {}
-  const firstBatch = new Promise<void>(resolve => { releaseFirstBatch = resolve })
+  // Cross the one-second persistence interval even on fast CI runners.
+  const firstBatch = new Promise<void>(resolve => { releaseFirstBatch = resolve }).then(() => delay(1100))
   const server = createServer(async (request, response) => {
     const id = request.url!.split('/').at(-1)!
     attempts.set(id, (attempts.get(id) ?? 0) + 1)

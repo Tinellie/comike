@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { randomUUID } from 'node:crypto'
 import { count, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/mysql2'
 import { createApp } from '../src/app.js'
@@ -14,8 +16,11 @@ import { reconcileMapVacancies } from '../src/booths/reconcile.js'
 import { MysqlBoothRepository } from '../src/booths/repository.js'
 import type { BoothStore } from '../src/booths/repository.js'
 import { db, pool } from '../src/db/index.js'
-import { booths, mapVacancies } from '../src/db/schema.js'
+import { booths, mapVacancies, userFavorites, users } from '../src/db/schema.js'
+import { MysqlColourStore } from '../src/colours/repository.js'
 import type { Booth } from '../src/db/schema.js'
+import { MemoryAuthStore } from './authFixture.js'
+import { tokenHash } from '../src/auth/routes.js'
 
 const groups = parseHallGroups({ halls: [
   { name: '東123', islands: [{ code: 'ア' }] },
@@ -25,9 +30,20 @@ const groups = parseHallGroups({ halls: [
 ] })
 const emptyMapRegions = { vacancyRegions: [], genres: [], genreRegions: [], vacancyReady: false, genreReady: false }
 
-test('hall groups use the actual map and preserve Latin case and kana distinctions', async () => {
+test('hall groups preserve Latin case and kana distinctions', () => {
+  assert.equal(hallGroup(groups, '東', 'Ａ'), '東7')
+  assert.equal(hallGroup(groups, '南', 'a'), '南12')
+  assert.equal(hallGroup(groups, '東', 'a'), '東（未匹配）')
+  assert.equal(hallGroup(groups, '西', 'ア'), '西（未匹配）')
+  assert.throws(() => parseHallGroups({ halls: [{ name: '東123', islands: [{ code: 'A' }, { code: 'Ａ' }] }] }), /重复/)
+  assert.throws(() => parseHallGroups({ halls: [] }), /Hall/)
+})
+
+const actualMap = new URL('../../tools/booth-recognition/output/official-map/final.json', import.meta.url)
+test('hall groups use the actual locally generated map',
+  { skip: !existsSync(actualMap) && 'Local OCR output is not included in Git or CI' }, async () => {
   const actual = parseHallGroups(JSON.parse(await readFile(
-    new URL('../../tools/booth-recognition/output/official-map/final.json', import.meta.url), 'utf8',
+    actualMap, 'utf8',
   )))
   assert.equal(hallGroup(actual, '東', 'ア'), '東123')
   assert.equal(hallGroup(actual, '東', 'Ａ'), '東7')
@@ -36,8 +52,6 @@ test('hall groups use the actual map and preserve Latin case and kana distinctio
   assert.equal(hallGroup(actual, '東', 'a'), '東（未匹配）')
   assert.equal(hallGroup(actual, '南', 'A'), '南（未匹配）')
   assert.equal(hallGroup(actual, '西', 'ア'), '西（未匹配）')
-  assert.throws(() => parseHallGroups({ halls: [{ name: '東123', islands: [{ code: 'A' }, { code: 'Ａ' }] }] }), /重复/)
-  assert.throws(() => parseHallGroups({ halls: [] }), /Hall/)
 })
 
 test('event days infer consecutive dates across the Sunday boundary and report ambiguity', () => {
@@ -52,11 +66,12 @@ test('event days infer consecutive dates across the Sunday boundary and report a
 test('list queries are bounded, strict and distinguish all from no selected filters', () => {
   const parse = (query: string) => parseBoothQuery(new URLSearchParams(query))
   assert.deepEqual(parse('eventId=240'), {
-    eventId: '240', search: '', offset: 0, limit: 40, sort: 'location', direction: 'asc', days: null, halls: null, genres: null,
+    eventId: '240', search: '', offset: 0, limit: 40, sort: 'location', direction: 'asc', days: null, halls: null, genres: null, colours: null,
   })
   assert.deepEqual(parse('eventId=240&days=&halls=').days, [])
   assert.deepEqual(parse('eventId=240&days=土,日,土').days, ['土', '日'])
   assert.equal(parse('eventId=240&sort=genre').sort, 'genre')
+  assert.equal(parse('eventId=240&sort=colour').sort, 'colour')
   assert.equal(parse('eventId=240&search=%20ABC%20').search, 'ABC')
   assert.equal(parse('eventId=240&search=%20%20').search, '')
   assert.equal(parse(`eventId=240&search=${'a'.repeat(255)}`).search.length, 255)
@@ -69,6 +84,14 @@ test('list queries are bounded, strict and distinguish all from no selected filt
     assert.throws(() => parse(genreQuery(invalid)))
   }
   assert.throws(() => parse('eventId=240&genres=invalid'))
+  const colourQuery = (values: unknown) => `eventId=240&colours=${encodeURIComponent(JSON.stringify(values))}`
+  assert.deepEqual(parse(colourQuery(['#ff0000', null, '#FF0000', '#00B54A'])).colours, ['#FF0000', null, '#00B54A'])
+  assert.deepEqual(parse(colourQuery([])).colours, [])
+  for (const invalid of [null, 'red', [1], ['red'], ['#123'], ['#12345678'], Array(513).fill('#FF0000')]) {
+    assert.throws(() => parse(colourQuery(invalid)))
+  }
+  assert.throws(() => parse('eventId=240&colours=invalid'))
+  assert.throws(() => parse(`${colourQuery([])}&colours=[]`))
   for (const invalid of ['', 'eventId=x', 'eventId=240&limit=101', 'eventId=240&offset=-1',
     'eventId=240&limit=1.5', 'eventId=240&offset=1000001', 'eventId=240&sort=id',
     'eventId=240&direction=no', 'eventId=240&limit=1&limit=2', 'eventId=240&foo=1',
@@ -87,12 +110,23 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
   await mkdir(join(directory, 'booths', 'c109'), { recursive: true })
   const image = Buffer.from('test-image')
   await writeFile(join(directory, 'booths', 'c109', '24001_1.png'), image)
+  const scopes: (string | undefined)[] = []
+  const optionScopes: (string | undefined)[] = []
+  const mapScopes: string[] = []
+  const auth = new MemoryAuthStore()
+  for (const [id, token] of [['first', 'a'], ['second', 'b']] as const) {
+    auth.users.set(id, { id, username: id, isAdmin: false, passwordHash: '' })
+    await auth.createSession(tokenHash(token.repeat(64)), id, new Date(Date.now() + 60_000))
+  }
+  await auth.createSession(tokenHash('c'.repeat(64)), 'first', new Date(Date.now() - 1000))
   const store: BoothStore = {
-    async options(eventId) {
+    async options(eventId, userId) {
+      optionScopes.push(userId)
       if (eventId === '999') throw new Error('test database unavailable')
-      return eventId ? null : { event: null, events: [], days: [], halls: [], genres: [], warnings: [] }
+      return eventId ? null : { event: null, events: [], days: [], halls: [], genres: [], colours: [], warnings: [] }
     },
-    async list(query) {
+    async list(query, userId) {
+      scopes.push(userId)
       if (query.search) assert.equal(query.search, '社团%_')
       if (query.days?.includes('月')) throw new BoothFilterError('筛选项不属于当前活动')
       return query.eventId === '240' ? { items: [], total: 0, nextOffset: null } : null
@@ -109,8 +143,14 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
       assert.equal(weekday, '土')
       return { merged: { 'メ': ['10', '11'] }, vacancies: { 'メ': ['12a', '12b'] }, ...emptyMapRegions }
     },
+    async mapFavorites(eventId, weekday, userId) {
+      mapScopes.push(userId)
+      assert.equal(weekday, '土')
+      if (eventId === '999') throw new Error('test favorite lookup unavailable')
+      return [{ boothId: '24001', hallGroup: '東123', island: 'ア', number: '01', suffix: 'a', colour: userId === 'first' ? '#FF0000' : '#0000FF' }]
+    },
   }
-  const server = createApp({ checkDatabase: async () => {}, boothStore: store, mediaRoot: directory }).listen(0, '127.0.0.1')
+  const server = createApp({ checkDatabase: async () => {}, boothStore: store, mediaRoot: directory, authStore: auth }).listen(0, '127.0.0.1')
   await once(server, 'listening')
   t.after(async () => {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
@@ -119,11 +159,14 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/booths`
   const page = await fetch(`${base}?eventId=240`)
   assert.deepEqual(await page.json(), { items: [], total: 0, nextOffset: null })
-  assert.equal(page.headers.get('cache-control'), 'no-store')
+  assert.equal(page.headers.get('cache-control'), 'private, no-store')
+  assert.match(page.headers.get('vary') ?? '', /Cookie/)
   assert.equal((await fetch(`${base}?eventId=240&search=${encodeURIComponent('社团%_')}`)).status, 200)
   const options = await fetch(`${base}/options`)
   assert.equal(options.status, 200)
-  assert.deepEqual(await options.json(), { event: null, events: [], days: [], halls: [], genres: [], warnings: [] })
+  assert.deepEqual(await options.json(), { event: null, events: [], days: [], halls: [], genres: [], colours: [], warnings: [] })
+  assert.equal(options.headers.get('cache-control'), 'private, no-store')
+  assert.match(options.headers.get('vary') ?? '', /Cookie/)
   for (const [path, status] of [
     ['', 400], ['?eventId=240&limit=101', 400], ['?eventId=240&days=月', 400],
     ['?eventId=241', 404], ['/options?eventId=241', 404], ['/options?eventId=999', 503],
@@ -158,6 +201,55 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
   assert.equal(mapData.status, 200)
   assert.equal(mapData.headers.get('cache-control'), 'no-store')
   assert.deepEqual(await mapData.json(), { merged: { 'メ': ['10', '11'] }, vacancies: { 'メ': ['12a', '12b'] }, ...emptyMapRegions })
+  await t.test('personal map colors require a valid session, strict event/day queries and never accept a user id', async () => {
+    const url = `${base}/map-favorites?eventId=240&weekday=${encodeURIComponent('土')}`
+    assert.equal((await fetch(url)).status, 401)
+    for (const [token, expected] of [['a', 'first'], ['b', 'second']] as const) {
+      const response = await fetch(url, { headers: { Cookie: `comike_session=${token.repeat(64)}` } })
+      assert.equal(response.status, 200)
+      assert.equal(response.headers.get('cache-control'), 'private, no-store')
+      assert.match(response.headers.get('vary') ?? '', /Cookie/)
+      assert.deepEqual(await response.json(), { favorites: [
+        { boothId: '24001', hallGroup: '東123', island: 'ア', number: '01', suffix: 'a', colour: expected === 'first' ? '#FF0000' : '#0000FF' },
+      ] })
+      assert.equal(mapScopes.at(-1), expected)
+    }
+    for (const token of ['c', 'd']) {
+      assert.equal((await fetch(url, { headers: { Cookie: `comike_session=${token.repeat(64)}` } })).status, 401)
+    }
+    for (const query of ['eventId=240', 'eventId=x&weekday=土', 'eventId=240&weekday=x',
+      'eventId=240&weekday=土&weekday=日', 'eventId=240&eventId=240&weekday=土',
+      'eventId=240&weekday=土&userId=second', 'eventId=240&weekday=土&internal_id=2']) {
+      assert.equal((await fetch(`${base}/map-favorites?${query}`, { headers: { Cookie: `comike_session=${'a'.repeat(64)}` } })).status, 400)
+    }
+    assert.equal((await fetch(`${base}/map-favorites?eventId=999&weekday=土`, { headers: { Cookie: `comike_session=${'a'.repeat(64)}` } })).status, 503)
+  })
+  await t.test('personalization comes only from the session; expired sessions are anonymous and lookup errors fail explicitly', async () => {
+    for (const [token, expected] of [['a', 'first'], ['b', 'second'], ['c', undefined], ['d', undefined]] as const) {
+      const response = await fetch(`${base}?eventId=240`, { headers: { Cookie: `comike_session=${token.repeat(64)}` } })
+      assert.equal(response.status, 200)
+      assert.equal(scopes.at(-1), expected)
+      assert.equal(response.headers.get('cache-control'), 'private, no-store')
+      assert.match(response.headers.get('vary') ?? '', /Cookie/)
+      assert.equal((await fetch(`${base}/options`, { headers: { Cookie: `comike_session=${token.repeat(64)}` } })).status, 200)
+      assert.equal(optionScopes.at(-1), expected)
+    }
+    for (const parameter of ['userId=second', 'user_id=2', 'internal_id=2']) {
+      assert.equal((await fetch(`${base}?eventId=240&${parameter}`, {
+        headers: { Cookie: `comike_session=${'a'.repeat(64)}` },
+      })).status, 400)
+      assert.equal((await fetch(`${base}/options?${parameter}`)).status, 400)
+    }
+    const calls = scopes.length
+    t.mock.method(auth, 'sessionUser', async () => { throw new Error('test auth database unavailable') })
+    assert.equal((await fetch(`${base}?eventId=240`, { headers: { Cookie: `comike_session=${'a'.repeat(64)}` } })).status, 503)
+    assert.equal(scopes.length, calls)
+    assert.equal((await fetch(`${base}?eventId=240`)).status, 200)
+    assert.equal(scopes.at(-1), undefined)
+    assert.equal((await fetch(`${base}/options`, { headers: { Cookie: `comike_session=${'a'.repeat(64)}` } })).status, 503)
+    assert.equal((await fetch(`${base}/days`, { headers: { Cookie: `comike_session=${'a'.repeat(64)}` } })).status, 200)
+    assert.equal((await fetch(`${base}/map-favorites?eventId=240&weekday=土`, { headers: { Cookie: `comike_session=${'a'.repeat(64)}` } })).status, 503)
+  })
 })
 
 test('MySQL sorts, filters and paginates actual booth rows without changing existing data',
@@ -214,6 +306,7 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
       assert.deepEqual(full.items.map(item => item.id), ids([2, 3, 4, 10, 1, 5, 6, 7, 8, 9]))
       assert.equal(full.total, 10)
       assert.equal(full.nextOffset, null)
+      assert.ok(full.items.every(row => row.colour === null && row.memo === null))
       assert.equal(full.items.find(row => row.id === rows[9]!.id)!.tags!.length, 512)
       for (const [search, expected] of [
         ['ねこ', [1]], ['作者', [6]], ['Zeta', [2, 4, 9]], ['末尾标', [10]],
@@ -224,6 +317,149 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
         assert.deepEqual(result.items.map(item => item.id), ids([...expected]), search)
         assert.equal(result.total, expected.length, search)
       }
+      await t.test('own favourite colours and full memos are joined without exposing another user or changing pagination', async () => {
+        const [firstId, secondId] = [randomUUID(), randomUUID()]
+        await transaction.insert(users).values([
+          { id: firstId, username: `list_${eventId}_a`, password_hash: 'test-only', created_at: new Date() },
+          { id: secondId, username: `list_${eventId}_b`, password_hash: 'test-only', created_at: new Date() },
+        ])
+        const [first] = await transaction.select().from(users).where(eq(users.id, firstId))
+        const [second] = await transaction.select().from(users).where(eq(users.id, secondId))
+        const memo = 'private-first %_\\\n中文 <script>literal</script>'
+        await transaction.insert(userFavorites).values([
+          { user_id: first!.internal_id, booth_id: rows[1]!.id, colour: '#FFF700', memo },
+          { user_id: first!.internal_id, booth_id: rows[3]!.id, colour: '#FF0000', memo: 'private-first Zeta' },
+          { user_id: first!.internal_id, booth_id: rows[4]!.id, colour: '#00B54A', memo: '' },
+          { user_id: first!.internal_id, booth_id: rows[9]!.id, colour: '#FF0000', memo: '' },
+          { user_id: first!.internal_id, booth_id: `${eventId}99`, colour: '#ABCDEF', memo: '' },
+          { user_id: second!.internal_id, booth_id: rows[1]!.id, colour: '#0000FF', memo: 'private-second' },
+          { user_id: second!.internal_id, booth_id: rows[2]!.id, colour: '#FF00FF', memo: 'private-second' },
+        ])
+        const personal = (await store.list(query, firstId))!
+        assert.deepEqual(personal.items.map(row => row.id), full.items.map(row => row.id))
+        assert.equal(personal.total, full.total)
+        const own = personal.items.find(row => row.id === rows[1]!.id)!
+        assert.equal(own.colour, '#FFF700')
+        assert.equal(own.memo, memo)
+        assert.equal(personal.items.find(row => row.id === rows[2]!.id)!.colour, null)
+        assert.equal(personal.items.find(row => row.id === rows[2]!.id)!.memo, null)
+        assert.equal(personal.items.find(row => row.id === rows[4]!.id)!.memo, '')
+        assert.equal('user_id' in own, false)
+        assert.equal('internal_id' in own, false)
+        const other = (await store.list(query, secondId))!
+        assert.equal(other.items.find(row => row.id === rows[1]!.id)!.colour, '#0000FF')
+        assert.equal(other.items.find(row => row.id === rows[1]!.id)!.memo, 'private-second')
+        for (const userId of [undefined, randomUUID()]) {
+          assert.ok((await store.list(query, userId))!.items.every(row => row.colour === null && row.memo === null))
+          assert.equal((await store.list({ ...query, search: 'private-first' }, userId))!.total, 0)
+        }
+        assert.equal((await store.list({ ...query, search: 'private-first' }, secondId))!.total, 0)
+        assert.equal((await store.list({ ...query, search: 'private-second' }, firstId))!.total, 0)
+        for (const [search, expected] of [['%_\\', [2, 6]], ['中文', [2]], ['<script>literal</script>', [2]]] as const) {
+          const result = (await store.list({ ...query, search }, firstId))!
+          assert.equal(result.total, expected.length)
+          assert.deepEqual(result.items.map(row => row.id), ids([...expected]))
+        }
+        const search = { ...query, search: 'private-first', limit: 1 }
+        const page1 = (await store.list(search, firstId))!
+        const page2 = (await store.list({ ...search, offset: page1.nextOffset! }, firstId))!
+        assert.equal(page1.total, 2)
+        assert.equal(page2.total, 2)
+        assert.equal(page1.nextOffset, 1)
+        assert.equal(page2.nextOffset, null)
+        assert.deepEqual([...page1.items, ...page2.items].map(row => row.id), ids([2, 4]))
+        for (const sort of ['name', 'location', 'genre'] as const) {
+          const result = (await store.list({ ...query, search: 'private-first', sort, genres: ['Zeta'], halls: ['東123'], days: ['土'] }, firstId))!
+          assert.equal(result.total, 2)
+          assert.deepEqual(new Set(result.items.map(row => row.id)), new Set(ids([2, 4])))
+        }
+        const overlap = (await store.list({ ...query, search: 'Zeta' }, firstId))!
+        assert.equal(overlap.total, 3)
+        assert.deepEqual(overlap.items.map(row => row.id), ids([2, 4, 9]))
+        assert.equal((await store.list({ ...query, days: [] }, firstId))!.total, 0)
+        const optionStore = new MysqlBoothRepository(async () => groups, transaction)
+        const located = await store.mapFavorites(eventId, '土', firstId)
+        assert.deepEqual(located, [
+          { boothId: rows[1]!.id, hallGroup: '東123', island: 'ア', number: '02', suffix: 'a', colour: '#FFF700' },
+          { boothId: rows[3]!.id, hallGroup: '東123', island: 'ア', number: '02', suffix: 'b', colour: '#FF0000' },
+          { boothId: rows[4]!.id, hallGroup: '東7', island: 'A', number: '01', suffix: 'a', colour: '#00B54A' },
+          { boothId: rows[9]!.id, hallGroup: '東123', island: 'ア', number: '10', suffix: 'a', colour: '#FF0000' },
+        ])
+        assert.deepEqual(await store.mapFavorites(eventId, '土', secondId), [
+          { boothId: rows[1]!.id, hallGroup: '東123', island: 'ア', number: '02', suffix: 'a', colour: '#0000FF' },
+          { boothId: rows[2]!.id, hallGroup: '東123', island: 'ア', number: '02', suffix: 'ab', colour: '#FF00FF' },
+        ])
+        assert.deepEqual(await store.mapFavorites(eventId, '日', firstId), [])
+        assert.deepEqual(await store.mapFavorites(`${eventId}0`, '土', firstId), [])
+        assert.deepEqual(await store.mapFavorites(eventId, '土', randomUUID()), [])
+        assert.deepEqual((await optionStore.options(eventId, firstId))!.colours, ['#00B54A', '#FF0000', '#FFF700'])
+        assert.deepEqual((await optionStore.options(eventId, secondId))!.colours, ['#0000FF', '#FF00FF'])
+        queries.length = 0
+        assert.deepEqual((await optionStore.options(eventId))!.colours, [])
+        assert.ok(queries.every(query => !/user_favorites/.test(query)))
+        const colourCases: [(string | null)[] | null, number[]][] = [
+          [['#00B54A', '#FF0000', '#FFF700'], [2, 4, 10, 5]],
+          [['#FF0000'], [4, 10]],
+          [[null], [3, 1, 6, 7, 8, 9]],
+          [['#FFF700', null], [2, 3, 1, 6, 7, 8, 9]],
+          [[], []],
+          [['#0000FF'], []],
+          [null, [2, 3, 4, 10, 1, 5, 6, 7, 8, 9]],
+        ]
+        for (const [colours, expected] of colourCases) {
+          const result = (await store.list({ ...query, colours }, firstId))!
+          assert.equal(result.total, expected.length)
+          assert.deepEqual(result.items.map(row => row.id), ids(expected))
+        }
+        assert.equal((await store.list({ ...query, colours: ['#FF0000'] }, secondId))!.total, 0)
+        assert.equal((await store.list({ ...query, colours: ['#FF0000'] }))!.total, 0)
+        assert.equal((await store.list({ ...query, colours: [null] }))!.total, full.total)
+        const combined = (await store.list({
+          ...query, colours: ['#FF0000'], search: 'private-first', days: ['土'], halls: ['東123'], genres: ['Zeta'],
+        }, firstId))!
+        assert.equal(combined.total, 1)
+        assert.deepEqual(combined.items.map(row => row.id), ids([4]))
+        for (const [direction, expected] of [
+          ['asc', [5, 4, 10, 2, 3, 1, 6, 7, 8, 9]],
+          ['desc', [2, 4, 10, 5, 3, 1, 6, 7, 8, 9]],
+        ] as const) {
+          const sortedQuery = { ...query, sort: 'colour' as const, direction }
+          const sorted = (await store.list(sortedQuery, firstId))!
+          assert.deepEqual(sorted.items.map(row => row.id), ids([...expected]))
+          const paged: string[] = []
+          let offset: number | null = 0
+          while (offset !== null) {
+            const page = (await store.list({ ...sortedQuery, offset, limit: 3 }, firstId))!
+            assert.equal(page.total, full.total)
+            paged.push(...page.items.map(row => row.id))
+            offset = page.nextOffset
+          }
+          assert.deepEqual(paged, ids([...expected]))
+        }
+        assert.deepEqual((await store.list({ ...query, sort: 'colour' }))!.items.map(row => row.id), full.items.map(row => row.id))
+        const priorities = new MysqlColourStore(transaction)
+        assert.deepEqual((await priorities.list(firstId)).map(entry => entry.colour), ['#00B54A', '#ABCDEF', '#FF0000', '#FFF700'])
+        await priorities.reorder(firstId, ['#FFF700', '#FF0000', '#ABCDEF', '#00B54A'])
+        assert.deepEqual((await optionStore.options(eventId, firstId))!.colours, ['#FFF700', '#FF0000', '#00B54A'])
+        assert.deepEqual((await optionStore.options(eventId, secondId))!.colours, ['#0000FF', '#FF00FF'])
+        for (const [direction, expected] of [
+          ['asc', [2, 4, 10, 5, 3, 1, 6, 7, 8, 9]],
+          ['desc', [5, 4, 10, 2, 3, 1, 6, 7, 8, 9]],
+        ] as const) {
+          const paged: string[] = []
+          let offset: number | null = 0
+          while (offset !== null) {
+            const page = (await store.list({ ...query, sort: 'colour', direction, offset, limit: 3 }, firstId))!
+            assert.equal(page.total, full.total)
+            paged.push(...page.items.map(row => row.id))
+            offset = page.nextOffset
+          }
+          assert.deepEqual(paged, ids([...expected]))
+        }
+        assert.deepEqual((await store.list({
+          ...query, sort: 'colour', colours: ['#FF0000', '#FFF700'], search: 'private-first',
+        }, firstId))!.items.map(row => row.id), ids([2, 4]))
+      })
       const searchedPage = (await store.list({ ...query, search: 'Zeta', limit: 1 }))!
       assert.equal(searchedPage.total, 3)
       assert.equal(searchedPage.nextOffset, 1)

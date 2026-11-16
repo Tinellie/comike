@@ -12,6 +12,11 @@ import { MysqlBoothRepository } from './booths/repository.js'
 import { reconcileMapVacancies } from './booths/reconcile.js'
 import { organizeMapGenres } from './booths/genres.js'
 import { MapOrganization } from './booths/organization.js'
+import { MysqlAuthStore } from './auth/repository.js'
+import { FavoritesService } from './favorites/service.js'
+import { MysqlFavoritesStore } from './favorites/repository.js'
+import { favoritesUrl } from './favorites/parser.js'
+import { MysqlColourStore } from './colours/repository.js'
 
 const port = Number(process.env.PORT ?? 3001)
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -44,10 +49,18 @@ const crawler = new CrawlerService(
   },
   new MapOrganization(resolve(recognitionDirectory, 'final.json')),
 )
-console.warn('Crawler dashboard has no authentication. Restrict network access before using real login sessions.')
+const favorites = new FavoritesService(new MysqlFavoritesStore(),
+  () => new RemoteLogin(undefined, undefined, favoritesUrl, 'table.t-user-favorites'))
 const app = createApp({
+  colourStore: new MysqlColourStore(),
+  favorites,
+  authStore: new MysqlAuthStore(),
+  secureCookie: process.env.NODE_ENV === 'production' || process.env.AUTH_COOKIE_SECURE === 'true',
+  trustProxy: process.env.TRUST_PROXY === 'true',
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
-  regeneratePreview: () => regeneratePreview(fileURLToPath(new URL('../../', import.meta.url)), recognitionDirectory),
+  ...(process.env.OCR_ENABLED !== 'false' ? {
+    regeneratePreview: () => regeneratePreview(fileURLToPath(new URL('../../', import.meta.url)), recognitionDirectory),
+  } : {}),
   crawler,
   boothStore: new MysqlBoothRepository(createHallGroupsLoader(resolve(recognitionDirectory, 'final.json'))),
   mediaRoot: resolve(projectRoot, process.env.MEDIA_ROOT ?? 'storage'),
@@ -73,7 +86,7 @@ function shutdown() {
   timeout.unref()
 
   void (async () => {
-    await crawler.close()
+    await Promise.all([crawler.close(), favorites.close()])
     await new Promise<void>((resolve, reject) => {
       server.close(error => error ? reject(error) : resolve())
     })
