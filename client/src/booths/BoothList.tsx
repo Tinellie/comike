@@ -158,7 +158,7 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
               <Tooltip title="按颜色排序"><TableSortLabel aria-label="按颜色排序" active={sort === 'colour'} direction={sort === 'colour' ? direction : 'asc'}
                 sx={{ width: 28, height: 28, justifyContent: 'center', '& .MuiTableSortLabel-icon': { opacity: 1, mx: 0 } }}
                 onClick={() => changeSort('colour')} /></Tooltip>
-              <Tooltip title="按收藏颜色筛选"><IconButton size="small" aria-label="筛选颜色" color={colours !== null ? 'primary' : 'default'} onClick={event => { setFilterKind('colour'); setFilterAnchor(event.currentTarget) }}>
+              <Tooltip title="按收藏颜色筛选"><IconButton size="small" aria-label="筛选颜色" color={colours !== null && availableColours.some(colour => !colours.includes(colour)) ? 'primary' : 'default'} onClick={event => { setFilterKind('colour'); setFilterAnchor(event.currentTarget) }}>
                 <SvgIcon fontSize="small" viewBox="0 0 24 24"><path d="M3 5h18v2H3zm4 6h10v2H7zm3 6h4v2h-4z" /></SvgIcon>
               </IconButton></Tooltip>
             </>}
