@@ -2,7 +2,7 @@ import { Router } from 'express'
 import type { ErrorRequestHandler, Request } from 'express'
 import { join } from 'node:path'
 import type { AuthUser } from '../../auth/repository.js'
-import { PixivConflictError, PixivService } from './service.js'
+import { PixivConflictError, PixivImageTokenError, PixivService } from './service.js'
 import { validPixivId } from './source.js'
 
 export function pixivRouter(service: PixivService, userFor: (req: Request) => AuthUser) {
@@ -23,6 +23,28 @@ export function pixivRouter(service: PixivService, userFor: (req: Request) => Au
     }
     service.start(userFor(req).id, body.mode === 'missing')
     res.status(202).json(service.status(userFor(req).id))
+  })
+  router.get('/live/booths/:id', async (req, res) => {
+    res.set('Cache-Control', 'private, no-store').vary('Cookie')
+    if (!/^\d{1,32}$/.test(req.params.id)) {
+      console.warn('Rejected invalid live Pixiv booth ID')
+      res.status(400).json({ message: '社团 ID 无效' }); return
+    }
+    const controller = new AbortController()
+    const cancel = () => controller.abort()
+    res.once('close', cancel)
+    try {
+      const gallery = await service.liveGallery(req.params.id, controller.signal)
+      if (res.destroyed) return
+      if (!gallery) res.status(404).json({ message: '社团不存在' })
+      else res.json(gallery)
+    } finally { res.off('close', cancel) }
+  })
+  router.get('/live/images/:token', async (req, res) => {
+    const image = await service.liveImage(req.params.token)
+    if (res.destroyed) return
+    res.set({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' }).vary('Cookie')
+    res.type(image.extension).send(image.body)
   })
   router.get('/booths/:id', async (req, res) => {
     if (!/^\d{1,32}$/.test(req.params.id)) {
@@ -51,8 +73,8 @@ export function pixivRouter(service: PixivService, userFor: (req: Request) => Au
   const errors: ErrorRequestHandler = (error: unknown, _req, res, next) => {
     if (res.headersSent || res.destroyed) { next(error); return }
     console.error('Pixiv image request failed:', error)
-    res.status(error instanceof PixivConflictError ? 409 : 503)
-      .json({ message: error instanceof PixivConflictError ? error.message : 'Pixiv 图片服务不可用，请检查数据库迁移及服务端日志' })
+    res.status(error instanceof PixivConflictError ? 409 : error instanceof PixivImageTokenError ? 400 : 503)
+      .json({ message: error instanceof PixivConflictError || error instanceof PixivImageTokenError ? error.message : 'Pixiv 图片服务不可用，请检查数据库迁移及服务端日志' })
   }
   router.use(errors)
   return router

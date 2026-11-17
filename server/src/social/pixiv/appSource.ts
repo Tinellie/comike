@@ -194,8 +194,8 @@ export class PixivAppSource implements PixivSource {
     let url: URL | null = new URL('/v1/user/illusts', apiOrigin)
     url.search = new URLSearchParams({ user_id: pixivId, type, filter: '' }).toString()
     const seen = new Set<string>()
-    const ids: string[] = []
-    while (url && ids.length < PIXIV_IMAGE_LIMIT) {
+    const works: { id: string; thumbnail: unknown }[] = []
+    while (url && works.length < PIXIV_IMAGE_LIMIT) {
       if (seen.has(url.href) || seen.size >= 100) throw new Error('Pixiv App API 分页无进展，未修改图片缓存')
       seen.add(url.href)
       const result = await this.api(url, signal)
@@ -203,7 +203,7 @@ export class PixivAppSource implements PixivSource {
       for (const work of result.illusts) {
         if (!object(work) || !object(work.user) || id(work.user.id) !== pixivId) throw new Error('Pixiv 作品作者不匹配')
         if (work.is_visible === false) throw new Error('Pixiv 返回了不可见作品，请检查账号内容设置；未跳过或替换缓存')
-        ids.push(id(work.id))
+        works.push({ id: id(work.id), thumbnail: object(work.image_urls) ? work.image_urls.square_medium : undefined })
       }
       if (result.next_url === null) break
       if (typeof result.next_url !== 'string') throw new Error('Pixiv App API 分页数据无效')
@@ -213,14 +213,31 @@ export class PixivAppSource implements PixivSource {
         || (next.searchParams.get('filter') ?? '') !== '') throw new Error('Pixiv App API 分页 URL 无效')
       url = next
     }
-    return ids
+    return works
   }
 
   async latest(pixivId: string, signal: AbortSignal) {
     if (!validPixivId(pixivId)) throw new Error('Pixiv 用户 ID 无效')
     const illustrations = await this.works(pixivId, 'illust', signal)
     const manga = await this.works(pixivId, 'manga', signal)
-    return newestFirst([...illustrations, ...manga]).slice(0, PIXIV_IMAGE_LIMIT)
+    return newestFirst([...illustrations, ...manga].map(work => work.id)).slice(0, PIXIV_IMAGE_LIMIT)
+  }
+
+  async latestImages(pixivId: string, signal: AbortSignal) {
+    if (!validPixivId(pixivId)) throw new Error('Pixiv 用户 ID 无效')
+    const works = [...await this.works(pixivId, 'illust', signal), ...await this.works(pixivId, 'manga', signal)]
+    return newestFirst(works.map(work => work.id)).slice(0, PIXIV_IMAGE_LIMIT).map(id => ({
+      id, url: this.thumbnailUrl(works.find(work => work.id === id)!.thumbnail).href,
+    }))
+  }
+
+  private thumbnailUrl(value: unknown) {
+    if (typeof value !== 'string') throw new Error('Pixiv 作品没有可用的 square_medium 缩略图，不回退到其他尺寸')
+    const url = new URL(value)
+    if (url.protocol !== 'https:' || !url.hostname.endsWith('.pximg.net') || url.port || url.username || url.password) {
+      throw new Error('Pixiv 图片 URL 不受支持')
+    }
+    return url
   }
 
   async image(pixivId: string, imageId: string, signal: AbortSignal) {
@@ -231,11 +248,11 @@ export class PixivAppSource implements PixivSource {
     if (!object(work) || id(work.id) !== imageId || !object(work.user) || id(work.user.id) !== pixivId) throw new Error('Pixiv 作品 ID 或作者不匹配')
     if (work.is_visible === false) throw new Error('Pixiv 作品不可见，请检查账号内容设置')
     const thumbnail = object(work.image_urls) ? work.image_urls.square_medium : undefined
-    if (typeof thumbnail !== 'string') throw new Error('Pixiv 作品没有可用的 square_medium 缩略图，不回退到其他尺寸')
-    const imageUrl = new URL(thumbnail)
-    if (imageUrl.protocol !== 'https:' || !imageUrl.hostname.endsWith('.pximg.net') || imageUrl.port || imageUrl.username || imageUrl.password) {
-      throw new Error('Pixiv 图片 URL 不受支持')
-    }
+    return this.download(this.thumbnailUrl(thumbnail).href, signal)
+  }
+
+  async download(url: string, signal: AbortSignal) {
+    const imageUrl = this.thumbnailUrl(url)
     const response = await this.send(imageUrl, signal, { headers: { Referer: 'https://www.pixiv.net/' } })
     await this.checkResponse(response)
     if (!response.body) throw new Error('Pixiv 图片响应体为空')

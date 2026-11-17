@@ -42,6 +42,9 @@ class MemoryPixivStore implements PixivStore {
   }
   async images(id: string) { return this.records.get(id) ?? [] }
   async replace(id: string, ids: string[]) { this.records.set(id, [...ids]) }
+  async saveImage(id: string, imageId: string) {
+    this.records.set(id, [...new Set([...(this.records.get(id) ?? []), imageId])])
+  }
   async touch(id: string, date: Date) {
     for (const booth of this.booths.values()) if (booth.pixivId === id) booth.updatedAt = date
   }
@@ -60,6 +63,82 @@ async function fixture(t: { after: (callback: () => Promise<void>) => void }) {
   t.after(async () => { await service.close(); await rm(directory, { recursive: true, force: true }) })
   return { directory, storage, store, source, service, calls }
 }
+
+test('live manifest immediately reuses indexed files and proxies missing images before background persistence completes', async t => {
+  const { service, source, store, storage, calls } = await fixture(t)
+  const cached = await storage.stage('11', '11', png, 'png')
+  await cached.commit()
+  await store.saveImage('11', '11')
+  source.latestImages = async () => ['12', '11'].map(id => ({ id, url: `https://i.pximg.net/square/${id}.png` }))
+  const stage = storage.stage.bind(storage)
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  t.mock.method(storage, 'stage', async (...args: Parameters<PixivStorage['stage']>) => {
+    await gate
+    return stage(...args)
+  })
+  let downloads = 0
+  source.download = async url => {
+    assert.equal(url, 'https://i.pximg.net/square/12.png')
+    downloads++
+    return { body: png, extension: 'png' }
+  }
+  const result = await service.liveGallery('1', new AbortController().signal)
+  assert.equal(result!.images[1]!.url, '/api/social/pixiv/images/11/11.png')
+  assert.equal(result!.missingCount, 1)
+  assert.deepEqual(calls, [])
+  assert.equal(downloads, 0, 'Returning the list must not wait for missing images')
+  const token = result!.images[0]!.url.split('/').at(-1)!
+  try {
+    const [first, second] = await Promise.all([service.liveImage(token), service.liveImage(token)])
+    assert.deepEqual(first.body, png)
+    assert.deepEqual(second.body, png)
+    assert.equal(downloads, 1)
+    assert.deepEqual(await store.images('11'), ['11'], 'Slow disk writes must not block image delivery')
+    await assert.rejects(service.liveImage(`${token}bad`), /图片链接无效/)
+  } finally { release() }
+  await service.close()
+  assert.deepEqual(await store.images('11'), ['11', '12'])
+  assert.deepEqual((await storage.list('11')).map(file => file.id), ['12', '11'])
+  assert.equal(store.booths.get('1')!.updatedAt, null)
+})
+
+test('live images share a three-download limit and persist each image independently', async t => {
+  const { service, source, store, storage } = await fixture(t)
+  source.latestImages = async () => ['15', '14', '13', '12', '11'].map(id => ({ id, url: `https://i.pximg.net/${id}.png` }))
+  let active = 0, maximum = 0, started = 0, release!: () => void, ready!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const firstThree = new Promise<void>(resolve => { ready = resolve })
+  source.download = async () => {
+    active++; started++; maximum = Math.max(maximum, active)
+    if (started === 3) ready()
+    await gate
+    active--
+    return { body: png, extension: 'png' }
+  }
+  const manifest = await service.liveGallery('1', new AbortController().signal)
+  const downloads = manifest!.images.map(image => service.liveImage(image.url.split('/').at(-1)!))
+  try {
+    await firstThree
+    assert.equal(started, 3)
+    assert.equal(maximum, 3)
+  } finally { release() }
+  await Promise.all(downloads)
+  await service.close()
+  assert.equal((await store.images('11')).length, 5)
+  assert.equal((await storage.list('11')).length, 5)
+})
+
+test('partially populated indexed cache does not restore a full-check timestamp or skip a batch refresh', async t => {
+  const { service, store, storage, calls } = await fixture(t)
+  const cached = await storage.stage('11', '11', png, 'png')
+  await cached.commit()
+  await store.saveImage('11', '11')
+  await service.checkBooth('1')
+  assert.deepEqual(calls, ['latest:11', 'image:12'])
+  assert.deepEqual(await store.images('11'), ['12', '11'])
+  assert.equal((await service.gallery('1'))!.images.length, 2)
+})
 
 test('Cloudflare challenges and access denial stop the batch immediately without changing stored images or checking other artists', async t => {
   const { store, storage } = await fixture(t)
@@ -268,6 +347,7 @@ test('Pixiv endpoints scope batch jobs to the session, protect writes, and read 
   const post = (body: unknown, extra = {}) => fetch(`${base}/start`, { method: 'POST', headers: { ...headers, ...extra }, body: JSON.stringify(body) })
   assert.equal((await fetch(`${base}/start`, { method: 'POST' })).status, 401)
   assert.equal((await fetch(`${base}/status`)).status, 401)
+  assert.equal((await fetch(`${base}/live/booths/1`)).status, 401)
   assert.equal((await fetch(`${base}/STATUS/`)).status, 401)
   assert.equal((await post({ mode: 'refresh' }, { Origin: 'https://other.invalid' })).status, 403)
   for (const body of [null, [], {}, { mode: 'bad' }, { mode: 'refresh', userId: 'second' }]) {
@@ -304,6 +384,18 @@ test('Pixiv endpoints scope batch jobs to the session, protect writes, and read 
   const completed = await waitForJob(service, 'first')
   assert.equal(completed.total, 0)
   assert.equal(completed.status, 'succeeded')
+  source.latestImages = async () => [{ id: '99', url: 'https://i.pximg.net/square/99.png' }]
+  source.download = async () => ({ body: png, extension: 'png' })
+  const liveResponse = await fetch(`${base}/live/booths/1`, { headers })
+  assert.equal(liveResponse.status, 200)
+  const live = await liveResponse.json()
+  assert.equal(live.images.length, 1)
+  const proxy = await fetch(new URL(live.images[0].url, base), { headers })
+  assert.equal(proxy.status, 200)
+  assert.equal(proxy.headers.get('content-type'), 'image/png')
+  assert.deepEqual(Buffer.from(await proxy.arrayBuffer()), png)
+  assert.equal((await fetch(`${base}/live/images/invalid`)).status, 401)
+  assert.equal((await fetch(`${base}/live/images/invalid`, { headers })).status, 400)
 })
 
 test('MySQL Pixiv index enforces unique artwork ownership, scopes favorite targets and updates all booths sharing an artist',
@@ -339,6 +431,12 @@ test('MySQL Pixiv index enforces unique artwork ownership, scopes favorite targe
       assert.deepEqual(await store.favorites(randomUUID(), false), [])
       assert.deepEqual(await store.booth(first), { id: first, pixivId: pixiv, updatedAt: now })
       assert.equal(await store.booth(`${prefix}99`), null)
+      await store.replace(pixiv, [image])
+      await store.saveImage(pixiv, image)
+      const cachedImage = `${prefix}34`
+      await store.saveImage(pixiv, cachedImage)
+      assert.deepEqual((await store.images(pixiv)).sort(), [image, cachedImage].sort())
+      await assert.rejects(store.saveImage(another, image), /作者不匹配/)
       await store.replace(pixiv, [image])
       assert.deepEqual(await store.images(pixiv), [image])
       await assert.rejects(store.replace(another, [image]), error =>

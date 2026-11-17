@@ -11,6 +11,25 @@ const auth = { refreshToken: 'test-refresh', clientId: 'test-client', clientSecr
 const work = (id: string, extra = {}) => ({ id, user: { id: '11' }, is_visible: true, x_restrict: 0, ...extra })
 const list = (illusts: unknown[] = [], next_url: string | null = null) => Response.json({ illusts, next_url })
 
+test('live previews use list square_medium URLs and CDN only, without artwork detail requests', async () => {
+  const requests: string[] = []
+  const source = new PixivAppSource({ accessToken: 'test-access' }, async input => {
+    const url = new URL(String(input))
+    requests.push(url.href)
+    if (url.hostname.endsWith('.pximg.net')) return new Response(png)
+    assert.equal(url.pathname, '/v1/user/illusts')
+    return url.searchParams.get('type') === 'manga' ? list() : list([work('12', {
+      image_urls: { square_medium: 'https://i.pximg.net/square/12.png' },
+    })])
+  })
+  const images = await source.latestImages('11', signal())
+  assert.deepEqual(images, [{ id: '12', url: 'https://i.pximg.net/square/12.png' }])
+  assert.deepEqual(await source.download(images[0]!.url, signal()), { body: png, extension: 'png' })
+  assert.equal(requests.length, 3)
+  await assert.rejects(source.download('https://example.invalid/image.png', signal()), /URL/)
+  assert.equal(requests.length, 3)
+})
+
 test('429 pauses concurrent requests and retries once per minute until recovery', async t => {
   const waits: number[] = []
   let release!: () => void

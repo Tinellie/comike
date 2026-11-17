@@ -10,6 +10,7 @@ export interface PixivStore {
   images(pixivId: string): Promise<string[]>
   replace(pixivId: string, imageIds: string[]): Promise<void>
   touch(pixivId: string, date: Date): Promise<void>
+  saveImage(pixivId: string, imageId: string): Promise<void>
 }
 
 export class MysqlPixivStore implements PixivStore {
@@ -54,5 +55,15 @@ export class MysqlPixivStore implements PixivStore {
 
   async touch(pixivId: string, date: Date) {
     await this.database.update(booths).set({ pixiv_images_updated_at: date }).where(eq(booths.pixiv_id, pixivId))
+  }
+
+  async saveImage(pixivId: string, imageId: string) {
+    await this.database.transaction(async tx => {
+      await tx.insert(imagesPixiv).values({ pixiv_id: pixivId, image_id: imageId })
+        .onDuplicateKeyUpdate({ set: { image_id: imageId } })
+      const [row] = await tx.select({ owner: imagesPixiv.pixiv_id }).from(imagesPixiv)
+        .where(eq(imagesPixiv.image_id, imageId))
+      if (row?.owner !== pixivId) throw new Error('Pixiv 图片索引作者不匹配')
+    })
   }
 }
