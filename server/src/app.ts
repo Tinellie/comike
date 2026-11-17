@@ -15,6 +15,8 @@ import type { FavoritesService } from './favorites/service.js'
 import { favoritesRouter } from './favorites/routes.js'
 import type { ColourStore } from './colours/repository.js'
 import { coloursRouter } from './colours/routes.js'
+import { pixivRouter } from './social/pixiv/routes.js'
+import type { PixivService } from './social/pixiv/service.js'
 
 export interface AppOptions {
   checkDatabase: () => Promise<void>
@@ -33,13 +35,14 @@ export interface AppOptions {
   mediaRoot?: string
   favorites?: FavoritesService
   colourStore?: ColourStore
+  pixiv?: PixivService
 }
 
 export function createApp({
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
   regeneratePreview,
   crawler, initializeDatabase, authStore, secureCookie, trustProxy,
-  boothStore, mediaRoot, favorites, colourStore,
+  boothStore, mediaRoot, favorites, colourStore, pixiv,
 }: AppOptions) {
   const app = express()
   app.disable('x-powered-by')
@@ -55,6 +58,14 @@ export function createApp({
   if (favorites) app.use('/api/import', favoritesRouter(favorites, auth.userFor))
   app.use('/api/colours', auth.requireUser, originCheck)
   if (colourStore) app.use('/api/colours', coloursRouter(colourStore, auth.userFor))
+  app.use('/api/social/pixiv', (req, res, next) => {
+    if ((req.method === 'GET' || req.method === 'HEAD') && /^\/(?:booths|images)\//i.test(req.path)) next()
+    else auth.requireUser(req, res, next)
+  }, (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') next()
+    else originCheck(req, res, next)
+  })
+  if (pixiv) app.use('/api/social/pixiv', pixivRouter(pixiv, auth.userFor))
   app.use('/api/preview', (req, res, next) => {
     // Map also uses the original PDF images; these read-only assets remain public.
     if ((req.method === 'GET' || req.method === 'HEAD') && /^\/page-\d{3}-pdf\.png$/.test(req.path)) next()

@@ -45,6 +45,8 @@ export const booths = mysqlTable('booths', {
   genre: varchar('genre', { length: 255 }),
   genre_code: varchar('genre_code', { length: 16 }),
   circle_id: varchar('circle_id', { length: 32 }),
+  // Drizzle emits updates in schema order; invalidate history before changing the Pixiv ID.
+  pixiv_images_updated_at: datetime('pixiv_images_updated_at'),
   pixiv_id: varchar('pixiv_id', { length: 32 }),
   twitter_id: varchar('twitter_id', { length: 64 }),
   circle_appeal: longtext('circle_appeal'),
@@ -69,6 +71,11 @@ export const circleListCache = mysqlTable('circle_list_cache', {
 })
 
 export type Booth = typeof booths.$inferInsert
+
+export const imagesPixiv = mysqlTable('images_pixiv', {
+  image_id: varchar('image_id', { length: 32 }).primaryKey(),
+  pixiv_id: varchar('pixiv_id', { length: 32 }).notNull(),
+}, table => [index('images_pixiv_user_idx').on(table.pixiv_id)])
 
 export const mapVacancies = mysqlTable('map_vacancies', {
   event_id: varchar('event_id', { length: 32 }).notNull(),

@@ -85,6 +85,13 @@
       "when": 1794708744007,
       "tag": "0011_minor_junta",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1794944094115,
+      "tag": "0012_lush_devos",
+      "breakpoints": true
     }
   ]
 }

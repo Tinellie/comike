@@ -17,6 +17,10 @@ import { FavoritesService } from './favorites/service.js'
 import { MysqlFavoritesStore } from './favorites/repository.js'
 import { favoritesUrl } from './favorites/parser.js'
 import { MysqlColourStore } from './colours/repository.js'
+import { MysqlPixivStore } from './social/pixiv/repository.js'
+import { PixivAppSource, pixivAppOptions } from './social/pixiv/appSource.js'
+import { PixivStorage } from './social/pixiv/storage.js'
+import { PixivService } from './social/pixiv/service.js'
 
 const port = Number(process.env.PORT ?? 3001)
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -51,7 +55,10 @@ const crawler = new CrawlerService(
 )
 const favorites = new FavoritesService(new MysqlFavoritesStore(),
   () => new RemoteLogin(undefined, undefined, favoritesUrl, 'table.t-user-favorites'))
+const pixiv = new PixivService(new MysqlPixivStore(), new PixivAppSource(pixivAppOptions()),
+  new PixivStorage(resolve(projectRoot, process.env.MEDIA_ROOT ?? 'storage')))
 const app = createApp({
+  pixiv,
   colourStore: new MysqlColourStore(),
   favorites,
   authStore: new MysqlAuthStore(),
@@ -86,7 +93,7 @@ function shutdown() {
   timeout.unref()
 
   void (async () => {
-    await Promise.all([crawler.close(), favorites.close()])
+    await Promise.all([crawler.close(), favorites.close(), pixiv.close()])
     await new Promise<void>((resolve, reject) => {
       server.close(error => error ? reject(error) : resolve())
     })
