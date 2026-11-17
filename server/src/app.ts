@@ -68,7 +68,13 @@ export function createApp({
     if (req.method === 'GET' || req.method === 'HEAD') next()
     else originCheck(req, res, next)
   })
-  if (boothStore && mediaRoot) app.use('/api/booths', boothRouter(boothStore, mediaRoot, auth.currentUser))
+  if (boothStore && mediaRoot) app.use('/api/booths', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') next()
+    else auth.requireUser(req, res, next)
+  }, (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') next()
+    else originCheck(req, res, next)
+  }, boothRouter(boothStore, mediaRoot, auth.currentUser))
   if (crawler && initializeDatabase) {
     app.use('/api/crawler', crawlerRouter(crawler, initializeDatabase, hallEditorOrigin))
   }

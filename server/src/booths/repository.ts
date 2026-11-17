@@ -1,12 +1,13 @@
-import { and, count, eq, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, count, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { booths, mapVacancies, mapVacancyRegions, mapGenres, mapGenreRegions, userFavorites, users, userColourPriorities } from '../db/schema.js'
 import { BoothFilterError, eventDays, hallGroup } from './catalog.js'
 import type { BoothQuery, HallGroup } from './catalog.js'
 import { colourOrdering } from './colourOrder.js'
+import { syncColourPriorities } from '../colours/repository.js'
 
-type Database = Pick<NonNullable<typeof db>, 'select' | 'selectDistinct'>
+type Database = Pick<NonNullable<typeof db>, 'select' | 'selectDistinct' | 'transaction'>
 type Day = ReturnType<typeof eventDays>['days'][number]
 
 function database() {
@@ -108,7 +109,7 @@ export class MysqlBoothRepository {
         .where(and(eq(users.id, userId), eq(booths.event_id, event.eventId)))
         .orderBy(...colourOrdering(sql`${userFavorites.colour}`, false, sql`${userColourPriorities.priority}`)) : [],
     ])
-    return { ...options, events, genres, colours: colours.map(row => row.colour) }
+    return { ...options, events, genres, colours: colours.flatMap(row => row.colour ? [row.colour] : []) }
   }
 
   private groupExpression(groups: HallGroup[]) {
@@ -233,6 +234,33 @@ export class MysqlBoothRepository {
     return { ...presentation(row, groups, dates.days), memo: favorites[0]?.memo ?? null, colour: favorites[0]?.colour ?? null }
   }
 
+  async editFavorite(id: string, userId: string, patch: { colour?: string | null; memo?: string }) {
+    return this.database.transaction(async tx => {
+      const [user] = await tx.select({ id: users.internal_id }).from(users).where(eq(users.id, userId)).for('update')
+      if (!user) throw new Error('收藏用户不存在')
+      const [booth] = await tx.select({ id: booths.id }).from(booths).where(eq(booths.id, id)).limit(1)
+      if (!booth) return null
+      if (patch.colour) {
+        const known = await syncColourPriorities(tx, user.id)
+        if (!known.some(entry => entry.colour === patch.colour)) throw new BoothFilterError('请选择已有收藏颜色')
+      }
+      await tx.insert(userFavorites).values({ user_id: user.id, booth_id: id, colour: patch.colour ?? null, memo: patch.memo ?? '' })
+        .onDuplicateKeyUpdate({ set: patch })
+      const [saved] = await tx.select({ colour: userFavorites.colour, memo: userFavorites.memo }).from(userFavorites)
+        .where(and(eq(userFavorites.user_id, user.id), eq(userFavorites.booth_id, id)))
+      return saved!
+    })
+  }
+
+  async editLink(id: string, field: 'circle_id' | 'pixiv_id' | 'twitter_id', value: string | null) {
+    return this.database.transaction(async tx => {
+      const [booth] = await tx.select({ id: booths.id }).from(booths).where(eq(booths.id, id)).for('update')
+      if (!booth) return null
+      await tx.update(booths).set({ [field]: value }).where(eq(booths.id, id))
+      return { [field]: value }
+    })
+  }
+
   async mapData(eventId: string, weekday: string) {
     const filter = and(eq(mapGenres.event_id, eventId), eq(mapGenres.weekday, weekday))
     const [mergedRows, vacancyRows, vacancyRegions, genres, genreRegions] = await Promise.all([
@@ -270,12 +298,12 @@ export class MysqlBoothRepository {
       }).from(userFavorites)
         .innerJoin(users, eq(users.internal_id, userFavorites.user_id))
         .innerJoin(booths, eq(booths.id, userFavorites.booth_id))
-        .where(and(eq(users.id, userId), eq(booths.event_id, eventId), eq(booths.weekday, weekday)))
+        .where(and(eq(users.id, userId), eq(booths.event_id, eventId), eq(booths.weekday, weekday), isNotNull(userFavorites.colour)))
         .orderBy(booths.id),
     ])
     return rows.map(({ hall, ...row }) => {
-      if (!/^#[\dA-F]{6}$/i.test(row.colour)) throw new Error(`Favorite ${row.boothId} has an invalid colour`)
-      return { ...row, hallGroup: hallGroup(groups, hall, row.island) }
+      if (!row.colour || !/^#[\dA-F]{6}$/i.test(row.colour)) throw new Error(`Favorite ${row.boothId} has an invalid colour`)
+      return { ...row, colour: row.colour, hallGroup: hallGroup(groups, hall, row.island) }
     })
   }
 
@@ -302,4 +330,4 @@ export class MysqlBoothRepository {
   }
 }
 
-export type BoothStore = Pick<MysqlBoothRepository, 'options' | 'days' | 'list' | 'detail' | 'atLocation' | 'mapData' | 'mapFavorites'>
+export type BoothStore = Pick<MysqlBoothRepository, 'options' | 'days' | 'list' | 'detail' | 'atLocation' | 'mapData' | 'mapFavorites' | 'editFavorite' | 'editLink'>

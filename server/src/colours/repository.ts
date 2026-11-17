@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNotNull } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { userColourPriorities, userFavorites, users } from '../db/schema.js'
 
@@ -23,12 +23,12 @@ export async function syncColourPriorities(tx: Transaction, userId: number): Pro
     .from(userColourPriorities).where(eq(userColourPriorities.user_id, userId))
     .orderBy(userColourPriorities.priority, userColourPriorities.colour)
   const colours = await tx.selectDistinct({ colour: userFavorites.colour }).from(userFavorites)
-    .where(eq(userFavorites.user_id, userId)).orderBy(userFavorites.colour)
+    .where(and(eq(userFavorites.user_id, userId), isNotNull(userFavorites.colour))).orderBy(userFavorites.colour)
   const known = new Set(saved.map(entry => entry.colour))
   let next = saved.reduce((max, entry) => Math.max(max, entry.priority + 1), 0)
-  const added = colours.filter(entry => !known.has(entry.colour)).map(entry => ({
+  const added = colours.flatMap(entry => entry.colour && !known.has(entry.colour) ? [{
     user_id: userId, colour: entry.colour, priority: next++,
-  }))
+  }] : [])
   for (let offset = 0; offset < added.length; offset += 500) {
     await tx.insert(userColourPriorities).values(added.slice(offset, offset + 500))
   }

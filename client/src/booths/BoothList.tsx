@@ -11,6 +11,7 @@ import BoothDetail from './BoothDetail'
 import { BoothImages, BoothLinks } from './BoothMedia'
 import { useAuth } from '../auth/context'
 import ColourPreferences from './ColourPreferences'
+import BoothEditor from './BoothEditor'
 
 function BoothHeader({ children }: { children?: ReactNode }) {
   return <Stack direction="row" sx={{ mb: 2, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
@@ -39,6 +40,7 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<BoothSummary | null>(null)
+  const [editor, setEditor] = useState<{ booth: BoothListItem; anchor: HTMLElement } | null>(null)
   const sentinel = useRef<HTMLDivElement | null>(null)
   const request = useRef<AbortController | null>(null)
   const inFlight = useRef(false)
@@ -68,7 +70,7 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
     }).finally(() => {
       if (!signal.aborted) { inFlight.current = false; setLoading(false) }
     })
-  }, [queryString])
+  }, [queryString, setItems])
 
   useEffect(() => {
     request.current?.abort()
@@ -120,7 +122,7 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
   return <>
     <BoothHeader>
       {user && <ColourPreferences onSaved={ordered => {
-        setAvailableColours(ordered.filter(colour => options.colours.includes(colour)))
+        setAvailableColours(ordered.filter(colour => availableColours.includes(colour)))
         resetPage()
         setColourRevision(value => value + 1)
       }} />}
@@ -204,7 +206,9 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
               {booth.memo?.trim() ? booth.memo : '—'}
             </Typography></TableCell>
             <TableCell><BoothLinks booth={booth} /></TableCell>
-            <TableCell><Tooltip title="操作预留 · 点击查看详情"><IconButton size="small" aria-label={`${booth.circle_name} 操作（预留）`}>⋯</IconButton></Tooltip></TableCell>
+            <TableCell><Tooltip title={user ? '编辑收藏和备注' : '请先登录'}><span><IconButton size="small" disabled={!user} aria-label={`${booth.circle_name} 操作`}
+              onClick={event => { event.stopPropagation(); setEditor({ booth, anchor: event.currentTarget }) }}
+              onKeyDown={event => event.stopPropagation()}>⋯</IconButton></span></Tooltip></TableCell>
           </TableRow>)}
         </TableBody>
       </Table>
@@ -273,6 +277,13 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
         </Stack>
       </Stack>
     </Popover>
+    {editor && user && <BoothEditor key={`${user.id}:${editor.booth.id}`} booth={editor.booth} anchor={editor.anchor} isAdmin={user.isAdmin}
+      onChange={(patch, palette) => {
+        setItems(previous => previous.map(item => item.id === editor.booth.id ? { ...item, ...patch } : item))
+        setEditor(previous => previous ? { ...previous, booth: { ...previous.booth, ...patch } } : null)
+        if (patch.colour) setAvailableColours(previous => palette.filter(colour => previous.includes(colour) || colour === patch.colour))
+      }}
+      onClose={() => setEditor(null)} />}
     <BoothDetail key={selected?.id ?? 'closed'} booth={selected} onClose={() => setSelected(null)} />
   </>
 }

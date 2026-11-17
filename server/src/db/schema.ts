@@ -18,7 +18,7 @@ export const sessions = mysqlTable('sessions', {
 export const userFavorites = mysqlTable('user_favorites', {
   user_id: int('user_id').notNull().references(() => users.internal_id, { onDelete: 'cascade' }),
   booth_id: varchar('booth_id', { length: 32 }).notNull(),
-  colour: char('colour', { length: 7 }).notNull(),
+  colour: char('colour', { length: 7 }),
   memo: text('memo').notNull(),
 }, table => [primaryKey({ columns: [table.user_id, table.booth_id] })])
 

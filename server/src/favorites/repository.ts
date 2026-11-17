@@ -1,4 +1,4 @@
-import { count, eq } from 'drizzle-orm'
+import { and, count, eq, isNotNull } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { userFavorites, users } from '../db/schema.js'
 import type { Favorite } from './parser.js'
@@ -25,7 +25,7 @@ export class MysqlFavoritesStore implements FavoritesStore {
 
   async count(userId: string): Promise<number> {
     const [result] = await this.database.select({ count: count() }).from(userFavorites)
-      .innerJoin(users, eq(users.internal_id, userFavorites.user_id)).where(eq(users.id, userId))
+      .innerJoin(users, eq(users.internal_id, userFavorites.user_id)).where(and(eq(users.id, userId), isNotNull(userFavorites.colour)))
     return result?.count ?? 0
   }
 
