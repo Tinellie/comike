@@ -127,6 +127,12 @@ TWITTER_PROXY_URL=http://127.0.0.1:7890
 [Rettiwt 的认证说明](https://github.com/Rishikant181/Rettiwt-API#authentication) 在本地取得，
 不要贴到聊天、提交 Git 或发送给前端。仅采集有权保存和公开展示的图片；网站访客可读取已缓存图片。
 当前使用 `rettiwt-api@7.2.0`；需要 Node 22.21+（22.x）或 Node 24.x。
+通过 `patches/rettiwt-api+7.2.0.patch` 缓存请求标识的初始化材料：同一个服务实例的不同目标账号、
+分页请求共用初始化过程，成功初始化后保留 1 小时；每次 API 请求仍根据方法和路径生成新的 transaction ID，
+不缓存媒体列表或完整请求标识。初始化 / 生成失败会清理缓存并报错；HTTP 400 / 401 / 403 / 404
+清理对应材料供下次请求重新初始化，不新增认证失败重试，429 仍立即停止批量任务。
+`npm ci` / `npm install` 的 `postinstall` 自动应用补丁，失败会中止安装；不要使用 `--ignore-scripts`。
+Docker 构建同样先复制并应用补丁；升级 Rettiwt 时需重新核对补丁及对应测试。
 旧版 6.0.8 的请求标识解析不兼容当前 X 页面，可能报 `Couldn't get KEY_BYTE indices`。
 出现 `ECONNRESET`、连接超时等网络错误时，检查 `TWITTER_PROXY_URL`；
 如果 Pixiv 已通过代理正常访问，可填写相同的代理地址，但两项配置不会自动互相继承。

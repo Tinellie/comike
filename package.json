@@ -11,6 +11,7 @@
     "server"
   ],
   "scripts": {
+    "postinstall": "patch-package --error-on-fail",
     "dev": "concurrently --kill-others -n client,server \"npm run dev -w client\" \"npm run dev -w server\"",
     "build": "npm run build --workspaces",
     "typecheck": "npm run typecheck --workspaces",
@@ -21,6 +22,9 @@
     "db:migrate": "npm run db:migrate -w server",
     "db:studio": "npm run db:studio -w server",
     "db:init": "npm run db:init -w server"
+  },
+  "dependencies": {
+    "patch-package": "^8.0.1"
   },
   "devDependencies": {
     "concurrently": "^10.0.7",
