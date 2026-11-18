@@ -64,7 +64,7 @@ async function fixture(t: { after: (callback: () => Promise<void>) => void }) {
   return { directory, storage, store, source, service, calls }
 }
 
-test('live manifest immediately reuses indexed files and proxies missing images before background persistence completes', async t => {
+test('live manifest immediately reuses files, replaces the latest index and proxies missing images before disk writes complete', async t => {
   const { service, source, store, storage, calls } = await fixture(t)
   const cached = await storage.stage('11', '11', png, 'png')
   await cached.commit()
@@ -94,13 +94,58 @@ test('live manifest immediately reuses indexed files and proxies missing images 
     assert.deepEqual(first.body, png)
     assert.deepEqual(second.body, png)
     assert.equal(downloads, 1)
-    assert.deepEqual(await store.images('11'), ['11'], 'Slow disk writes must not block image delivery')
+    assert.deepEqual(await store.images('11'), ['12', '11'], 'The latest list is indexed independently of slow image writes')
+    assert.deepEqual((await service.gallery('1'))!.images.map(image => image.id), ['11'])
     await assert.rejects(service.liveImage(`${token}bad`), /图片链接无效/)
   } finally { release() }
   await service.close()
-  assert.deepEqual(await store.images('11'), ['11', '12'])
+  assert.deepEqual(await store.images('11'), ['12', '11'])
   assert.deepEqual((await storage.list('11')).map(file => file.id), ['12', '11'])
   assert.equal(store.booths.get('1')!.updatedAt, null)
+})
+
+test('Pixiv detail synchronization always checks the latest list, removes stale entries and preserves cache on list failures', async t => {
+  const { service, source, store, storage } = await fixture(t)
+  await service.checkBooth('1')
+  let lists = 0
+  source.latestImages = async () => { lists++; return [{ id: '11', url: 'https://i.pximg.net/11.png' }] }
+  source.download = async () => { throw new Error('Cached images must not be downloaded') }
+  assert.deepEqual((await service.gallery('1'))!.images.map(image => image.id), ['12', '11'])
+  const result = await service.liveGallery('1', new AbortController().signal)
+  assert.deepEqual(result!.images, [{ id: '11', url: '/api/social/pixiv/images/11/11.png' }])
+  await service.liveGallery('1', new AbortController().signal)
+  assert.equal(lists, 2, 'The batch timestamp must not suppress detail synchronization')
+  assert.deepEqual(await store.images('11'), ['11'])
+  source.latestImages = async () => { throw new Error('List unavailable') }
+  await assert.rejects(service.liveGallery('1', new AbortController().signal), /List unavailable/)
+  assert.deepEqual((await service.gallery('1'))!.images.map(image => image.id), ['11'])
+  assert.equal((await storage.list('11')).length, 2, 'Detail synchronization must not prune files used by open galleries')
+  source.latestImages = async () => []
+  assert.deepEqual((await service.liveGallery('1', new AbortController().signal))!.images, [])
+  assert.deepEqual((await service.gallery('1'))!.images, [])
+})
+
+test('a late image save cannot restore entries removed by a newer synchronized list', async t => {
+  const { service, source, store, storage } = await fixture(t)
+  source.latestImages = async () => [{ id: '12', url: 'https://i.pximg.net/12.png' }]
+  source.download = async () => ({ body: png, extension: 'png' })
+  const stage = storage.stage.bind(storage)
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  t.mock.method(storage, 'stage', async (...args: Parameters<PixivStorage['stage']>) => {
+    await gate
+    return stage(...args)
+  })
+  try {
+    const manifest = await service.liveGallery('1', new AbortController().signal)
+    await service.liveImage(manifest!.images[0]!.url.split('/').at(-1)!)
+    source.latestImages = async () => []
+    await service.liveGallery('1', new AbortController().signal)
+  } finally { release() }
+  await service.close()
+  assert.deepEqual(await store.images('11'), [])
+  assert.deepEqual((await service.gallery('1'))!.images, [])
+  assert.deepEqual((await storage.list('11')).map(file => file.id), ['12'])
 })
 
 test('live images share a three-download limit and persist each image independently', async t => {

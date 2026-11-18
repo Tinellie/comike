@@ -5,6 +5,7 @@ import type { PixivJobStatus } from '../pixiv/service.js'
 import type { TwitterStore } from './repository.js'
 import { TwitterAccessError } from './source.js'
 import type { TwitterSource } from './source.js'
+import { LiveImages } from '../liveImages.js'
 
 const idle = (): PixivJobStatus => ({ status: 'idle', total: 0, completed: 0, updated: 0, skipped: 0, failed: 0, message: null })
 export class TwitterService {
@@ -15,9 +16,13 @@ export class TwitterService {
   private readonly source: TwitterSource
   readonly storage: PixivStorage
   private readonly now: () => Date
+  private readonly live: LiveImages
   constructor(
     store: TwitterStore, source: TwitterSource, storage: PixivStorage, now = () => new Date(),
-  ) { this.store = store; this.source = source; this.storage = storage; this.now = now }
+  ) {
+    this.store = store; this.source = source; this.storage = storage; this.now = now
+    this.live = new LiveImages('twitter', storage, (url, signal) => source.download(url, signal), this.controller.signal, now)
+  }
   status(userId: string) { return { ...(this.jobs.get(userId)?.state ?? idle()), busy: this.active, warning: null, retry: null } }
   async gallery(id: string) {
     const booth = await this.store.booth(id)
@@ -30,6 +35,28 @@ export class TwitterService {
     })
     return { images, missingCount: ids.length - images.length }
   }
+  async liveGallery(id: string, signal: AbortSignal) {
+    let booth = await this.store.booth(id)
+    if (!booth) return null
+    if (!booth.username) return { images: [], missingCount: 0 }
+    const combined = AbortSignal.any([signal, this.controller.signal])
+    let numberId = booth.numberId
+    if (!numberId) {
+      numberId = await this.source.resolve(booth.username, combined)
+      combined.throwIfAborted()
+      await this.store.resolve(booth.username, numberId)
+      booth = await this.store.booth(id)
+      if (booth?.numberId !== numberId) throw new Error('社团 Twitter 账号已变更，请重试')
+    }
+    if (!validPixivId(numberId)) throw new Error('Twitter 数字 ID 无效')
+    const [works, files] = await Promise.all([this.source.latest(numberId, combined), this.storage.list(numberId)])
+    combined.throwIfAborted()
+    const ids = works.map(work => work.id)
+    if (ids.length > 10 || new Set(ids).size !== ids.length || !ids.every(validPixivId)) throw new Error('Twitter 图片列表无效')
+    await this.store.replace(numberId, works)
+    return this.live.manifest(numberId, works, files)
+  }
+  liveImage(token: string) { return this.live.image(token) }
   async checkBooth(id: string) {
     const signal = this.controller.signal
     signal.throwIfAborted()
@@ -101,6 +128,7 @@ export class TwitterService {
   async close() {
     this.controller.abort()
     await Promise.all([...this.jobs.values()].map(job => job.task))
+    await this.live.close()
     await this.source.close?.()
   }
 }

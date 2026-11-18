@@ -1,13 +1,17 @@
 import { useState } from 'react'
-import { Box, ButtonBase, CircularProgress, Modal, Typography } from '@mui/material'
+import { Alert, Box, Button, ButtonBase, CircularProgress, Modal, Typography } from '@mui/material'
 import type { SocialImage } from './api'
 
-export default function ImageGallery({ images, label }: { images: SocialImage[]; label: string }) {
+export default function ImageGallery({ images, label, reserveSpace }: { images: SocialImage[]; label: string; reserveSpace: boolean }) {
   const [selected, setSelected] = useState<SocialImage | null>(null)
   const [loaded, setLoaded] = useState<Record<string, boolean>>({})
   const [failed, setFailed] = useState<Record<string, boolean>>({})
+  const expanded = images.length > 0 && (reserveSpace || images.some(image => loaded[image.url]))
   return <>
-    <Box aria-label={label} sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 1 }}>
+    {!expanded && images.some(image => failed[image.url]) && <Alert severity="error"
+      action={<Button onClick={() => setFailed({})}>重试</Button>}>图片加载失败</Alert>}
+    <Box aria-label={label} aria-hidden={!expanded} inert={!expanded}
+      sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 1, height: expanded ? 'auto' : 0, overflow: expanded ? undefined : 'hidden' }}>
       {Array.from({ length: 10 }, (_, index) => {
         const image = images[index]
         return image ? <ButtonBase key={image.id} aria-label={`展开 ${label} ${image.id}`}

@@ -2,11 +2,11 @@ import type { PixivStore } from './repository.js'
 import { PIXIV_IMAGE_LIMIT, PixivAccessError, newestFirst, validPixivId } from './source.js'
 import type { PixivSource } from './source.js'
 import { PixivStorage } from './storage.js'
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { LiveImages } from '../liveImages.js'
+export { ImageTokenError as PixivImageTokenError } from '../liveImages.js'
 
 export const PIXIV_MIN_UPDATE_INTERVAL = 60 * 60 * 1000
 export class PixivConflictError extends Error {}
-export class PixivImageTokenError extends Error {}
 export interface PixivJobStatus {
   status: 'idle' | 'running' | 'succeeded' | 'failed'
   total: number
@@ -28,14 +28,14 @@ export class PixivService {
   private readonly jobs = new Map<string, Job>()
   private active = false
   private readonly artists = new Map<string, Promise<'updated' | 'skipped'>>()
-  private readonly imageKey = randomBytes(32)
-  private readonly downloads = new Map<string, Promise<{ body: Buffer; extension: string }>>()
-  private readonly saves = new Set<Promise<void>>()
-  private imageRequests = 0
-  private readonly imageQueue: (() => void)[] = []
+  private readonly live: LiveImages
 
   constructor(store: PixivStore, source: PixivSource, storage: PixivStorage, now = () => new Date()) {
     this.store = store; this.source = source; this.storage = storage; this.now = now
+    this.live = new LiveImages('pixiv', storage, (url, signal) => {
+      if (!source.download) throw new Error('Pixiv 数据源不支持图片转发')
+      return source.download(url, signal)
+    }, this.controller.signal, now)
   }
 
   status(userId: string) {
@@ -68,72 +68,19 @@ export class PixivService {
     if (!booth.pixivId) return { pixivId: null, updatedAt: null, images: [], missingCount: 0 }
     if (!this.source.latestImages || !this.source.download) throw new Error('Pixiv 数据源不支持即时预览')
     const combined = AbortSignal.any([signal, this.controller.signal])
-    const works = await this.source.latestImages(booth.pixivId, combined)
-    const [indexed, files] = await Promise.all([this.store.images(booth.pixivId), this.storage.list(booth.pixivId)])
-    let missingCount = 0
-    const images = works.map(work => {
-      const file = indexed.includes(work.id) ? files.find(file => file.id === work.id) : undefined
-      if (file) return { id: work.id, url: `/api/social/pixiv/images/${booth.pixivId}/${file.name}` }
-      missingCount++
-      const payload = Buffer.from(JSON.stringify({
-        pixivId: booth.pixivId, imageId: work.id, url: work.url, expires: this.now().getTime() + 15 * 60_000,
-      })).toString('base64url')
-      const signature = createHmac('sha256', this.imageKey).update(payload).digest('base64url')
-      return { id: work.id, url: `/api/social/pixiv/live/images/${payload}.${signature}` }
-    })
-    return { pixivId: booth.pixivId, updatedAt: this.now().toISOString(), images, missingCount }
-  }
-
-  async liveImage(token: string) {
-    const [payload, signature, extra] = token.split('.')
-    if (!payload || !signature || extra || token.length > 4096) throw new PixivImageTokenError('图片链接无效，请重新打开详情')
-    const expected = createHmac('sha256', this.imageKey).update(payload).digest()
-    const actual = Buffer.from(signature, 'base64url')
-    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new PixivImageTokenError('图片链接无效，请重新打开详情')
-    const value: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString())
-    if (!value || typeof value !== 'object' || !('pixivId' in value) || typeof value.pixivId !== 'string'
-      || !validPixivId(value.pixivId) || !('imageId' in value) || typeof value.imageId !== 'string'
-      || !validPixivId(value.imageId) || !('url' in value) || typeof value.url !== 'string'
-      || !('expires' in value) || typeof value.expires !== 'number' || value.expires <= this.now().getTime()) {
-      throw new PixivImageTokenError('图片链接已失效，请重新打开详情')
+    const [works, files] = await Promise.all([
+      this.source.latestImages(booth.pixivId, combined), this.storage.list(booth.pixivId),
+    ])
+    combined.throwIfAborted()
+    const ids = works.map(work => work.id)
+    if (ids.length > PIXIV_IMAGE_LIMIT || new Set(ids).size !== ids.length || !ids.every(validPixivId)) {
+      throw new Error('Pixiv 最新作品列表无效')
     }
-    const key = `${value.pixivId}:${value.imageId}`
-    const existing = this.downloads.get(key)
-    if (existing) return existing
-    if (!this.source.download) throw new Error('Pixiv 数据源不支持图片转发')
-    const { pixivId, imageId, url } = value
-    const download = this.source.download.bind(this.source)
-    const task = (async () => {
-      if (this.imageRequests >= 3) await new Promise<void>(resolve => this.imageQueue.push(resolve))
-      else this.imageRequests++
-      try {
-        this.controller.signal.throwIfAborted()
-        const image = await download(url, this.controller.signal)
-        const save = this.saveLiveImage(pixivId, imageId, image)
-          .catch((error: unknown) => { console.error('Pixiv background image cache failed:', imageId, error) })
-        this.saves.add(save)
-        void save.finally(() => { this.saves.delete(save); this.downloads.delete(key) })
-        return image
-      } catch (error) {
-        this.downloads.delete(key)
-        throw error
-      } finally {
-        const next = this.imageQueue.shift()
-        if (next) next()
-        else this.imageRequests--
-      }
-    })()
-    this.downloads.set(key, task)
-    return task
+    await this.store.replace(booth.pixivId, ids)
+    return { pixivId: booth.pixivId, updatedAt: this.now().toISOString(), ...this.live.manifest(booth.pixivId, works, files) }
   }
 
-  private async saveLiveImage(pixivId: string, imageId: string, image: { body: Buffer; extension: string }) {
-    const staged = await this.storage.stage(pixivId, imageId, image.body, image.extension)
-    try {
-      await staged.commit()
-      await this.store.saveImage(pixivId, imageId)
-    } finally { await staged.clean() }
-  }
+  liveImage(token: string) { return this.live.image(token) }
 
   async checkBooth(id: string): Promise<'updated' | 'skipped'> {
     const booth = await this.store.booth(id)
@@ -233,8 +180,7 @@ export class PixivService {
     this.controller.abort(new Error('服务正在关闭，Pixiv 图片任务已停止'))
     await Promise.all([...this.jobs.values()].map(job => job.task))
     await Promise.allSettled(this.artists.values())
-    await Promise.allSettled(this.downloads.values())
-    await Promise.all(this.saves)
+    await this.live.close()
     await this.source.close?.()
   }
 }

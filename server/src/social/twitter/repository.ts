@@ -9,6 +9,7 @@ export interface TwitterStore {
   favorites(userId: string, missingOnly: boolean): Promise<string[]>
   resolve(username: string, numberId: string): Promise<void>
   images(numberId: string): Promise<string[]>
+  replace(numberId: string, images: TwitterImage[]): Promise<void>
   complete(numberId: string, images: TwitterImage[], date: Date): Promise<void>
 }
 export class MysqlTwitterStore implements TwitterStore {
@@ -40,13 +41,19 @@ export class MysqlTwitterStore implements TwitterStore {
       .orderBy(desc(imagesTwitter.tweet_created_at), desc(sql`cast(${imagesTwitter.tweet_id} as decimal(32, 0))`),
         asc(imagesTwitter.media_index), desc(sql`cast(${imagesTwitter.image_id} as decimal(32, 0))`))).map(row => row.id)
   }
+  private async replaceIndex(connection: Pick<NonNullable<typeof db>, 'delete' | 'insert'>, numberId: string, images: TwitterImage[]) {
+    await connection.delete(imagesTwitter).where(eq(imagesTwitter.twitter_number_id, numberId))
+    if (images.length) await connection.insert(imagesTwitter).values(images.map(image => ({
+      image_id: image.id, twitter_number_id: numberId, tweet_id: image.tweetId,
+      tweet_created_at: image.publishedAt, media_index: image.mediaIndex,
+    })))
+  }
+  async replace(numberId: string, images: TwitterImage[]) {
+    await this.database.transaction(tx => this.replaceIndex(tx, numberId, images))
+  }
   async complete(numberId: string, images: TwitterImage[], date: Date) {
     await this.database.transaction(async tx => {
-      await tx.delete(imagesTwitter).where(eq(imagesTwitter.twitter_number_id, numberId))
-      if (images.length) await tx.insert(imagesTwitter).values(images.map(image => ({
-        image_id: image.id, twitter_number_id: numberId, tweet_id: image.tweetId,
-        tweet_created_at: image.publishedAt, media_index: image.mediaIndex,
-      })))
+      await this.replaceIndex(tx, numberId, images)
       await tx.update(booths).set({ twitter_images_updated_at: date }).where(eq(booths.twitter_number_id, numberId))
     })
   }

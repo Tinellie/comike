@@ -1,0 +1,195 @@
+diff --git a/node_modules/rettiwt-api/dist/services/public/FetcherService.d.ts b/node_modules/rettiwt-api/dist/services/public/FetcherService.d.ts
+index 5ba09b9..3551319 100644
+--- a/node_modules/rettiwt-api/dist/services/public/FetcherService.d.ts
++++ b/node_modules/rettiwt-api/dist/services/public/FetcherService.d.ts
+@@ -15,6 +15,7 @@ export declare class FetcherService {
+     private readonly _delay?;
+     /** The service used to handle HTTP and API errors */
+     private readonly _errorHandler;
++    private _transaction?;
+     /** The config object. */
+     protected readonly config: RettiwtConfig;
+     /**
+diff --git a/node_modules/rettiwt-api/dist/services/public/FetcherService.js b/node_modules/rettiwt-api/dist/services/public/FetcherService.js
+index 00215bb..f8b733c 100644
+--- a/node_modules/rettiwt-api/dist/services/public/FetcherService.js
++++ b/node_modules/rettiwt-api/dist/services/public/FetcherService.js
+@@ -83,19 +83,29 @@ class FetcherService {
+      * @returns The header containing the transaction ID.
+      */
+     async _getTransactionHeader(method, url) {
+-        // Get the X homepage HTML document (using utility function)
+-        const document = await this._handleXMigration();
+-        // Create and initialize ClientTransaction instance
+-        const transaction = await x_client_transaction_id_1.ClientTransaction.create(document);
+-        // Getting the URL path excluding all params
+-        const path = new URL(url).pathname.split('?')[0].trim();
+-        // Generating the transaction ID
+-        const tid = await transaction.generateTransactionId(method.toUpperCase(), path);
+-        return {
+-            /* eslint-disable @typescript-eslint/naming-convention */
+-            'x-client-transaction-id': tid,
+-            /* eslint-enable @typescript-eslint/naming-convention */
+-        };
++        if (!this._transaction || Date.now() >= this._transaction.expiresAt) {
++            // Share initialization, never the generated request ID.
++            const entry = {
++                promise: this._handleXMigration().then((document) => x_client_transaction_id_1.ClientTransaction.create(document)),
++                expiresAt: Infinity,
++            };
++            entry.promise = entry.promise.then((transaction) => {
++                entry.expiresAt = Date.now() + 60 * 60 * 1000;
++                return transaction;
++            });
++            this._transaction = entry;
++        }
++        const entry = this._transaction;
++        try {
++            const transaction = await entry.promise;
++            const path = new URL(url).pathname.split('?')[0].trim();
++            const tid = await transaction.generateTransactionId(method.toUpperCase(), path);
++            return { header: { 'x-client-transaction-id': tid }, transaction: entry };
++        }
++        catch (error) {
++            if (this._transaction === entry) this._transaction = undefined;
++            throw error;
++        }
+     }
+     async _handleXMigration() {
+         // Fetch X.com homepage
+@@ -239,12 +249,15 @@ class FetcherService {
+         };
+         // Using retries for error 404
+         do {
++            let transaction;
+             // Sending the request
+             try {
+                 // Getting and appending transaction information
++                const generated = await this._getTransactionHeader(config.method ?? '', config.url ?? '');
++                transaction = generated.transaction;
+                 config.headers = {
+-                    ...(await this._getTransactionHeader(config.method ?? '', config.url ?? '')),
+                     ...config.headers,
++                    ...generated.header,
+                 };
+                 // Introducing a delay
+                 await this._wait();
+@@ -277,6 +290,11 @@ class FetcherService {
+                 return response;
+             }
+             catch (err) {
++                if ((0, axios_1.isAxiosError)(err) &&
++                    [400, 401, 403, 404].includes(err.response?.status ?? err.status ?? 0) &&
++                    this._transaction === transaction) {
++                    this._transaction = undefined;
++                }
+                 // If it's an error 404, retry
+                 if ((0, axios_1.isAxiosError)(err) && err.status === 404) {
+                     error = err;
+diff --git a/node_modules/rettiwt-api/src/services/public/FetcherService.ts b/node_modules/rettiwt-api/src/services/public/FetcherService.ts
+index 3e4d0df..2850018 100644
+--- a/node_modules/rettiwt-api/src/services/public/FetcherService.ts
++++ b/node_modules/rettiwt-api/src/services/public/FetcherService.ts
+@@ -23,6 +23,11 @@ import { AuthService } from '../internal/AuthService';
+ import { ErrorService } from '../internal/ErrorService';
+ import { LogService } from '../internal/LogService';
+ 
++type TransactionCache = {
++	promise: Promise<ClientTransaction>;
++	expiresAt: number;
++};
++
+ /**
+  * The base service that handles all HTTP requests.
+  *
+@@ -38,6 +43,8 @@ export class FetcherService {
+ 	/** The service used to handle HTTP and API errors */
+ 	private readonly _errorHandler: IErrorHandler;
+ 
++	private _transaction?: TransactionCache;
++
+ 	/** The config object. */
+ 	protected readonly config: RettiwtConfig;
+ 
+@@ -100,24 +107,32 @@ export class FetcherService {
+ 	 *
+ 	 * @returns The header containing the transaction ID.
+ 	 */
+-	private async _getTransactionHeader(method: string, url: string): Promise<ITransactionHeader> {
+-		// Get the X homepage HTML document (using utility function)
+-		const document = await this._handleXMigration();
+-
+-		// Create and initialize ClientTransaction instance
+-		const transaction = await ClientTransaction.create(document);
+-
+-		// Getting the URL path excluding all params
+-		const path = new URL(url).pathname.split('?')[0].trim();
+-
+-		// Generating the transaction ID
+-		const tid = await transaction.generateTransactionId(method.toUpperCase(), path);
+-
+-		return {
+-			/* eslint-disable @typescript-eslint/naming-convention */
+-			'x-client-transaction-id': tid,
+-			/* eslint-enable @typescript-eslint/naming-convention */
+-		};
++	private async _getTransactionHeader(
++		method: string,
++		url: string,
++	): Promise<{ header: ITransactionHeader; transaction: TransactionCache }> {
++		if (!this._transaction || Date.now() >= this._transaction.expiresAt) {
++			// Share initialization, never the generated request ID.
++			const entry: TransactionCache = {
++				promise: this._handleXMigration().then((document) => ClientTransaction.create(document)),
++				expiresAt: Infinity,
++			};
++			entry.promise = entry.promise.then((transaction) => {
++				entry.expiresAt = Date.now() + 60 * 60 * 1000;
++				return transaction;
++			});
++			this._transaction = entry;
++		}
++		const entry = this._transaction;
++		try {
++			const transaction = await entry.promise;
++			const path = new URL(url).pathname.split('?')[0].trim();
++			const tid = await transaction.generateTransactionId(method.toUpperCase(), path);
++			return { header: { 'x-client-transaction-id': tid }, transaction: entry };
++		} catch (error) {
++			if (this._transaction === entry) this._transaction = undefined;
++			throw error;
++		}
+ 	}
+ 
+ 	private async _handleXMigration(): Promise<Document> {
+@@ -296,12 +311,15 @@ export class FetcherService {
+ 
+ 		// Using retries for error 404
+ 		do {
++			let transaction: TransactionCache | undefined;
+ 			// Sending the request
+ 			try {
+ 				// Getting and appending transaction information
++				const generated = await this._getTransactionHeader(config.method ?? '', config.url ?? '');
++				transaction = generated.transaction;
+ 				config.headers = {
+-					...(await this._getTransactionHeader(config.method ?? '', config.url ?? '')),
+ 					...config.headers,
++					...generated.header,
+ 				};
+ 
+ 				// Introducing a delay
+@@ -340,6 +358,13 @@ export class FetcherService {
+ 				// Returning the response
+ 				return response;
+ 			} catch (err) {
++				if (
++					isAxiosError(err) &&
++					[400, 401, 403, 404].includes(err.response?.status ?? err.status ?? 0) &&
++					this._transaction === transaction
++				) {
++					this._transaction = undefined;
++				}
+ 				// If it's an error 404, retry
+ 				if (isAxiosError(err) && err.status === 404) {
+ 					error = err;
