@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
-import { mkdtemp, mkdir, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, rm, unlink, utimes, writeFile } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,7 +13,9 @@ import { MysqlPixivStore } from '../src/social/pixiv/repository.js'
 import type { PixivBooth, PixivStore } from '../src/social/pixiv/repository.js'
 import { PixivAppSource } from '../src/social/pixiv/appSource.js'
 import type { PixivSource } from '../src/social/pixiv/source.js'
-import { PIXIV_MIN_UPDATE_INTERVAL, PixivConflictError, PixivService } from '../src/social/pixiv/service.js'
+import { PixivConflictError, PixivService } from '../src/social/pixiv/service.js'
+import { IMAGE_LIST_INTERVAL } from '../src/social/imageLists.js'
+import { MemoryImageListStore } from './imageListFixture.js'
 import { PixivStorage } from '../src/social/pixiv/storage.js'
 import { MemoryAuthStore } from './authFixture.js'
 import { db, pool } from '../src/db/index.js'
@@ -57,11 +59,14 @@ async function fixture(t: { after: (callback: () => Promise<void>) => void }) {
   const calls: string[] = []
   const source: PixivSource = {
     async latest(id) { calls.push(`latest:${id}`); return ['12', '11'] },
+    async latestImages(id, signal) { return (await this.latest(id, signal)).map(id => ({ id, url: `https://i.pximg.net/${id}.png` })) },
     async image(_id, imageId) { calls.push(`image:${imageId}`); return { body: png, extension: 'png' } },
   }
-  const service = new PixivService(store, source, storage, () => now)
+  let time = now
+  const listStore = new MemoryImageListStore()
+  const service = new PixivService(store, source, storage, () => time, listStore)
   t.after(async () => { await service.close(); await rm(directory, { recursive: true, force: true }) })
-  return { directory, storage, store, source, service, calls }
+  return { directory, storage, store, source, service, calls, listStore, setTime: (date: Date) => { time = date } }
 }
 
 test('live manifest immediately reuses files, replaces the latest index and proxies missing images before disk writes complete', async t => {
@@ -104,29 +109,56 @@ test('live manifest immediately reuses files, replaces the latest index and prox
   assert.equal(store.booths.get('1')!.updatedAt, null)
 })
 
-test('Pixiv detail synchronization always checks the latest list, removes stale entries and preserves cache on list failures', async t => {
-  const { service, source, store, storage } = await fixture(t)
+test('Pixiv detail and batch share ten-minute lists, remove stale entries and preserve cache on list failures', async t => {
+  const { service, source, store, storage, setTime } = await fixture(t)
   await service.checkBooth('1')
   let lists = 0
   source.latestImages = async () => { lists++; return [{ id: '11', url: 'https://i.pximg.net/11.png' }] }
   source.download = async () => { throw new Error('Cached images must not be downloaded') }
   assert.deepEqual((await service.gallery('1'))!.images.map(image => image.id), ['12', '11'])
+  assert.equal((await service.gallery('1'))!.refreshNeeded, false)
+  setTime(new Date(now.getTime() + IMAGE_LIST_INTERVAL + 1))
+  assert.equal((await service.gallery('1'))!.refreshNeeded, true)
+  assert.equal(lists, 0, 'Reading local gallery and refresh status must not access the provider')
   const result = await service.liveGallery('1', new AbortController().signal)
   assert.deepEqual(result!.images, [{ id: '11', url: '/api/social/pixiv/images/11/11.png' }])
   await service.liveGallery('1', new AbortController().signal)
-  assert.equal(lists, 2, 'The batch timestamp must not suppress detail synchronization')
+  assert.equal(lists, 1, 'Repeated detail requests must reuse the list')
+  assert.equal((await storage.list('11')).length, 2, 'Detail synchronization must not prune files used by open galleries')
+  await service.checkBooth('1')
+  assert.equal(lists, 1, 'Batch refresh must reuse the detail list')
   assert.deepEqual(await store.images('11'), ['11'])
   source.latestImages = async () => { throw new Error('List unavailable') }
+  setTime(new Date(now.getTime() + 2 * IMAGE_LIST_INTERVAL + 2))
   await assert.rejects(service.liveGallery('1', new AbortController().signal), /List unavailable/)
   assert.deepEqual((await service.gallery('1'))!.images.map(image => image.id), ['11'])
-  assert.equal((await storage.list('11')).length, 2, 'Detail synchronization must not prune files used by open galleries')
+  assert.equal((await storage.list('11')).length, 1, 'The explicit batch may prune obsolete files')
   source.latestImages = async () => []
   assert.deepEqual((await service.liveGallery('1', new AbortController().signal))!.images, [])
   assert.deepEqual((await service.gallery('1'))!.images, [])
 })
 
+test('Pixiv batches reuse persisted detail URLs and repair missing files without another list fetch, even after restart', async t => {
+  const { service, source, store, storage, calls, listStore } = await fixture(t)
+  const downloads: string[] = []
+  source.download = async url => { downloads.push(url); return { body: png, extension: 'png' } }
+  await service.liveGallery('1', new AbortController().signal)
+  assert.equal(await service.checkBooth('1'), 'updated')
+  assert.equal(downloads.length, 2)
+  const file = (await storage.list('11'))[0]!
+  await unlink(join(storage.directory('11'), file.name))
+  assert.equal(await service.checkBooth('1'), 'updated')
+  assert.equal(downloads.length, 3)
+  assert.deepEqual(calls, ['latest:11'])
+  source.latestImages = async () => { throw new Error('Restart must reuse the persisted list') }
+  const restarted = new PixivService(store, source, storage, () => now, listStore)
+  try {
+    assert.equal((await restarted.liveGallery('1', new AbortController().signal))!.missingCount, 0)
+  } finally { await restarted.close() }
+})
+
 test('a late image save cannot restore entries removed by a newer synchronized list', async t => {
-  const { service, source, store, storage } = await fixture(t)
+  const { service, source, store, storage, setTime } = await fixture(t)
   source.latestImages = async () => [{ id: '12', url: 'https://i.pximg.net/12.png' }]
   source.download = async () => ({ body: png, extension: 'png' })
   const stage = storage.stage.bind(storage)
@@ -140,6 +172,7 @@ test('a late image save cannot restore entries removed by a newer synchronized l
     const manifest = await service.liveGallery('1', new AbortController().signal)
     await service.liveImage(manifest!.images[0]!.url.split('/').at(-1)!)
     source.latestImages = async () => []
+    setTime(new Date(now.getTime() + IMAGE_LIST_INTERVAL + 1))
     await service.liveGallery('1', new AbortController().signal)
   } finally { release() }
   await service.close()
@@ -197,7 +230,7 @@ test('Cloudflare challenges and access denial stop the batch immediately without
       requests++
       return new Response('Access restricted', { status, headers })
     })
-    const service = new PixivService(store, source, storage, () => now)
+    const service = new PixivService(store, source, storage, () => now, new MemoryImageListStore())
     try {
       service.start('owner', false)
       const state = await waitForJob(service, 'owner')
@@ -214,8 +247,8 @@ test('Cloudflare challenges and access denial stop the batch immediately without
   }
 })
 
-test('first crawl downloads works, uses shared artist timestamps, skips within one hour and checks again exactly at the boundary', async t => {
-  const { service, store, calls, storage } = await fixture(t)
+test('first crawl shares lists across booths, reuses at exactly ten minutes and refreshes only after the boundary', async t => {
+  const { service, store, calls, storage, setTime } = await fixture(t)
   store.booths.set('2', { id: '2', pixivId: '11', updatedAt: null })
   assert.equal(await service.checkBooth('1'), 'updated')
   assert.deepEqual(calls, ['latest:11', 'image:12', 'image:11'])
@@ -227,32 +260,35 @@ test('first crawl downloads works, uses shared artist timestamps, skips within o
   assert.deepEqual(await readFile(join(storage.directory('11'), files[0]!.name)), png)
   assert.equal(await service.checkBooth('2'), 'skipped')
   assert.equal(calls.length, 3)
-  store.booths.get('1')!.updatedAt = new Date(now.getTime() - PIXIV_MIN_UPDATE_INTERVAL + 1)
+  setTime(new Date(now.getTime() + IMAGE_LIST_INTERVAL - 1))
   assert.equal(await service.checkBooth('1'), 'skipped')
-  store.booths.get('1')!.updatedAt = new Date(now.getTime() - PIXIV_MIN_UPDATE_INTERVAL)
+  setTime(new Date(now.getTime() + IMAGE_LIST_INTERVAL))
+  assert.equal(await service.checkBooth('1'), 'skipped')
+  setTime(new Date(now.getTime() + IMAGE_LIST_INTERVAL + 1))
   assert.equal(await service.checkBooth('1'), 'updated')
   assert.deepEqual(calls, ['latest:11', 'image:12', 'image:11', 'latest:11'])
-  assert.equal(store.booths.get('1')!.updatedAt?.getTime(), now.getTime())
+  assert.equal(store.booths.get('1')!.updatedAt?.getTime(), now.getTime() + IMAGE_LIST_INTERVAL + 1)
 })
 
-test('restores absent crawl history/index from local download mtimes, with no network until stale', async t => {
-  const { storage, service, calls, store, source } = await fixture(t)
+test('local file mtimes do not count as a list check and do not suppress a remote comparison', async t => {
+  const { storage, service, calls, store, source, setTime } = await fixture(t)
   await mkdir(storage.directory('11'), { recursive: true })
   const downloaded = new Date(now.getTime() - 10_000)
   await writeFile(join(storage.directory('11'), '12_p0.png'), png)
   await utimes(join(storage.directory('11'), '12_p0.png'), downloaded, downloaded)
-  assert.equal(await service.checkBooth('1'), 'skipped')
-  assert.equal(store.booths.get('1')!.updatedAt?.getTime(), downloaded.getTime())
-  assert.deepEqual(await store.images('11'), ['12'])
-  assert.deepEqual(calls, [])
-  const old = new Date(now.getTime() - PIXIV_MIN_UPDATE_INTERVAL - 1)
+  assert.equal(await service.checkBooth('1'), 'updated')
+  assert.equal(store.booths.get('1')!.updatedAt?.getTime(), now.getTime())
+  assert.deepEqual(await store.images('11'), ['12', '11'])
+  assert.deepEqual(calls, ['latest:11', 'image:11'])
+  const old = new Date(now.getTime() - IMAGE_LIST_INTERVAL - 1)
   store.booths.get('1')!.updatedAt = null
   await utimes(join(storage.directory('11'), '12_p0.png'), old, old)
   t.mock.method(source, 'latest', async () => [])
+  setTime(new Date(now.getTime() + IMAGE_LIST_INTERVAL + 1))
   assert.equal(await service.checkBooth('1'), 'updated')
   assert.deepEqual(await store.images('11'), [])
   assert.deepEqual(await storage.list('11'), [])
-  assert.equal(store.booths.get('1')!.updatedAt?.getTime(), now.getTime(), 'An empty public works list is still a successful check')
+  assert.equal(store.booths.get('1')!.updatedAt?.getTime(), now.getTime() + IMAGE_LIST_INTERVAL + 1, 'An empty works list is still a successful check')
 })
 
 test('retains exactly the latest ten works, repairs missing indexed files and does not redownload existing pictures', async t => {
@@ -263,7 +299,7 @@ test('retains exactly the latest ten works, repairs missing indexed files and do
   await writeFile(join(storage.directory('11'), '1.png'), png)
   await writeFile(join(storage.directory('11'), '20_p0.png'), png)
   store.records.set('11', ['20', '19', '1'])
-  store.booths.get('1')!.updatedAt = new Date(now.getTime() - PIXIV_MIN_UPDATE_INTERVAL)
+  store.booths.get('1')!.updatedAt = now
   assert.equal((await service.gallery('1'))!.missingCount, 1)
   t.mock.method(source, 'latest', async () => latest)
   await service.checkBooth('1')
@@ -280,7 +316,7 @@ test('a failed download leaves previous files, index and timestamp intact and cl
   const { service, storage, store, source } = await fixture(t)
   await mkdir(storage.directory('11'), { recursive: true })
   await writeFile(join(storage.directory('11'), '1.png'), png)
-  const previous = new Date(now.getTime() - PIXIV_MIN_UPDATE_INTERVAL)
+  const previous = now
   store.booths.get('1')!.updatedAt = previous
   store.records.set('11', ['1'])
   t.mock.method(source, 'image', async (_pixivId: string, id: string) => {
@@ -334,7 +370,7 @@ test('failed parallel download waits for in-flight staging and removes all tempo
   await mkdir(storage.directory('11'), { recursive: true })
   await writeFile(join(storage.directory('11'), '1.png'), png)
   store.records.set('11', ['1'])
-  const previous = new Date(now.getTime() - PIXIV_MIN_UPDATE_INTERVAL)
+  const previous = now
   store.booths.get('1')!.updatedAt = previous
   t.mock.method(source, 'latest', async () => ['20', '19', '18', '17'])
   const calls: string[] = []
@@ -378,7 +414,7 @@ test('coalesces overlapping checks for the same Pixiv account and reports partia
 })
 
 test('Pixiv endpoints scope batch jobs to the session, protect writes, and read galleries without starting crawls', async t => {
-  const { service, source, store, calls, storage } = await fixture(t)
+  const { service, source, store, calls, storage, setTime } = await fixture(t)
   const auth = new MemoryAuthStore()
   for (const [id, token] of [['first', 'a'], ['second', 'b']] as const) {
     auth.users.set(id, { id, username: id, isAdmin: false, passwordHash: '' })
@@ -400,7 +436,7 @@ test('Pixiv endpoints scope batch jobs to the session, protect writes, and read 
   }
   const before = await fetch(`${base}/booths/1`)
   assert.equal(before.status, 200)
-  assert.deepEqual(await before.json(), { pixivId: '11', updatedAt: null, images: [], missingCount: 0 })
+  assert.deepEqual(await before.json(), { pixivId: '11', updatedAt: null, images: [], missingCount: 0, refreshNeeded: true })
   assert.deepEqual(calls, [])
   assert.equal((await fetch(`${base}/booths/999`)).status, 404)
   assert.equal((await fetch(`${base}/booths/bad`)).status, 400)
@@ -417,7 +453,7 @@ test('Pixiv endpoints scope batch jobs to the session, protect writes, and read 
   const otherStatus = await fetch(`${base}/status`, { headers: { Cookie: `comike_session=${'b'.repeat(64)}` } })
   assert.equal((await otherStatus.json()).status, 'idle')
   assert.equal(otherStatus.headers.get('cache-control'), 'private, no-store')
-  store.booths.get('1')!.updatedAt = new Date(now.getTime() - PIXIV_MIN_UPDATE_INTERVAL)
+  setTime(new Date(now.getTime() + IMAGE_LIST_INTERVAL + 1))
   t.mock.method(source, 'latest', async () => { throw new Error('Pixiv upstream unavailable') })
   assert.equal((await post({ mode: 'refresh' })).status, 202)
   const failed = await waitForJob(service, 'first')

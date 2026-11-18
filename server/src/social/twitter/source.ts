@@ -142,9 +142,10 @@ export class RettiwtSource implements TwitterSource {
           if (!previous || compareImages(image, previous) < 0) images.set(item.id_str, image)
         }
       }
-      if (cursors.has(result.next)) throw new Error('Twitter 媒体分页无进展')
+      if (result.list.length && cursors.has(result.next)) throw new Error('Twitter 媒体分页无进展')
       // Confirm the time boundary on a following page; an old pinned post alone is not sufficient.
-      if (!result.next || beyondCutoff) return [...images.values()].sort(compareImages).slice(0, 10)
+      // X can keep returning changing cursors on empty pages after the media stream ends.
+      if (!result.list.length || !result.next || beyondCutoff) return [...images.values()].sort(compareImages).slice(0, 10)
       cursors.add(result.next); cursor = result.next
     }
     throw new Error('Twitter 媒体分页超过安全上限')

@@ -79,6 +79,13 @@ export const imagesPixiv = mysqlTable('images_pixiv', {
   pixiv_id: varchar('pixiv_id', { length: 32 }).notNull(),
 }, table => [index('images_pixiv_user_idx').on(table.pixiv_id)])
 
+export const socialImageLists = mysqlTable('social_image_lists', {
+  provider: varchar('provider', { length: 16 }).notNull(),
+  artist_id: varchar('artist_id', { length: 32 }).notNull(),
+  checked_at: datetime('checked_at', { fsp: 3 }).notNull(),
+  images: json('images').$type<unknown>().notNull(),
+}, table => [primaryKey({ columns: [table.provider, table.artist_id] })])
+
 export const imagesTwitter = mysqlTable('images_twitter', {
   image_id: varchar('image_id', { length: 32 }).primaryKey(),
   twitter_number_id: varchar('twitter_number_id', { length: 32 }).notNull(),

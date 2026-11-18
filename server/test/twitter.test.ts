@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
@@ -20,6 +20,8 @@ import { PixivStorage } from '../src/social/pixiv/storage.js'
 import { db, pool } from '../src/db/index.js'
 import { booths, imagesTwitter, users, userFavorites } from '../src/db/schema.js'
 import { MysqlJobRepository } from '../src/crawler/repository.js'
+import { IMAGE_LIST_INTERVAL } from '../src/social/imageLists.js'
+import { MemoryImageListStore } from './imageListFixture.js'
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64')
 const twitterImage = (id: string, mediaIndex = 0): TwitterImage => ({
@@ -50,9 +52,10 @@ async function fixture(t: { after: (fn: () => Promise<void>) => void }) {
     async download(url) { calls.push(url); return { body: png, extension: 'png' } },
   }
   let time = new Date('2026-11-18T00:00:00Z')
-  const service = new TwitterService(store, source, storage, () => time)
+  const listStore = new MemoryImageListStore()
+  const service = new TwitterService(store, source, storage, () => time, listStore)
   t.after(async () => { await service.close(); await rm(root, { recursive: true, force: true }) })
-  return { root, storage, store, source, service, calls, setTime: (date: Date) => { time = date } }
+  return { root, storage, store, source, service, calls, listStore, setTime: (date: Date) => { time = date } }
 }
 async function finished(service: TwitterService) {
   for (let i = 0; i < 100; i++) {
@@ -103,7 +106,7 @@ test('Rettiwt resolves permanent IDs, paginates media and downloads only thumb p
   await assert.rejects(source.latest('11', signal), /媒体条目格式无效/)
   client.media = async () => ({ list: [{ ...tweet('1'), createdAt: 'invalid' }], next: '' })
   await assert.rejects(source.latest('11', signal), /发布时间或 ID 无效/)
-  client.media = async () => ({ list: [], next: 'repeated' })
+  client.media = async () => ({ list: [tweet('3')], next: 'repeated' })
   await assert.rejects(source.latest('11', signal), /分页无进展/)
   client.media = async () => { throw { status: 429, config: { secret: 'must-not-log' } } }
   await assert.rejects(source.latest('11', signal), error => error instanceof TwitterAccessError && error.message.includes('429'))
@@ -138,6 +141,31 @@ test('latest media use publication time and attachment order, confirm pagination
   assert.equal(images[0]!.publishedAt.toISOString(), '2026-11-18T00:00:00.000Z')
   assert.deepEqual(images.slice(2).map(image => image.mediaIndex), [0, 1, 2, 3, 4, 5, 6, 7])
   assert.deepEqual(calls, [undefined, 'newer-than-pin', 'older'])
+})
+
+test('empty media pages end pagination even when X keeps issuing new cursors', async () => {
+  for (const count of [0, 4, 14]) {
+    let pages = 0
+    const client: TwitterClient = {
+      async details() { return { id: '11' } },
+      async media() {
+        pages++
+        return {
+          list: pages === 1 ? Array.from({ length: count }, (_, index) => ({
+            id: String(100 - index), createdAt: new Date(Date.UTC(2026, 10, 18) - index * 1000).toISOString(),
+            tweetBy: { id: '11' },
+            raw: { legacy: { extended_entities: { media: [{
+              id_str: String(200 - index), media_url_https: `https://pbs.twimg.com/media/${200 - index}.jpg`,
+            }] } } },
+          })) : [],
+          next: `cursor-${pages}`,
+        }
+      },
+    }
+    const images = await new RettiwtSource({}, client).latest('11', new AbortController().signal)
+    assert.deepEqual(images.map(image => image.id), Array.from({ length: Math.min(count, 10) }, (_, index) => String(200 - index)))
+    assert.equal(pages, count ? 2 : 1, 'An empty page must stop pagination without waiting for a missing cursor')
+  }
 })
 
 test('photo and video cover URLs keep thumb size without requesting originals or retrying real 404s', async () => {
@@ -228,7 +256,7 @@ test('Rettiwt internal native fetch uses only its own request-scoped proxy', asy
 
 test('Twitter cached galleries stay local-only, batches persist thumbnails, resolve once and preserve cache on failures', async t => {
   const { root, storage, store, source, service, calls, setTime } = await fixture(t)
-  assert.deepEqual(await service.gallery('1'), { images: [], missingCount: 0 })
+  assert.deepEqual(await service.gallery('1'), { images: [], missingCount: 0, refreshNeeded: true })
   assert.deepEqual(calls, [])
   assert.equal(await service.checkBooth('1'), 'updated')
   assert.deepEqual((await service.gallery('1'))!.images.map(image => image.id), ['11', '13', '12'])
@@ -246,11 +274,36 @@ test('Twitter cached galleries stay local-only, batches persist thumbnails, reso
   assert.equal((await storage.list('11')).length, 3)
 })
 
-test('Twitter live galleries reuse cached files, bypass batch TTL and forward new images while saving in the background', async t => {
-  const { service, store, source, storage, calls } = await fixture(t)
+test('Twitter detail and batches share persisted lists, repair missing files within ten minutes and refresh after the strict boundary', async t => {
+  const { service, source, store, storage, calls, listStore, setTime } = await fixture(t)
+  const start = new Date('2026-11-18T00:00:00Z')
+  const signal = new AbortController().signal
+  await service.liveGallery('1', signal)
+  assert.equal(await service.checkBooth('1'), 'updated', 'Batch fills files missing after a detail list fetch')
+  const file = (await storage.list('11'))[0]!
+  await unlink(join(storage.directory('11'), file.name))
+  assert.equal(await service.checkBooth('1'), 'updated', 'Fresh lists must not block missing-file repairs')
+  assert.equal(calls.filter(call => call === 'media:11').length, 1)
+  setTime(new Date(start.getTime() + IMAGE_LIST_INTERVAL))
+  assert.equal((await service.gallery('1'))!.refreshNeeded, false)
+  await service.liveGallery('1', signal)
+  assert.equal(calls.filter(call => call === 'media:11').length, 1)
+  const restarted = new TwitterService(store, source, storage, () => new Date(start.getTime() + IMAGE_LIST_INTERVAL), listStore)
+  try { await restarted.liveGallery('1', signal) } finally { await restarted.close() }
+  assert.equal(calls.filter(call => call === 'media:11').length, 1, 'Restarted services reuse persisted list metadata')
+  setTime(new Date(start.getTime() + IMAGE_LIST_INTERVAL + 1))
+  assert.equal((await service.gallery('1'))!.refreshNeeded, true)
+  assert.equal(calls.filter(call => call === 'media:11').length, 1, 'Status inspection must not fetch the provider list')
+  await service.liveGallery('1', signal)
+  assert.equal(calls.filter(call => call === 'media:11').length, 2)
+})
+
+test('Twitter live galleries share ten-minute lists with batches and forward new images while saving in the background', async t => {
+  const { service, store, source, storage, calls, setTime } = await fixture(t)
   await service.checkBooth('1')
   const timestamp = store.row.updatedAt
   source.latest = async () => { calls.push('live'); return [twitterImage('14'), twitterImage('11')] }
+  setTime(new Date('2026-11-18T00:10:00.001Z'))
   const stage = storage.stage.bind(storage)
   let release!: () => void
   const gate = new Promise<void>(resolve => { release = resolve })
@@ -272,7 +325,7 @@ test('Twitter live galleries reuse cached files, bypass batch TTL and forward ne
     await assert.rejects(service.liveImage(`${token}bad`), /图片链接无效/)
   } finally { release() }
   await service.liveGallery('1', signal)
-  assert.equal(calls.filter(call => call === 'live').length, 2)
+  assert.equal(calls.filter(call => call === 'live').length, 1)
   assert.equal(store.row.updatedAt, timestamp, 'Detail sync must not mark a whole batch crawl completed')
   await service.close()
   assert.deepEqual((await service.gallery('1'))!.images.map(image => image.id), ['14', '11'])
@@ -280,11 +333,12 @@ test('Twitter live galleries reuse cached files, bypass batch TTL and forward ne
 })
 
 test('Twitter live galleries resolve IDs without downloading thumbnails, preserve cache on failures and persist empty latest lists', async t => {
-  const { service, store, source, calls } = await fixture(t)
+  const { service, store, source, calls, setTime } = await fixture(t)
   await service.liveGallery('1', new AbortController().signal)
   assert.equal(store.row.numberId, '11')
   assert.deepEqual(calls, ['resolve:artist', 'media:11'])
   source.latest = async () => { throw new Error('List unavailable') }
+  setTime(new Date('2026-11-18T00:10:00.001Z'))
   await assert.rejects(service.liveGallery('1', new AbortController().signal), /List unavailable/)
   assert.deepEqual(store.records, ['11', '13', '12'])
   source.latest = async () => []
@@ -293,7 +347,7 @@ test('Twitter live galleries resolve IDs without downloading thumbnails, preserv
 })
 
 test('Twitter routes enforce session ownership, protect live requests and serve cached galleries publicly', async t => {
-  const { service, source, store, calls } = await fixture(t)
+  const { service, source, store, calls, setTime } = await fixture(t)
   const auth = new MemoryAuthStore()
   auth.users.set('owner', { id: 'owner', username: 'owner', isAdmin: false, passwordHash: '' })
   await auth.createSession(tokenHash('a'.repeat(64)), 'owner', new Date(Date.now() + 60_000))
@@ -306,7 +360,7 @@ test('Twitter routes enforce session ownership, protect live requests and serve 
   assert.equal((await fetch(`${base}/start`, { method: 'POST' })).status, 401)
   assert.equal((await fetch(`${base}/live/booths/1`)).status, 401)
   assert.equal((await fetch(`${base}/live/images/invalid`)).status, 401)
-  assert.deepEqual(await (await fetch(`${base}/booths/1`)).json(), { images: [], missingCount: 0 })
+  assert.deepEqual(await (await fetch(`${base}/booths/1`)).json(), { images: [], missingCount: 0, refreshNeeded: true })
   assert.deepEqual(calls, [])
   const post = (body: object, extra = {}) => fetch(`${base}/start`, { method: 'POST', headers: { ...headers, ...extra }, body: JSON.stringify(body) })
   assert.equal((await post({ mode: 'missing' }, { Origin: 'https://other.invalid' })).status, 403)
@@ -320,6 +374,7 @@ test('Twitter routes enforce session ownership, protect live requests and serve 
   assert.deepEqual(Buffer.from(await image.arrayBuffer()), png)
   assert.equal((await fetch(`${base}/images/11/bad.svg`)).status, 400)
   source.latest = async () => [twitterImage('14'), twitterImage('11')]
+  setTime(new Date('2026-11-18T00:10:00.001Z'))
   const liveResponse = await fetch(`${base}/live/booths/1`, { headers })
   assert.equal(liveResponse.status, 200)
   assert.match(liveResponse.headers.get('cache-control')!, /private/)
@@ -334,6 +389,7 @@ test('Twitter routes enforce session ownership, protect live requests and serve 
   assert.equal((await finished(service)).total, 0)
   store.row.updatedAt = null
   source.latest = async () => { throw new TwitterAccessError('Twitter HTTP 429') }
+  setTime(new Date('2026-11-18T00:20:00.002Z'))
   await post({ mode: 'refresh' })
   assert.equal((await finished(service)).status, 'failed')
   assert.deepEqual(store.records, ['14', '11'])

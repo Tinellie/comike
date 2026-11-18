@@ -1,5 +1,6 @@
 export interface SocialImage { id: string; url: string }
 export interface SocialGallery { images: SocialImage[]; missingCount: number }
+export interface CachedSocialGallery extends SocialGallery { refreshNeeded: boolean }
 export interface PixivJobStatus {
   status: 'idle' | 'running' | 'succeeded' | 'failed'
   total: number
