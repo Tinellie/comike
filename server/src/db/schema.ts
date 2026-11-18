@@ -48,6 +48,8 @@ export const booths = mysqlTable('booths', {
   // Drizzle emits updates in schema order; invalidate history before changing the Pixiv ID.
   pixiv_images_updated_at: datetime('pixiv_images_updated_at'),
   pixiv_id: varchar('pixiv_id', { length: 32 }),
+  twitter_images_updated_at: datetime('twitter_images_updated_at'),
+  twitter_number_id: varchar('twitter_number_id', { length: 32 }),
   twitter_id: varchar('twitter_id', { length: 64 }),
   circle_appeal: longtext('circle_appeal'),
   tags: longtext('tags'),
@@ -76,6 +78,14 @@ export const imagesPixiv = mysqlTable('images_pixiv', {
   image_id: varchar('image_id', { length: 32 }).primaryKey(),
   pixiv_id: varchar('pixiv_id', { length: 32 }).notNull(),
 }, table => [index('images_pixiv_user_idx').on(table.pixiv_id)])
+
+export const imagesTwitter = mysqlTable('images_twitter', {
+  image_id: varchar('image_id', { length: 32 }).primaryKey(),
+  twitter_number_id: varchar('twitter_number_id', { length: 32 }).notNull(),
+  tweet_id: varchar('tweet_id', { length: 32 }),
+  tweet_created_at: datetime('tweet_created_at', { fsp: 3 }),
+  media_index: int('media_index'),
+}, table => [index('images_twitter_user_idx').on(table.twitter_number_id)])
 
 export const mapVacancies = mysqlTable('map_vacancies', {
   event_id: varchar('event_id', { length: 32 }).notNull(),

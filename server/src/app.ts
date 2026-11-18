@@ -17,6 +17,8 @@ import type { ColourStore } from './colours/repository.js'
 import { coloursRouter } from './colours/routes.js'
 import { pixivRouter } from './social/pixiv/routes.js'
 import type { PixivService } from './social/pixiv/service.js'
+import type { TwitterService } from './social/twitter/service.js'
+import { twitterRouter } from './social/twitter/routes.js'
 
 export interface AppOptions {
   checkDatabase: () => Promise<void>
@@ -36,13 +38,14 @@ export interface AppOptions {
   favorites?: FavoritesService
   colourStore?: ColourStore
   pixiv?: PixivService
+  twitter?: TwitterService
 }
 
 export function createApp({
   checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
   regeneratePreview,
   crawler, initializeDatabase, authStore, secureCookie, trustProxy,
-  boothStore, mediaRoot, favorites, colourStore, pixiv,
+  boothStore, mediaRoot, favorites, colourStore, pixiv, twitter,
 }: AppOptions) {
   const app = express()
   app.disable('x-powered-by')
@@ -66,6 +69,14 @@ export function createApp({
     else originCheck(req, res, next)
   })
   if (pixiv) app.use('/api/social/pixiv', pixivRouter(pixiv, auth.userFor))
+  app.use('/api/social/twitter', (req, res, next) => {
+    if ((req.method === 'GET' || req.method === 'HEAD') && /^\/(?:booths|images)\//i.test(req.path)) next()
+    else auth.requireUser(req, res, next)
+  }, (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD') next()
+    else originCheck(req, res, next)
+  })
+  if (twitter) app.use('/api/social/twitter', twitterRouter(twitter, auth.userFor))
   app.use('/api/preview', (req, res, next) => {
     // Map also uses the original PDF images; these read-only assets remain public.
     if ((req.method === 'GET' || req.method === 'HEAD') && /^\/page-\d{3}-pdf\.png$/.test(req.path)) next()

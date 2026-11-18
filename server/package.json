@@ -20,6 +20,7 @@
     "db:map-genres": "tsx --env-file-if-exists=.env src/booths/reconcileCli.ts --genres"
   },
   "dependencies": {
+    "rettiwt-api": "7.2.0",
     "cheerio": "^1.1.2",
     "crawlee": "^3.15.3",
     "drizzle-orm": "^0.45.4",

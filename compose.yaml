@@ -34,6 +34,8 @@ services:
       PIXIV_CLIENT_ID: ${PIXIV_CLIENT_ID:-}
       PIXIV_CLIENT_SECRET: ${PIXIV_CLIENT_SECRET:-}
       PIXIV_PROXY_URL: ${PIXIV_PROXY_URL:-}
+      TWITTER_API_KEY: ${TWITTER_API_KEY:-}
+      TWITTER_PROXY_URL: ${TWITTER_PROXY_URL:-}
     volumes:
       - type: bind
         source: ./data/storage

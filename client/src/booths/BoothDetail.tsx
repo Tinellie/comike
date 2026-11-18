@@ -5,6 +5,7 @@ import type { BoothDetail as Detail, BoothSummary, MapVacancy } from './api'
 import { BoothImages, BoothLinks } from './BoothMedia'
 import { useAuth } from '../auth/context'
 import PixivImages from '../social/PixivImages'
+import TwitterImages from '../social/TwitterImages'
 
 export default function BoothDetail({ booth, initialDetail, vacancy, alternatives, onSelect, onClose }: {
   booth: BoothSummary | null
@@ -99,6 +100,7 @@ export default function BoothDetail({ booth, initialDetail, vacancy, alternative
           </Box>)}
         </Box>
         <Button component="a" href={current.source_url} target="_blank" rel="noopener noreferrer">查看 Web Catalog 原页面</Button>
+        {current.twitter_id && <TwitterImages key={`twitter:${current.id}:${current.twitter_id}`} boothId={current.id} />}
         {current.pixiv_id && <PixivImages key={`${current.id}:${current.pixiv_id}`} boothId={current.id} />}
       </>}
     </Stack>}
