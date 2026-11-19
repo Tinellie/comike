@@ -429,6 +429,7 @@ test('Pixiv endpoints scope batch jobs to the session, protect writes, and read 
   assert.equal((await fetch(`${base}/start`, { method: 'POST' })).status, 401)
   assert.equal((await fetch(`${base}/status`)).status, 401)
   assert.equal((await fetch(`${base}/live/booths/1`)).status, 401)
+  assert.equal((await fetch(`${base}/preview/1/12`)).status, 401)
   assert.equal((await fetch(`${base}/STATUS/`)).status, 401)
   assert.equal((await post({ mode: 'refresh' }, { Origin: 'https://other.invalid' })).status, 403)
   for (const body of [null, [], {}, { mode: 'bad' }, { mode: 'refresh', userId: 'second' }]) {
@@ -471,6 +472,21 @@ test('Pixiv endpoints scope batch jobs to the session, protect writes, and read 
   assert.equal(liveResponse.status, 200)
   const live = await liveResponse.json()
   assert.equal(live.images.length, 1)
+  let previews = 0
+  source.large = async (artistId, imageId) => {
+    assert.equal(artistId, '11')
+    assert.equal(imageId, '99')
+    previews++
+    return { body: png, extension: 'png' }
+  }
+  assert.equal((await fetch(`${base}/preview/1/12`, { headers })).status, 404)
+  assert.equal((await fetch(`${base}/preview/1/bad`, { headers })).status, 400)
+  assert.equal(previews, 0)
+  const preview = await fetch(`${base}/preview/1/99`, { headers })
+  assert.equal(preview.status, 200)
+  assert.equal(preview.headers.get('cache-control'), 'private, no-store')
+  assert.deepEqual(Buffer.from(await preview.arrayBuffer()), png)
+  assert.equal(previews, 1)
   const proxy = await fetch(new URL(live.images[0].url, base), { headers })
   assert.equal(proxy.status, 200)
   assert.equal(proxy.headers.get('content-type'), 'image/png')

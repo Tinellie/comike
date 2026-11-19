@@ -52,6 +52,7 @@ export default function SocialImages({ boothId, provider }: { boothId: string; p
       {syncing && <LinearProgress aria-label={`同步 ${label} 图片列表`} sx={{ height: 2, width: '100%' }} />}
     </Box>
     {error && <Alert severity="error" sx={{ mb: 1 }} action={<Button onClick={() => { setError(null); setRetry(value => value + 1) }}>重试</Button>}>{error}</Alert>}
-    {gallery && <ImageGallery images={gallery.images} label={`${label} 作品`} reserveSpace={gallery.hasLocalImages} />}
+    {gallery && <ImageGallery images={gallery.images} label={`${label} 作品`} reserveSpace={gallery.hasLocalImages}
+      previewBaseUrl={userId ? `/api/social/${provider}/preview/${boothId}` : undefined} />}
   </Stack>
 }

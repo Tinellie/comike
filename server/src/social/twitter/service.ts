@@ -72,6 +72,15 @@ export class TwitterService {
     return this.live.manifest(numberId, works, files)
   }
   liveImage(token: string) { return this.live.image(token) }
+  async previewImage(boothId: string, imageId: string, signal: AbortSignal) {
+    const booth = await this.store.booth(boothId)
+    if (!booth?.numberId || !(await this.store.images(booth.numberId)).includes(imageId)) return null
+    const list = await this.lists.get(booth.numberId)
+    const image = list.images.find(image => image.id === imageId)
+    if (!image) return null
+    if (!this.source.large) throw new Error('Twitter 数据源不支持 large 图片')
+    return this.source.large(image.url, AbortSignal.any([signal, this.controller.signal]))
+  }
   async checkBooth(id: string) {
     const signal = this.controller.signal
     signal.throwIfAborted()

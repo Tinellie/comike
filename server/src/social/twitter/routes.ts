@@ -6,10 +6,12 @@ import { validPixivId } from '../pixiv/source.js'
 import { PixivConflictError } from '../pixiv/service.js'
 import type { TwitterService } from './service.js'
 import { ImageTokenError } from '../liveImages.js'
+import { previewImages } from '../previewImages.js'
 
 export function twitterRouter(service: TwitterService, userFor: (request: Request) => AuthUser) {
   const router = Router()
   router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
+  router.use(previewImages((boothId, imageId, signal) => service.previewImage(boothId, imageId, signal)))
   router.get('/status', (req, res) => {
     res.set('Cache-Control', 'private, no-store').vary('Cookie')
     res.json(service.status(userFor(req).id))

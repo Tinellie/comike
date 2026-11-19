@@ -11,6 +11,42 @@ const auth = { refreshToken: 'test-refresh', clientId: 'test-client', clientSecr
 const work = (id: string, extra = {}) => ({ id, user: { id: '11' }, is_visible: true, x_restrict: 0, ...extra })
 const list = (illusts: unknown[] = [], next_url: string | null = null) => Response.json({ illusts, next_url })
 
+test('previews use only the API large URL for a single image or first manga page, without CDN credentials', async () => {
+  for (const metadata of [
+    { meta_single_page: { original_image_url: 'https://i.pximg.net/img-original/12_p0.png' } },
+    { meta_pages: [{ image_urls: { original: 'https://i.pximg.net/img-original/12_p0.png' } }] },
+  ]) {
+    const requests: string[] = []
+    let artwork = work('12', { ...metadata, image_urls: { large: 'https://i.pximg.net/img-master/12_p0_master1200.jpg' } })
+    const source = new PixivAppSource({ accessToken: 'test-access' }, async (input, options) => {
+      const url = new URL(String(input))
+      requests.push(url.href)
+      if (url.hostname === 'i.pximg.net') {
+        assert.equal(url.pathname, '/img-master/12_p0_master1200.jpg')
+        assert.equal(new Headers(options?.headers).get('authorization'), null)
+        assert.equal(new Headers(options?.headers).get('referer'), 'https://www.pixiv.net/')
+        return new Response(png)
+      }
+      assert.equal(url.pathname, '/v1/illust/detail')
+      assert.equal(url.searchParams.get('illust_id'), '12')
+      return Response.json({ illust: artwork })
+    })
+    assert.deepEqual(await source.large('11', '12', signal()), { body: png, extension: 'png' })
+    assert.equal(requests.length, 2)
+    artwork = work('12', { ...metadata, user: { id: '22' } })
+    await assert.rejects(source.large('11', '12', signal()), /作者不匹配/)
+    assert.equal(requests.length, 3)
+  }
+  const missing = new PixivAppSource({ accessToken: 'test-access' }, async () => Response.json({
+    illust: work('12', { meta_single_page: { original_image_url: 'https://i.pximg.net/img-original/12_p0.png' } }),
+  }))
+  await assert.rejects(missing.large('11', '12', signal()), /没有可用的 large/)
+  const unsafe = new PixivAppSource({ accessToken: 'test-access' }, async () => Response.json({
+    illust: work('12', { image_urls: { large: 'https://evil.invalid/image.png' } }),
+  }))
+  await assert.rejects(unsafe.large('11', '12', signal()), /URL/)
+})
+
 test('live previews use list square_medium URLs and CDN only, without artwork detail requests', async () => {
   const requests: string[] = []
   const source = new PixivAppSource({ accessToken: 'test-access' }, async input => {

@@ -89,6 +89,13 @@ export class PixivService {
 
   liveImage(token: string) { return this.live.image(token) }
 
+  async previewImage(boothId: string, imageId: string, signal: AbortSignal) {
+    const booth = await this.store.booth(boothId)
+    if (!booth?.pixivId || !(await this.store.images(booth.pixivId)).includes(imageId)) return null
+    if (!this.source.large) throw new Error('Pixiv 数据源不支持 large 图片')
+    return this.source.large(booth.pixivId, imageId, AbortSignal.any([signal, this.controller.signal]))
+  }
+
   async checkBooth(id: string): Promise<'updated' | 'skipped'> {
     const booth = await this.store.booth(id)
     if (!booth?.pixivId || !validPixivId(booth.pixivId)) throw new Error('社团不存在或 Pixiv 用户 ID 无效')

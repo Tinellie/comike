@@ -66,6 +66,27 @@ async function finished(service: TwitterService) {
   throw new Error('Twitter job did not finish')
 }
 
+test('Twitter previews request large photos and video covers without changing thumbnail downloads', async () => {
+  const urls: string[] = []
+  const source = new RettiwtSource({}, undefined, async (input, options) => {
+    urls.push(String(input))
+    assert.equal(options?.redirect, 'manual')
+    assert.equal(new Headers(options?.headers).get('authorization'), null)
+    return new Response(png)
+  })
+  const signal = AbortSignal.timeout(2000)
+  await source.large('https://pbs.twimg.com/media/photo?format=jpg&name=thumb', signal)
+  assert.equal(new URL(urls[0]!).searchParams.get('name'), 'large')
+  await source.large('https://pbs.twimg.com/ext_tw_video_thumb/12.jpg:thumb', signal)
+  assert.equal(urls[1], 'https://pbs.twimg.com/ext_tw_video_thumb/12.jpg:large')
+  await source.download('https://pbs.twimg.com/media/photo.jpg', signal)
+  assert.equal(new URL(urls[2]!).searchParams.get('name'), 'thumb')
+  await assert.rejects(source.large('https://evil.invalid/photo.jpg', signal), /URL/)
+  assert.equal(urls.length, 3)
+  const oversized = new RettiwtSource({}, undefined, async () => new Response(png, { headers: { 'Content-Length': String(20 * 1024 * 1024 + 1) } }))
+  await assert.rejects(oversized.large('https://pbs.twimg.com/media/photo.jpg', signal), /20 MiB/)
+})
+
 test('Rettiwt resolves permanent IDs, paginates media and downloads only thumb photos/video covers', async () => {
   const cursors: (string | undefined)[] = []
   const tweet = (id: string, owner = '11') => ({
@@ -360,6 +381,7 @@ test('Twitter routes enforce session ownership, protect live requests and serve 
   assert.equal((await fetch(`${base}/start`, { method: 'POST' })).status, 401)
   assert.equal((await fetch(`${base}/live/booths/1`)).status, 401)
   assert.equal((await fetch(`${base}/live/images/invalid`)).status, 401)
+  assert.equal((await fetch(`${base}/preview/1/14`)).status, 401)
   assert.deepEqual(await (await fetch(`${base}/booths/1`)).json(), { images: [], missingCount: 0, refreshNeeded: true })
   assert.deepEqual(calls, [])
   const post = (body: object, extra = {}) => fetch(`${base}/start`, { method: 'POST', headers: { ...headers, ...extra }, body: JSON.stringify(body) })
@@ -380,6 +402,24 @@ test('Twitter routes enforce session ownership, protect live requests and serve 
   assert.match(liveResponse.headers.get('cache-control')!, /private/)
   const live = await liveResponse.json()
   assert.equal(live.images.length, 2)
+  let previews = 0
+  source.large = async url => {
+    assert.equal(url, twitterImage('14').url)
+    previews++
+    return { body: png, extension: 'png' }
+  }
+  assert.equal((await fetch(`${base}/preview/1/999`, { headers })).status, 404)
+  assert.equal((await fetch(`${base}/preview/1/bad`, { headers })).status, 400)
+  assert.equal((await fetch(`${base}/preview/999/14`, { headers })).status, 404)
+  assert.equal(previews, 0)
+  t.mock.method(service.storage, 'stage', async () => { throw new Error('Previews must not be stored') })
+  const preview = await fetch(`${base}/preview/1/14`, { headers })
+  assert.equal(preview.status, 200)
+  assert.equal(preview.headers.get('cache-control'), 'private, no-store')
+  assert.equal(preview.headers.get('content-type'), 'image/png')
+  assert.deepEqual(Buffer.from(await preview.arrayBuffer()), png)
+  assert.equal(previews, 1)
+  t.mock.restoreAll()
   const forwarded = await fetch(new URL(live.images[0].url, base), { headers })
   assert.equal(forwarded.status, 200)
   assert.equal(forwarded.headers.get('content-type'), 'image/png')

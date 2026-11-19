@@ -4,10 +4,12 @@ import { join } from 'node:path'
 import type { AuthUser } from '../../auth/repository.js'
 import { PixivConflictError, PixivImageTokenError, PixivService } from './service.js'
 import { validPixivId } from './source.js'
+import { previewImages } from '../previewImages.js'
 
 export function pixivRouter(service: PixivService, userFor: (req: Request) => AuthUser) {
   const router = Router()
   router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
+  router.use(previewImages((boothId, imageId, signal) => service.previewImage(boothId, imageId, signal)))
   router.get('/status', (req, res) => {
     res.set('Cache-Control', 'private, no-store').vary('Cookie')
     res.json(service.status(userFor(req).id))

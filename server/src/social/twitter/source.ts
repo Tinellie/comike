@@ -9,6 +9,7 @@ export interface TwitterSource {
   resolve(username: string, signal: AbortSignal): Promise<string>
   latest(id: string, signal: AbortSignal): Promise<TwitterImage[]>
   download(url: string, signal: AbortSignal): Promise<{ body: Buffer; extension: string }>
+  large?(url: string, signal: AbortSignal): Promise<{ body: Buffer; extension: string }>
   close?(): Promise<void>
 }
 export class TwitterAccessError extends Error {}
@@ -171,7 +172,15 @@ export class RettiwtSource implements TwitterSource {
     return url
   }
   async download(value: string, signal: AbortSignal) {
+    return this.downloadUrl(this.thumbnail(value), signal)
+  }
+  async large(value: string, signal: AbortSignal) {
     const url = this.thumbnail(value)
+    if (url.pathname.endsWith(':thumb')) url.pathname = `${url.pathname.slice(0, -6)}:large`
+    else url.searchParams.set('name', 'large')
+    return this.downloadUrl(url, signal)
+  }
+  private async downloadUrl(url: URL, signal: AbortSignal) {
     const options = {
       signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]), redirect: 'manual' as const,
       ...(this.proxy ? { dispatcher: this.proxy } : {}),

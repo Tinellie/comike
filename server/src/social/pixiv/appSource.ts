@@ -241,14 +241,26 @@ export class PixivAppSource implements PixivSource {
   }
 
   async image(pixivId: string, imageId: string, signal: AbortSignal) {
+    const work = await this.detail(pixivId, imageId, signal)
+    const thumbnail = object(work.image_urls) ? work.image_urls.square_medium : undefined
+    return this.download(this.thumbnailUrl(thumbnail).href, signal)
+  }
+
+  private async detail(pixivId: string, imageId: string, signal: AbortSignal) {
     if (!validPixivId(pixivId) || !validPixivId(imageId)) throw new Error('Pixiv 图片 ID 无效')
     const url = new URL('/v1/illust/detail', apiOrigin)
     url.searchParams.set('illust_id', imageId)
     const result = await this.api(url, signal), work = result.illust
     if (!object(work) || id(work.id) !== imageId || !object(work.user) || id(work.user.id) !== pixivId) throw new Error('Pixiv 作品 ID 或作者不匹配')
     if (work.is_visible === false) throw new Error('Pixiv 作品不可见，请检查账号内容设置')
-    const thumbnail = object(work.image_urls) ? work.image_urls.square_medium : undefined
-    return this.download(this.thumbnailUrl(thumbnail).href, signal)
+    return work
+  }
+
+  async large(pixivId: string, imageId: string, signal: AbortSignal) {
+    const work = await this.detail(pixivId, imageId, signal)
+    const large = object(work.image_urls) ? work.image_urls.large : undefined
+    if (typeof large !== 'string' || !large) throw new Error('Pixiv 作品没有可用的 large 图片')
+    return this.download(large, signal)
   }
 
   async download(url: string, signal: AbortSignal) {
@@ -258,13 +270,13 @@ export class PixivAppSource implements PixivSource {
     if (!response.body) throw new Error('Pixiv 图片响应体为空')
     if (Number(response.headers.get('content-length')) > downloadImageLimit) {
       await response.body.cancel()
-      throw new Error('Pixiv 缩略图超过 20 MiB 下载安全上限')
+      throw new Error('Pixiv 图片超过 20 MiB 下载安全上限')
     }
     const chunks: Buffer[] = []
     let size = 0
     for await (const chunk of response.body) {
       size += chunk.length
-      if (size > downloadImageLimit) throw new Error('Pixiv 缩略图超过 20 MiB 下载安全上限')
+      if (size > downloadImageLimit) throw new Error('Pixiv 图片超过 20 MiB 下载安全上限')
       chunks.push(Buffer.from(chunk))
     }
     const body = Buffer.concat(chunks)

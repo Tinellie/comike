@@ -13,4 +13,5 @@ export interface PixivSource {
   retryStatus?(): { attempts: number; retryAt: number | null } | null
   latestImages(pixivId: string, signal: AbortSignal): Promise<{ id: string; url: string }[]>
   download?(url: string, signal: AbortSignal): Promise<{ body: Buffer; extension: string }>
+  large?(pixivId: string, imageId: string, signal: AbortSignal): Promise<{ body: Buffer; extension: string }>
 }

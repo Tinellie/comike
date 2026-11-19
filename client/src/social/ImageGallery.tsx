@@ -1,8 +1,51 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Alert, Box, Button, ButtonBase, CircularProgress, Modal, Typography } from '@mui/material'
 import type { SocialImage } from './api'
 
-export default function ImageGallery({ images, label, reserveSpace }: { images: SocialImage[]; label: string; reserveSpace: boolean }) {
+function ImagePreview({ image, label, previewUrl }: { image: SocialImage; label: string; previewUrl: string | undefined }) {
+  const [preview, setPreview] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    if (!previewUrl) return
+    const controller = new AbortController()
+    let objectUrl: string | undefined
+    const load = async () => {
+      const response = await fetch(previewUrl, {
+        cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]),
+      })
+      if (!response.ok) {
+        const body: { message?: string } = await response.json()
+        throw new Error(body.message ?? `大图加载失败（HTTP ${response.status}）`)
+      }
+      const blob = await response.blob()
+      if (controller.signal.aborted) return
+      objectUrl = URL.createObjectURL(blob)
+      const decoded = new Image()
+      decoded.src = objectUrl
+      await decoded.decode()
+      if (!controller.signal.aborted) setPreview(objectUrl)
+    }
+    void load().catch((reason: unknown) => {
+      if (controller.signal.aborted) return
+      console.error('Preview image failed:', image.id, reason)
+      setError(reason instanceof Error ? reason.message : '大图加载失败')
+    })
+    return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [previewUrl, image.id, retry])
+  return <Box onClick={event => event.stopPropagation()} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', maxHeight: '95vh' }}>
+    <Box component="img" src={preview ?? image.url} alt={`${label} ${image.id}`}
+      sx={{ maxWidth: '95vw', maxHeight: '85vh', objectFit: 'contain' }} />
+    {previewUrl && !preview && !error && <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'white', p: 1 }}>
+      <CircularProgress size={20} color="inherit" aria-label="加载大图" /><Typography variant="caption">加载大图中</Typography>
+    </Box>}
+    {error && <Alert severity="error" action={<Button onClick={() => { setError(null); setRetry(value => value + 1) }}>重试</Button>}>{error}</Alert>}
+  </Box>
+}
+
+export default function ImageGallery({ images, label, reserveSpace, previewBaseUrl }: {
+  images: SocialImage[]; label: string; reserveSpace: boolean; previewBaseUrl?: string | undefined
+}) {
   const [selected, setSelected] = useState<SocialImage | null>(null)
   const [loaded, setLoaded] = useState<Record<string, boolean>>({})
   const [failed, setFailed] = useState<Record<string, boolean>>({})
@@ -33,9 +76,8 @@ export default function ImageGallery({ images, label, reserveSpace }: { images: 
       slotProps={{ backdrop: { sx: { bgcolor: 'rgba(0, 0, 0, 0.8)' } } }}>
       <Box role="dialog" aria-label="图片预览" tabIndex={-1} onClick={() => setSelected(null)}
         sx={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 0 }}>
-        {selected && <Box component="img" src={selected.url} alt={`${label} ${selected.id}`}
-          onClick={event => event.stopPropagation()}
-          sx={{ maxWidth: '95vw', maxHeight: '95vh', objectFit: 'contain' }} />}
+        {selected && <ImagePreview key={selected.id} image={selected} label={label}
+          previewUrl={previewBaseUrl ? `${previewBaseUrl}/${selected.id}` : undefined} />}
       </Box>
     </Modal>
   </>
