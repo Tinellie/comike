@@ -12,6 +12,7 @@ import { BoothImages, BoothLinks } from './BoothMedia'
 import { useAuth } from '../auth/context'
 import ColourPreferences from './ColourPreferences'
 import BoothEditor from './BoothEditor'
+import PixivMenu from '../social/PixivMenu'
 
 function BoothHeader({ children }: { children?: ReactNode }) {
   return <Stack direction="row" sx={{ mb: 2, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
@@ -134,6 +135,7 @@ function BoothTable({ options, eventControl }: { options: BoothOptions; eventCon
           if (value.trim() !== search.trim()) resetPage()
           setSearch(value)
         }} />
+      {user && <PixivMenu />}
     </BoothHeader>
     <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
       已加载 {items.length} / {total} 个社团 · 向下滚动加载更多 · 点击社团查看详情

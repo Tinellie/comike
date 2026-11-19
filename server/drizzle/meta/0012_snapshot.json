@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "53b3d22d-262c-4ad6-ac74-985779236a47",
+  "id": "d687398a-045f-48b4-90db-80247cea72f8",
   "prevId": "2ffbd1bd-6f71-4032-8701-f6824e241232",
   "tables": {
     "booths": {
@@ -108,6 +108,13 @@
         "pixiv_id": {
           "name": "pixiv_id",
           "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pixiv_images_updated_at": {
+          "name": "pixiv_images_updated_at",
+          "type": "datetime",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -251,6 +258,45 @@
           "name": "crawl_jobs_id",
           "columns": [
             "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "images_pixiv": {
+      "name": "images_pixiv",
+      "columns": {
+        "image_id": {
+          "name": "image_id",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "pixiv_id": {
+          "name": "pixiv_id",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "images_pixiv_user_idx": {
+          "name": "images_pixiv_user_idx",
+          "columns": [
+            "pixiv_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "images_pixiv_image_id": {
+          "name": "images_pixiv_image_id",
+          "columns": [
+            "image_id"
           ]
         }
       },
@@ -675,7 +721,7 @@
           "name": "colour",
           "type": "char(7)",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
         "memo": {

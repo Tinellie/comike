@@ -35,7 +35,16 @@ export class MysqlJobRepository implements JobRepository {
 
   async saveBooth(booth: Booth) {
     booth.circle_name_reading = await nameReading(booth.circle_name)
-    await database().insert(booths).values(booth).onDuplicateKeyUpdate({ set: booth })
+    const catalogFields = { ...booth }
+    delete catalogFields.pixiv_images_updated_at
+    delete catalogFields.twitter_images_updated_at
+    delete catalogFields.twitter_number_id
+    await database().insert(booths).values(catalogFields).onDuplicateKeyUpdate({ set: {
+      pixiv_images_updated_at: sql`if(${booths.pixiv_id} <=> ${booth.pixiv_id ?? null}, ${booths.pixiv_images_updated_at}, null)`,
+      twitter_images_updated_at: sql`if(lower(${booths.twitter_id}) <=> lower(${booth.twitter_id ?? null}), ${booths.twitter_images_updated_at}, null)`,
+      twitter_number_id: sql`if(lower(${booths.twitter_id}) <=> lower(${booth.twitter_id ?? null}), ${booths.twitter_number_id}, null)`,
+      ...catalogFields,
+    } })
   }
 
   async resetRecords() {

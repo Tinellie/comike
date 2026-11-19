@@ -29,6 +29,13 @@ services:
       TRUST_PROXY: "true"
       MEDIA_ROOT: storage
       CRAWLER_STATE_DIR: .local/crawler
+      PIXIV_ACCESS_TOKEN: ${PIXIV_ACCESS_TOKEN:-}
+      PIXIV_REFRESH_TOKEN: ${PIXIV_REFRESH_TOKEN:-}
+      PIXIV_CLIENT_ID: ${PIXIV_CLIENT_ID:-}
+      PIXIV_CLIENT_SECRET: ${PIXIV_CLIENT_SECRET:-}
+      PIXIV_PROXY_URL: ${PIXIV_PROXY_URL:-}
+      TWITTER_API_KEY: ${TWITTER_API_KEY:-}
+      TWITTER_PROXY_URL: ${TWITTER_PROXY_URL:-}
     volumes:
       - type: bind
         source: ./data/storage
