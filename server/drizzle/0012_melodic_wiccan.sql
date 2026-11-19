@@ -1,0 +1,1 @@
+ALTER TABLE `user_favorites` MODIFY COLUMN `colour` char(7);

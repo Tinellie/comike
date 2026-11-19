@@ -9,6 +9,53 @@ export function boothRouter(store: BoothStore, mediaRoot: string,
   currentUser: (req: Request) => Promise<AuthUser | null> = async () => null) {
   const router = Router()
   router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
+  router.patch('/:id/:kind', async (req, res) => {
+    res.set('Cache-Control', 'private, no-store').vary('Cookie')
+    try {
+      const user = await currentUser(req)
+      if (!user) { res.status(401).json({ message: '请先登录' }); return }
+      if (!/^\d{1,32}$/.test(req.params.id)
+        || [...new URL(req.originalUrl, 'http://localhost').searchParams].length) {
+        console.warn('Rejected invalid booth edit parameters')
+        res.status(400).json({ message: '编辑参数无效' }); return
+      }
+      const body: unknown = req.body
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        console.warn('Rejected invalid booth edit body')
+        res.status(400).json({ message: '编辑内容无效' }); return
+      }
+      let result
+      if (req.params.kind === 'favorite') {
+        const keys = Object.keys(body)
+        if (!keys.length || keys.some(key => key !== 'colour' && key !== 'memo')
+          || ('colour' in body && body.colour !== null && (typeof body.colour !== 'string' || !/^#[\dA-F]{6}$/.test(body.colour)))
+          || ('memo' in body && (typeof body.memo !== 'string' || Buffer.byteLength(body.memo, 'utf8') > 65535))) {
+          console.warn('Rejected invalid favorite edit')
+          res.status(400).json({ message: '颜色或 Memo 无效（Memo 最多 65535 UTF-8 字节）' }); return
+        }
+        const patch: { colour?: string | null; memo?: string } = {}
+        if ('colour' in body && (typeof body.colour === 'string' || body.colour === null)) patch.colour = body.colour
+        if ('memo' in body && typeof body.memo === 'string') patch.memo = body.memo
+        result = await store.editFavorite(req.params.id, user.id, patch)
+      } else if (req.params.kind === 'link') {
+        if (!user.isAdmin) { console.warn('Rejected non-admin link edit'); res.status(403).json({ message: '仅管理员可修改 Links ID' }); return }
+        if (Object.keys(body).length !== 2 || !('field' in body) || !('value' in body)
+          || (body.field !== 'circle_id' && body.field !== 'pixiv_id' && body.field !== 'twitter_id')
+          || (body.value !== null && (typeof body.value !== 'string'
+            || !(body.field === 'twitter_id' ? /^[a-zA-Z0-9_]{1,15}$/ : /^\d{1,32}$/).test(body.value)))) {
+          console.warn('Rejected invalid link ID')
+          res.status(400).json({ message: '请填写有效的账号 ID，而非完整链接；留空可清除' }); return
+        }
+        result = await store.editLink(req.params.id, body.field, body.value)
+      } else { res.status(404).json({ message: '编辑接口不存在' }); return }
+      if (!result) res.status(404).json({ message: '社团不存在' })
+      else res.json(result)
+    } catch (error) {
+      console.error('Booth edit failed:', error)
+      res.status(error instanceof BoothFilterError ? 400 : 503)
+        .json({ message: error instanceof BoothFilterError ? error.message : '保存失败，请检查数据库迁移和服务端日志后重试' })
+    }
+  })
   router.get('/map-favorites', async (req, res) => {
     res.set('Cache-Control', 'private, no-store').vary('Cookie')
     const params = new URL(req.originalUrl, 'http://localhost').searchParams

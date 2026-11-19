@@ -113,6 +113,8 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
   const scopes: (string | undefined)[] = []
   const optionScopes: (string | undefined)[] = []
   const mapScopes: string[] = []
+  const edits: { id: string; userId: string; patch: { colour?: string | null; memo?: string } }[] = []
+  const linkEdits: { id: string; field: string; value: string | null }[] = []
   const auth = new MemoryAuthStore()
   for (const [id, token] of [['first', 'a'], ['second', 'b']] as const) {
     auth.users.set(id, { id, username: id, isAdmin: false, passwordHash: '' })
@@ -120,6 +122,8 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
   }
   await auth.createSession(tokenHash('c'.repeat(64)), 'first', new Date(Date.now() - 1000))
   const store: BoothStore = {
+    async editFavorite(id, userId, patch) { edits.push({ id, userId, patch }); return { colour: patch.colour ?? null, memo: patch.memo ?? '' } },
+    async editLink(id, field, value) { linkEdits.push({ id, field, value }); return { [field]: value } },
     async options(eventId, userId) {
       optionScopes.push(userId)
       if (eventId === '999') throw new Error('test database unavailable')
@@ -224,6 +228,35 @@ test('booth HTTP routes validate requests and expose only fixed image paths', as
     }
     assert.equal((await fetch(`${base}/map-favorites?eventId=999&weekday=土`, { headers: { Cookie: `comike_session=${'a'.repeat(64)}` } })).status, 503)
   })
+  await t.test('booth edits require session and same origin; only admins can edit public links', async () => {
+    const edit = (kind: string, body: unknown, token = 'a', headers: Record<string, string> = {}) =>
+      fetch(`${base}/24001/${kind}`, { method: 'PATCH', headers: {
+        'Content-Type': 'application/json', Cookie: `comike_session=${token.repeat(64)}`, ...headers,
+      }, body: JSON.stringify(body) })
+    assert.equal((await edit('favorite', { memo: 'own memo' }, 'd')).status, 401)
+    assert.equal((await edit('favorite', { memo: 'own memo' }, 'c')).status, 401)
+    assert.equal((await edit('favorite', { memo: 'own memo' }, 'a', { Origin: 'https://other.invalid' })).status, 403)
+    assert.equal((await edit('favorite', { memo: 'own memo' })).status, 200)
+    assert.deepEqual(edits.at(-1), { id: '24001', userId: 'first', patch: { memo: 'own memo' } })
+    assert.equal((await edit('favorite', { colour: null }, 'b')).status, 200)
+    assert.deepEqual(edits.at(-1), { id: '24001', userId: 'second', patch: { colour: null } })
+    for (const body of [{}, { memo: 1 }, { memo: '字'.repeat(21846) }, { colour: '#bad' }, { memo: '', userId: 'second' }]) {
+      assert.equal((await edit('favorite', body)).status, 400)
+    }
+    assert.equal((await edit('link', { field: 'twitter_id', value: 'sample_user' })).status, 403)
+    assert.equal(linkEdits.length, 0)
+    auth.users.get('first')!.isAdmin = true
+    try {
+      assert.equal((await edit('link', { field: 'twitter_id', value: 'sample_user' })).status, 200)
+      assert.deepEqual(linkEdits.at(-1), { id: '24001', field: 'twitter_id', value: 'sample_user' })
+      assert.equal((await edit('link', { field: 'pixiv_id', value: null })).status, 200)
+      for (const body of [{ field: 'twitter_id', value: 'https://x.com/invalid' }, { field: 'pixiv_id', value: 'abc' },
+        { field: 'id', value: '123' }, { field: 'circle_id', value: '123', userId: 'second' }]) {
+        assert.equal((await edit('link', body)).status, 400)
+      }
+    } finally { auth.users.get('first')!.isAdmin = false }
+  })
+
   await t.test('personalization comes only from the session; expired sessions are anonymous and lookup errors fail explicitly', async () => {
     for (const [token, expected] of [['a', 'first'], ['b', 'second'], ['c', undefined], ['d', undefined]] as const) {
       const response = await fetch(`${base}?eventId=240`, { headers: { Cookie: `comike_session=${token.repeat(64)}` } })
@@ -323,7 +356,7 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
         assert.deepEqual(result.items.map(item => item.id), ids([...expected]), search)
         assert.equal(result.total, expected.length, search)
       }
-      await t.test('own favourite colours and full memos are joined without exposing another user or changing pagination', async () => {
+      await t.test('own favourite colours and full memos are joined without exposing another user or changing pagination', async t => {
         const [firstId, secondId] = [randomUUID(), randomUUID()]
         await transaction.insert(users).values([
           { id: firstId, username: `list_${eventId}_a`, password_hash: 'test-only', created_at: new Date() },
@@ -474,6 +507,33 @@ test('MySQL sorts, filters and paginates actual booth rows without changing exis
         assert.deepEqual((await store.list({
           ...query, sort: 'colour', colours: ['#FF0000', '#FFF700'], search: 'private-first',
         }, firstId))!.items.map(row => row.id), ids([2, 4]))
+        await t.test('editing favourites preserves memo on unfavourite and keeps all user data isolated', async () => {
+          assert.deepEqual(await store.editFavorite(rows[1]!.id, firstId, { colour: null }), { colour: null, memo })
+          assert.equal((await store.detail(rows[1]!.id, secondId))!.colour, '#0000FF')
+          assert.equal((await store.detail(rows[1]!.id, firstId))!.memo, memo)
+          assert.ok(!(await store.mapFavorites(eventId, '土', firstId)).some(row => row.boothId === rows[1]!.id))
+          assert.ok((await store.list({ ...query, colours: [null] }, firstId))!.items.some(row => row.id === rows[1]!.id))
+          assert.equal((await store.list({ ...query, search: 'private-first' }, firstId))!.total, 2)
+          assert.ok((await optionStore.options(eventId, firstId))!.colours.every(colour => typeof colour === 'string'))
+          assert.ok((await priorities.list(firstId)).every(entry => typeof entry.colour === 'string'))
+          assert.deepEqual(await store.editFavorite(rows[1]!.id, firstId, { colour: '#00B54A' }), { colour: '#00B54A', memo })
+          assert.deepEqual(await store.editFavorite(rows[1]!.id, firstId, { memo: 'edited\nmemo' }), { colour: '#00B54A', memo: 'edited\nmemo' })
+          assert.deepEqual(await store.editFavorite(rows[5]!.id, firstId, { memo: 'memo without collection' }), { colour: null, memo: 'memo without collection' })
+          assert.equal((await store.detail(rows[5]!.id, secondId))!.memo, null)
+          await assert.rejects(store.editFavorite(rows[1]!.id, firstId, { colour: '#123456' }), BoothFilterError)
+          assert.equal(await store.editFavorite('0', firstId, { memo: 'missing' }), null)
+        })
+        await t.test('link edits change only the requested public ID', async () => {
+          const before = (await store.detail(rows[1]!.id))!
+          await store.editLink(rows[1]!.id, 'twitter_id', 'updated_user')
+          const after = (await store.detail(rows[1]!.id))!
+          assert.equal(after.twitter_id, 'updated_user')
+          assert.equal(after.pixiv_id, before.pixiv_id)
+          assert.equal(after.circle_id, before.circle_id)
+          await store.editLink(rows[1]!.id, 'twitter_id', null)
+          assert.equal((await store.detail(rows[1]!.id))!.twitter_id, null)
+          assert.equal(await store.editLink('0', 'pixiv_id', '123'), null)
+        })
       })
       const searchedPage = (await store.list({ ...query, search: 'Zeta', limit: 1 }))!
       assert.equal(searchedPage.total, 3)
