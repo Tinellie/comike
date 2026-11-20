@@ -217,8 +217,46 @@ def _extend_open_ends(
     return _merge_collinear(segments + extensions)
 
 
+def _edge_walkable_pixels(image: Image.Image, allowed: np.ndarray, boundary: list[Point]) -> np.ndarray:
+    rgb = np.asarray(image.convert("RGB"))
+    high, low = rgb.max(axis=2), rgb.min(axis=2)
+    obstacles = (~allowed).astype(np.uint8)
+    rim = np.zeros(allowed.shape, np.uint8)
+    cv2.polylines(rim, [np.asarray(boundary, np.int32)], True, 1, 49)
+    frame = (high >= 64) & (high <= 160) & (high - low <= 6) & ~allowed
+    # Keep thick fills even where they meet the frame stroke.
+    solid = cv2.morphologyEx(obstacles, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21)))
+    solid = cv2.dilate(solid, np.ones((5, 5), np.uint8))
+    fringe = cv2.dilate(frame.astype(np.uint8), np.ones((7, 7), np.uint8))
+    return allowed | ((rim != 0) & (fringe != 0) & (solid == 0) & (high > BLACK_INK_MAX))
+
+
+def _extend_to_venue_edge(mask: np.ndarray, venue: np.ndarray, segments: list[Segment]) -> list[Segment]:
+    covered = np.zeros(mask.shape, bool)
+    for x, y, u, v in segments:
+        covered[y:v + 1, x:u + 1] = True
+    height, width = mask.shape
+    extensions = []
+    for x, y, u, v in segments:
+        for start_x, start_y, step in ((x, y, -1), (u, v, 1)):
+            dx, dy = step * int(x != u), step * int(y != v)
+            col, row = start_x + dx, start_y + dy
+            while 0 <= col < width and 0 <= row < height and venue[row, col]:
+                if not mask[row, col] or covered[row, col]:
+                    break
+                col, row = col + dx, row + dy
+            else:
+                # Only rays that reach the outer edge qualify, not shortcuts to other paths.
+                end_x, end_y = col - dx, row - dy
+                if (end_x, end_y) != (start_x, start_y):
+                    extensions.append((min(start_x, end_x), min(start_y, end_y),
+                                       max(start_x, end_x), max(start_y, end_y)))
+    return _merge_collinear(segments + extensions)
+
+
 def build_path_graph(
     image: Image.Image, boundary: list[Point] | None = None, *, cell: int = PATH_CELL_SIZE,
+    ignore_edge_frame: bool = False,
 ) -> list[Segment]:
     if cell < 1:
         raise ValueError("Path graph cell size must be positive")
@@ -251,6 +289,8 @@ def build_path_graph(
         len(path), -sum(abs(x2 - x1) + abs(y2 - y1) for x1, y1, x2, y2 in path),
     ))
     best = _extend_open_ends(main, _straighten_paths(main, best), venue=venue)
+    if ignore_edge_frame and boundary is not None and venue is not None:
+        best = _extend_to_venue_edge(full_tiles(_edge_walkable_pixels(image, allowed, boundary)), venue, best)
     offset = cell // 2
     return [(x1 * cell + offset, y1 * cell + offset, x2 * cell + offset, y2 * cell + offset)
             for x1, y1, x2, y2 in best]
@@ -270,7 +310,7 @@ def save_path_graphs(result: Path) -> list[Path]:
             )]
         boundary = [(round(a * p["x"] + c * p["y"] + e), round(b * p["x"] + d * p["y"] + f)) for p in polygon]
         with Image.open(result.with_name(preview["image"])) as image:
-            segments = build_path_graph(image, boundary)
+            segments = build_path_graph(image, boundary, ignore_edge_frame=page["page"] == 2)
             graph = {"width": image.width, "height": image.height, "segments": segments}
         target = result.with_name(f"page-{page['page']:03}-paths.json")
         pending = target.with_suffix(".tmp")

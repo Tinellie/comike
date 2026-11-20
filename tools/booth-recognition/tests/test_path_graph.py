@@ -3,10 +3,37 @@ import unittest
 import numpy as np
 from PIL import Image, ImageDraw
 
-from map_recognition.path_graph import _extend_open_ends, _straighten_paths, build_path_graph, walkable_pixels
+from map_recognition.path_graph import (
+    _edge_walkable_pixels, _extend_open_ends, _extend_to_venue_edge, _straighten_paths,
+    build_path_graph, walkable_pixels,
+)
 
 
 class PathGraphTests(unittest.TestCase):
+    def test_edge_frame_can_be_crossed_but_booth_and_wall_remain_blocked(self):
+        image = Image.new("RGB", (181, 160), "white")
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((8, 8, 171, 151), outline="#595959", width=9)
+        draw.rectangle((13, 30, 45, 70), fill="#dcdcdc")
+        draw.rectangle((130, 102, 171, 137), fill="#595959")
+        boundary = [(8, 8), (171, 8), (171, 151), (8, 151)]
+        allowed = walkable_pixels(image)
+        venue = np.zeros(allowed.shape, dtype=bool)
+        venue[8:152, 8:172] = True
+        edge_mask = _edge_walkable_pixels(image, allowed, boundary)
+        paths = [(24, 21, 100, 21), (48, 50, 100, 50), (100, 120, 126, 120)]
+        self.assertFalse(allowed[21, 11])
+        self.assertFalse(edge_mask[50, 30])
+        self.assertFalse(edge_mask[120, 150])
+        self.assertEqual(_extend_to_venue_edge(edge_mask, venue, paths), [
+            (8, 21, 171, 21), (48, 50, 171, 50), (8, 120, 126, 120),
+        ])
+
+    def test_edge_only_extension_does_not_make_an_internal_shortcut(self):
+        mask = np.ones((6, 12), dtype=bool)
+        paths = [(0, 3, 4, 3), (9, 0, 9, 5)]
+        self.assertEqual(_extend_to_venue_edge(mask, mask, paths), paths)
+
     def test_extension_continues_through_starting_junction_and_stops_at_first_path(self):
         mask = np.ones((7, 12), dtype=bool)
         paths = [(1, 3, 4, 3), (6, 0, 6, 6), (9, 0, 9, 6), (1, 0, 1, 6)]
