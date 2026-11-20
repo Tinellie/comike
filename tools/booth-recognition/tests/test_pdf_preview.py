@@ -78,6 +78,8 @@ class PdfPreviewTests(unittest.TestCase):
             self.assertEqual((page["width"], page["height"]), image.size)
             self.assertEqual((page["pdfPreview"]["width"], page["pdfPreview"]["height"]), (400, 320))
             self.assertTrue((target.parent / "page-001-pdf.png").is_file())
+            graph = json.loads((target.parent / "page-001-paths.json").read_text(encoding="utf-8"))
+            self.assertEqual((graph["width"], graph["height"]), (page["pdfPreview"]["width"], page["pdfPreview"]["height"]))
             self.assertTrue((target.parent / "page-001.png").is_file())
             self.assertEqual(len(page["booths"]), 16)
 

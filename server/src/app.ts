@@ -148,7 +148,7 @@ export function createApp({
     }
   })
 
-  app.get(/^\/api\/preview\/(result\.json|page-\d{3}(?:-pdf)?\.png)$/, (req, res, next) => {
+  app.get(/^\/api\/preview\/(result\.json|page-\d{3}(?:(?:-pdf)?\.png|-paths\.json))$/, (req, res, next) => {
     const name = req.params[0]
     if (!recognitionDirectory || !name) {
       res.status(404).json({ message: 'Recognition output is not configured' })

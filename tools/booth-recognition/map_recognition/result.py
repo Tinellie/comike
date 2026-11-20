@@ -18,6 +18,7 @@ from .final_data import save_final_result
 from .hall_outline import HallOutline
 from .pdf_preview import PdfPreview
 from .hall_labels import HallLabel
+from .path_graph import save_path_graphs
 
 LOGGER = logging.getLogger(__name__)
 
@@ -228,6 +229,8 @@ class MapRecognitionResult:
         target.write_text(
             json.dumps(self.to_dict(), ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8",
         )
+        if self.pdf_previews:
+            save_path_graphs(target)
         if self.assignments is not None and self.half_booths is not None:
             final_target = save_final_result(target)
             LOGGER.info("Final data: %s", final_target.resolve())

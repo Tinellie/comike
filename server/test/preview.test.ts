@@ -2,6 +2,16 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { parsePreviewData } from '../../client/src/preview/data.ts'
 import { numberGapAnnotations, numberGapLabelBox } from '../../client/src/preview/assignmentLayers.ts'
+import { parsePathGraph } from '../../client/src/preview/pathGraph.ts'
+
+test('path overlay accepts only in-bounds axis-aligned segments for the matching PDF image', () => {
+  const graph = { width: 40, height: 20, segments: [[1, 2, 19, 2], [19, 2, 19, 14]] }
+  assert.deepEqual(parsePathGraph(graph, 40, 20), graph.segments)
+  assert.throws(() => parsePathGraph(graph, 39, 20))
+  for (const segment of [[1, 2, 19, 3], [1, 2, 1, 2], [1, 2, 40, 2], [1.5, 2, 19, 2]]) {
+    assert.throws(() => parsePathGraph({ ...graph, segments: [segment] }, 40, 20))
+  }
+})
 
 function fixture() {
   return {

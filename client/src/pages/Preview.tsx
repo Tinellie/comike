@@ -23,8 +23,8 @@ export default function Preview() {
   const [attempt, setAttempt] = useState(0)
   const [zoom, setZoom] = useState<number | 'fit'>('fit')
   const [options, setOptions] = useState<PreviewOptions>({
-    background: true, boxes: true, blockFrames: true, numbers: true, islands: true,
-    groups: true, gaps: true, halfBooths: true, hallOutline: true, hallLabels: true, selectedIsland: null,
+    background: true, preprocessPdf: true, boxes: true, blockFrames: true, numbers: true, islands: true,
+    groups: true, gaps: true, halfBooths: true, hallOutline: true, hallLabels: true, pathGraph: false, selectedIsland: null,
   })
 
   useEffect(() => {
@@ -152,13 +152,15 @@ export default function Preview() {
               {[0.5, 1, 1.5, 2].map(value => <MenuItem key={value} value={value}>{value * 100}%</MenuItem>)}
             </TextField>
             {([
-              ['background', '原图背景'], ['boxes', page.blocks === null ? '图格边框' : 'Block 边框'], ['numbers', '识别编号'],
+              ['background', 'PDF 背景'], ['preprocessPdf', '彩色转白'],
+              ['boxes', page.blocks === null ? '图格边框' : 'Block 边框'], ['numbers', '识别编号'],
               ['blockFrames', 'Block 外扩框'],
               ['islands', 'Island 标记'],
               ['groups', '分组着色'], ['gaps', '缺号断点'],
               ['halfBooths', 'Half-booth a/b'],
               ['hallOutline', 'Hall 边框'],
               ['hallLabels', '场馆标签'],
+              ['pathGraph', '路径图'],
             ] as const).map(([key, label]) => (
               <FormControlLabel
                 key={key} label={label}
@@ -168,6 +170,8 @@ export default function Preview() {
                   || (key === 'halfBooths' && page.halfBooths === null)
                   || (key === 'hallOutline' && !page.hallOutline)
                   || (key === 'hallLabels' && !page.hallLabels?.length)
+                  || (key === 'pathGraph' && !page.pdfPreview)
+                  || (key === 'preprocessPdf' && (!options.background || !page.pdfPreview))
                   || ((key === 'groups' || key === 'gaps') && page.islandAssignment === null)
                 } onChange={(_, checked) =>
                   setOptions(previous => ({ ...previous, [key]: checked }))} />}

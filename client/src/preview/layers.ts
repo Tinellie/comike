@@ -1,9 +1,11 @@
 import { statusColors } from './data'
 import type { PreviewBooth, PreviewPage } from './data'
 import { inverseTransform } from './pdfPreview'
+import type { PathSegment } from './pathGraph'
 
 export interface PreviewOptions {
   background: boolean
+  preprocessPdf?: boolean
   boxes: boolean
   blockFrames: boolean
   numbers: boolean
@@ -13,18 +15,20 @@ export interface PreviewOptions {
   halfBooths: boolean
   hallOutline?: boolean
   hallLabels?: boolean
+  pathGraph?: boolean
   selectedIsland: string | null
 }
 
 export interface DrawingScene {
   page: PreviewPage
-  image: HTMLImageElement
+  image: HTMLImageElement | HTMLCanvasElement
   options: PreviewOptions
   drawText?: (x: number, y: number, draw: () => void) => void
   outlineColor?: string
   numberRotation?: (booth: PreviewBooth) => number
   numberColor?: string
   numberBackground?: boolean
+  paths?: PathSegment[] | null
 }
 
 export function drawSceneText(scene: Pick<DrawingScene, 'drawText'>, x: number, y: number, draw: () => void) {

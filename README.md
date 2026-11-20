@@ -192,6 +192,24 @@ npm run dev
 tools\booth-recognition\.venv\Scripts\python.exe tools\booth-recognition\test_recognition.py ref\official-map.pdf --pages all --output tools\booth-recognition\output\official-map
 ```
 
+Preview 默认将 PDF 背景里的饱和彩色转成白色，保留黑白灰；取消「彩色转白」可对照原图。
+路径识别采用同一彩色转白规则，并额外清理彩色笔画周围 2 像素内仍带色偏的边缘，避免细碎绕行；纯灰黑像素不做这项清理。
+原 PDF、摊位 OCR 和 Island 标记识别仍使用各自原有的彩色输入，不受影响。
+
+管理员可在 Preview 勾选「路径图」查看 PDF 上的通道。生成器在 Hall 范围内允许预处理后的白色和近白色通行；
+面积小于 1000 个原图像素且不含黑色或近黑色的灰色连通块也视为可通行，与较大障碍相连的灰色细节仍会保留。
+只保留最大的四连通区域；用完全可通行的 4 像素网格识别通道，因此极窄的缝隙不会保留。
+分别沿两个轴扫描，优先使用长直线、合并共线段、保留环路，并采用线段数较少的结果；
+再检查可拉直的折线：只有两段扫过的区域可通行、支路接点不变、且总长度缩短时，才用直线替换绕行。
+最后沿原方向检测每段共线合并后的直线两端，即使起点已与垂直路径相交。
+延长线只能接到前方第一条路径，或到达 Hall 外轮廓内侧；如果先碰到摊位等内部障碍，则不延伸。
+这是简化策略，不保证全局最少。重新生成地图时自动输出 `page-*-paths.json`。已有 PDF 预览可跳过 OCR 单独补生成：
+
+```powershell
+cd tools\booth-recognition
+.\.venv\Scripts\python.exe -m map_recognition.path_graph output\official-map\result.json
+```
+
 测试：`npm test`；检查：`npm run typecheck`、`npm run lint`、`npm run build`。
 
 ## 1. GitHub 准备
