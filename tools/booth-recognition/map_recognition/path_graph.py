@@ -8,6 +8,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from .hall_paths import PATH_CELL_SIZE
+
 Point = tuple[int, int]
 Segment = tuple[int, int, int, int]
 SMALL_GRAY_AREA_THRESHOLD = 1000
@@ -215,7 +217,9 @@ def _extend_open_ends(
     return _merge_collinear(segments + extensions)
 
 
-def build_path_graph(image: Image.Image, boundary: list[Point] | None = None, *, cell: int = 4) -> list[Segment]:
+def build_path_graph(
+    image: Image.Image, boundary: list[Point] | None = None, *, cell: int = PATH_CELL_SIZE,
+) -> list[Segment]:
     if cell < 1:
         raise ValueError("Path graph cell size must be positive")
     allowed = walkable_pixels(image)

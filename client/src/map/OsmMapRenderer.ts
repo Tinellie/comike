@@ -8,7 +8,8 @@ import { HallMapLayer, defaultHallDisplay, hallMetadata } from './HallMapLayer'
 import type { HallDisplay } from './HallMapLayer'
 import { hallMatrix, hallWorldBounds } from './halls'
 import { HallVisibility, intersectsBounds } from './hallVisibility'
-import type { HallTransforms, MapHall } from './halls'
+import type { HallPlacement, HallTransforms, MapHall } from './halls'
+import { outsideHallKey, projectHallPerimeter } from './hallPerimeter'
 import type { Bounds } from './viewport'
 import type { HallRegistrationReport } from './hallRegistration'
 import { boothHover, BoothOccupancy } from './boothOccupancy'
@@ -79,6 +80,37 @@ export class OsmMapRenderer {
   }
   private hover: { hallIndex: number; bbox: PreviewBooth['bbox'] } | null = null
   private pdfImages: ReadonlyMap<MapHall, HTMLImageElement> = new Map()
+  private routesVisible = true
+  private readonly perimeterPaths = new WeakMap<MapHall, {
+    placement: HallPlacement; perimeter: Path2D; links: Path2D
+  }>()
+
+  private projectedPerimeter(hall: MapHall, placement: HallPlacement) {
+    if (!hall.pathGraph) return null
+    const key = outsideHallKey(hall.labels.map(label => label.code))
+    const route = key ? this.data.outsideHallRoutes.get(key) : undefined
+    if (!route?.length) return null
+    const cached = this.perimeterPaths.get(hall)
+    if (cached?.placement === placement) return cached
+    const [a, b, c, d, e, f] = hallMatrix(hall, placement)
+    const nodes = hall.pathGraph.nodes.map(({ x, y }) => ({ x: a * x + c * y + e, y: b * x + d * y + f }))
+    const projection = projectHallPerimeter(nodes, hall.pathGraph.edges, route)
+    if (projection.disconnected) {
+      console.warn(`OSM outside-hall=${key}: ${projection.disconnected} 条框线边的投影位于不连通的路段，已跳过。`)
+    }
+    const paths = {
+      placement, perimeter: localPath(projection.perimeter, this.origin, false),
+      links: localPath(projection.links, this.origin, false),
+    }
+    this.perimeterPaths.set(hall, paths)
+    return paths
+  }
+
+  setRoutesVisible(visible: boolean) {
+    if (this.routesVisible === visible) return
+    this.routesVisible = visible
+    this.requestDraw()
+  }
 
   setPdfImages(images: ReadonlyMap<MapHall, HTMLImageElement>) {
     this.pdfImages = images
@@ -373,6 +405,20 @@ export class OsmMapRenderer {
         this.hallLayer.draw(ctx, hall, placement, this.origin, this.hallDisplay,
           hall.index === this.selectedHall, view.rotation ?? 0, filtered, true, this.occupancy,
           this.hover?.hallIndex === hall.index ? this.hover.bbox : null, this.pdfImages.get(hall), this.genreDisplay)
+        if (this.routesVisible && !filtered) {
+          const projected = this.projectedPerimeter(hall, placement)
+          if (projected) {
+            ctx.save()
+            ctx.strokeStyle = '#007b91'
+            ctx.lineCap = 'round'
+            ctx.lineWidth = 2 / view.scale
+            ctx.stroke(projected.perimeter)
+            ctx.setLineDash([4 / view.scale, 3 / view.scale])
+            ctx.stroke(projected.links)
+            ctx.restore()
+          }
+          this.hallLayer.drawRoutes(ctx, hall, placement, this.origin, dpr, !projected)
+        }
       }
     }
     const report = this.hallDisplay.visible ? this.registrationReports.find(report => report.hallIndex === this.selectedHall) : undefined

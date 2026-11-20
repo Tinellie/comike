@@ -208,7 +208,16 @@ Preview 默认将 PDF 背景里的饱和彩色转成白色，保留黑白灰；�
 ```powershell
 cd tools\booth-recognition
 .\.venv\Scripts\python.exe -m map_recognition.path_graph output\official-map\result.json
+.\.venv\Scripts\python.exe -m map_recognition.final_data output\official-map\result.json
 ```
+
+第二条命令把已有路径和 Hall 外轮廓转换为 [地图数据](./tools/booth-recognition/map_recognition/final_data.py) 各 Hall 的 `pathGraph`。
+`nodes` 使用与摊位相同的 Hall 原图坐标，`edges` 以节点索引记录双向的 `indoor` 和 `perimeter` 通路；
+交点会拆成共享节点，靠到外轮廓的路径会补齐网格留下的间隙。外轮廓是图上的通路，不代表验证过的出入口或场馆之间的道路。
+Map 默认绘制该图层，可用「路径图」开关隐藏，不需要加载 PDF 原图。
+有对应 `outside-hall` OSM 关系时（例如 `outside-hall=e123`），Map 将所有场馆框线节点投到该关系中最近的路段，
+并沿相连的 OSM 路段重画框线。室内通路保持原位，原有内外接点用虚线标出投影位置；虚线不代表已验证的实际通道。
+没有对应关系时保留原框线。投影只影响 Map 显示，不改动 Hall 原图坐标或 OSM 数据。
 
 测试：`npm test`；检查：`npm run typecheck`、`npm run lint`、`npm run build`。
 

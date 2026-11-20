@@ -58,6 +58,38 @@ export class HallMapLayer {
   private readonly visibility = new WeakMap<MapHall, HallVisibility>()
   private readonly blockBackgrounds = new WeakMap<MapHall, Map<string, Path2D>>()
   private readonly regionPaths = new WeakMap<readonly PreviewBooth['bbox'][], Path2D>()
+  private readonly routePaths = new WeakMap<MapHall, { indoor: Path2D; perimeter: Path2D }>()
+
+  drawRoutes(
+    context: CanvasRenderingContext2D, hall: MapHall, placement: HallPlacement, origin: Point, pixelRatio: number,
+    showOriginalPerimeter: boolean,
+  ) {
+    if (!hall.pathGraph) return
+    let paths = this.routePaths.get(hall)
+    if (!paths) {
+      paths = { indoor: new Path2D(), perimeter: new Path2D() }
+      const { nodes, edges } = hall.pathGraph
+      for (const { from, to, kind } of edges) {
+        paths[kind].moveTo(nodes[from].x, nodes[from].y)
+        paths[kind].lineTo(nodes[to].x, nodes[to].y)
+      }
+      this.routePaths.set(hall, paths)
+    }
+    const [a, b, c, d, e, f] = hallMatrix(hall, placement)
+    context.save()
+    context.transform(a, b, c, d, e - origin.x, f - origin.y)
+    const matrix = context.getTransform()
+    context.lineWidth = 2 * pixelRatio / Math.max(Math.hypot(matrix.a, matrix.b), Math.hypot(matrix.c, matrix.d))
+    context.lineCap = 'round'
+    context.setLineDash([])
+    if (showOriginalPerimeter) {
+      context.strokeStyle = '#007b91'
+      context.stroke(paths.perimeter)
+    }
+    context.strokeStyle = '#2454d4'
+    context.stroke(paths.indoor)
+    context.restore()
+  }
 
   private path(rectangles: readonly PreviewBooth['bbox'][]) {
     let path = this.regionPaths.get(rectangles)

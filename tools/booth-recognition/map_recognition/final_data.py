@@ -4,6 +4,8 @@ import logging
 import math
 from pathlib import Path
 
+from .hall_paths import build_hall_paths
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -210,7 +212,42 @@ def save_final_result(source: str | Path) -> Path:
     if source.resolve() == target.resolve():
         raise ValueError("Final export source must not be final.json")
     data = simplify_result(_object(json.loads(source.read_text(encoding="utf-8")), "result"))
-    target.write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+    halls = _records(data["halls"], "halls")
+    for hall in halls:
+        if "pdfPreview" not in hall or "boundary" not in hall:
+            continue
+        pdf = _object(hall["pdfPreview"], "PDF preview")
+        source_page = hall["sourcePage"]
+        width, height, transform = pdf["width"], pdf["height"], pdf["transform"]
+        assert isinstance(source_page, int) and isinstance(width, int) and isinstance(height, int)
+        assert isinstance(transform, list)
+        paths = source.with_name(f"page-{source_page:03}-paths.json")
+        if not paths.exists():
+            LOGGER.warning("Hall path graph not exported: %s is missing", paths)
+            continue
+        graph = _object(json.loads(paths.read_text(encoding="utf-8")), "path graph")
+        if (graph.get("width"), graph.get("height")) != (width, height):
+            raise ValueError(f"{paths.name} dimensions must match the PDF preview")
+        segments = []
+        raw_segments = graph.get("segments")
+        if not isinstance(raw_segments, list):
+            raise ValueError(f"{paths.name} must contain a segments array")
+        for segment in raw_segments:
+            if (not isinstance(segment, list) or len(segment) != 4
+                    or any(type(n) is not int for n in segment)):
+                raise ValueError(f"{paths.name} contains an invalid segment")
+            x, y, u, v = segment
+            if not (0 <= x < width and 0 <= u < width and 0 <= y < height and 0 <= v < height
+                    and (x == u) != (y == v)):
+                raise ValueError(f"{paths.name} contains a non-orthogonal, empty or out-of-bounds segment")
+            segments.append((x, y, u, v))
+        boundary = [_coordinates(p, ("x", "y"), "Hall boundary") for p in _records(hall["boundary"], "boundary")]
+        hall["pathGraph"] = build_hall_paths(segments, [(p["x"], p["y"]) for p in boundary],
+                                             transform, (width, height))
+    data["halls"] = halls
+    pending = target.with_suffix(".json.tmp")
+    pending.write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+    pending.replace(target)
     return target
 
 

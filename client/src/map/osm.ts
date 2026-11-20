@@ -67,6 +67,14 @@ export interface OsmMapData {
   places: { point: Point; name: string }[]
   bounds: Bounds
   warnings: string[]
+  outsideHallRoutes: ReadonlyMap<string, readonly OsmRouteSegment[]>
+}
+
+export interface OsmRouteSegment {
+  from: string
+  to: string
+  start: Point
+  end: Point
 }
 
 function boundsOf(paths: Point[][]): Bounds {
@@ -128,11 +136,36 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
   const features: OsmFeature[] = []
   const polygonMembers = new Set<string>()
   const relationTags = new Map<string, Tags>()
+  const outsideHallRoutes = new Map<string, OsmRouteSegment[]>()
+  const outsideHallWays = new Map<string, Set<string>>()
   for (const relation of relations) {
+    const keys = tagValues(relation.tags, 'outside-hall').map(value => value.trim().toLowerCase())
+    if (!keys.length) {
+      for (const name of tagValues(relation.tags, 'name')) {
+        const key = /^(?:outside-hall|hall-outside)-([ewsn]\d+)$/i.exec(name.trim())?.[1]
+        if (key) keys.push(key.toLowerCase())
+      }
+    }
     for (const member of relation.members) {
       if (member.type !== 'way') continue
       relationTags.set(member.ref, mergeTags(relationTags.get(member.ref) ?? {}, relation.tags))
+      for (const key of keys) {
+        let members = outsideHallWays.get(key)
+        if (!members) outsideHallWays.set(key, members = new Set())
+        members.add(member.ref)
+      }
     }
+  }
+  for (const [key, members] of outsideHallWays) {
+    const segments: OsmRouteSegment[] = []
+    for (const id of members) {
+      const refs = wayById.get(id)?.refs ?? []
+      for (let i = 1; i < refs.length; i++) {
+        const from = refs[i - 1], to = refs[i], start = points.get(from), end = points.get(to)
+        if (start && end && (start.x !== end.x || start.y !== end.y)) segments.push({ from, to, start, end })
+      }
+    }
+    outsideHallRoutes.set(key, segments)
   }
   let incompleteRelations = 0
   for (const relation of relations) {
@@ -204,7 +237,7 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
   const places = nodes.filter(node => tagValues(node.tags, 'name').length).map(node => ({
     point: points.get(node.id)!, name: tagValues(node.tags, 'name')[0],
   }))
-  return { features, places, bounds, warnings }
+  return { features, places, bounds, warnings, outsideHallRoutes }
 }
 
 function attribute(element: Element, name: string): string {

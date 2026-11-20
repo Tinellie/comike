@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { buildOsmMap, featureLevels, hallCodes, mergeTags, stitchRings, tagValues } from '../../client/src/map/osm.ts'
 import type { OsmFeature, OsmNode, OsmWay, Tags } from '../../client/src/map/osm.ts'
+import { outsideHallKey, projectHallPerimeter } from '../../client/src/map/hallPerimeter.ts'
 import {
   compareMapStyles, filteredLevelStyle, filteredOutline, hallLabel, mapBackground, mapStyle, matchesLevels, onewayTriangles, opaqueOnWhite,
 } from '../../client/src/map/style.ts'
@@ -21,6 +22,40 @@ function nodes(): OsmNode[] {
     { id: '8', lat: 35.6308, lon: 139.7902, tags: {} },
   ]
 }
+
+test('outside hall paths use only the matching relation members and do not bridge missing nodes', () => {
+  const ways: OsmWay[] = [
+    { id: 'outside', refs: ['1', '2', 'missing', '3', '4'], tags: {} },
+    { id: 'other', refs: ['2', '3'], tags: { 'outside-hall': 'e123' } },
+  ]
+  const data = buildOsmMap(nodes(), ways, [
+    { id: '1', tags: { 'outside-hall': 'e123' }, members: [{ type: 'way', ref: 'outside', role: '' }] },
+    { id: '2', tags: { name: 'hall-outside-w12' }, members: [{ type: 'way', ref: 'other', role: '' }] },
+  ])
+  assert.deepEqual(data.outsideHallRoutes.get(outsideHallKey(['E3', null, 'E1', 'E3', 'E2'])!)
+    ?.map(({ from, to }) => [from, to]), [['1', '2'], ['3', '4']])
+  assert.deepEqual(data.outsideHallRoutes.get('w12')?.map(({ from, to }) => [from, to]), [['2', '3']])
+})
+
+test('all perimeter nodes snap to the nearest road and projected edges follow bends', () => {
+  const p = (x: number, y: number) => ({ x, y })
+  const route = [
+    { from: 'a', to: 'b', start: p(0, 0), end: p(10, 0) },
+    { from: 'b', to: 'c', start: p(10, 0), end: p(10, 10) },
+  ]
+  const geometry = [p(2, -100), p(12, 8), p(12, 8), p(1, -101)]
+  const edges = [
+    { from: 0, to: 1, kind: 'perimeter' }, { from: 1, to: 2, kind: 'perimeter' },
+    { from: 0, to: 3, kind: 'indoor' },
+  ] as const
+  assert.deepEqual(projectHallPerimeter(geometry, edges, route), {
+    perimeter: [[p(10, 0), p(10, 8)], [p(2, 0), p(10, 0)]],
+    links: [[p(2, -100), p(2, 0)]], disconnected: 0,
+  })
+  assert.deepEqual(projectHallPerimeter(geometry, edges, [route[0], { ...route[1], from: 'd' }]), {
+    perimeter: [], links: [[p(2, -100), p(2, 0)]], disconnected: 1,
+  })
+})
 
 test('PDF occupied subhall codes hide only matching OSM labels and retain uncovered codes', () => {
   const occupied = new Set(['E1', 'E2', 'W1'])

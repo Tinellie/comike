@@ -44,6 +44,8 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
   const genreState = useRef({ enabled: genreEnabled, selected: selectedGenres })
   const tooltipRef = useRef<BoothHoverHandle | null>(null)
   const [pdfVisible, setPdfVisible] = useState(false)
+  const [routesVisible, setRoutesVisible] = useState(true)
+  const routesState = useRef(routesVisible)
   const [pdfImages, setPdfImages] = useState<ReadonlyMap<MapHall, HTMLImageElement>>(new Map())
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [pdfAttempt, setPdfAttempt] = useState(0)
@@ -54,6 +56,11 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
   const boothState = useRef(boothData)
   const favoriteState = useRef(favoriteHighlights)
   useEffect(() => { clickHandler.current = onBoothClick }, [onBoothClick])
+
+  useEffect(() => {
+    routesState.current = routesVisible
+    rendererRef.current?.setRoutesVisible(routesVisible)
+  }, [routesVisible])
 
   useEffect(() => {
     genreState.current = { enabled: genreEnabled, selected: selectedGenres }
@@ -167,6 +174,7 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
         renderer.setFavoriteHighlights(favoriteState.current)
         renderer.setGenreDisplay(genreState.current.enabled, genreState.current.selected)
         renderer.setPdfImages(pdfState.current)
+        renderer.setRoutesVisible(routesState.current)
       } catch (reason) {
         console.error('OSM rendering failed:', reason)
         onError(reason instanceof Error ? reason.message : 'OSM 地图绘制失败')
@@ -297,6 +305,8 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
           </TextField>
           <FormControlLabel label="PDF 原图" control={<Switch checked={pdfVisible}
             onChange={(_, checked) => { setPdfVisible(checked); setPdfError(null) }} />} />
+          {halls.some(hall => hall.pathGraph?.edges.length) && <FormControlLabel label="路径图"
+            control={<Switch checked={routesVisible} onChange={(_, checked) => setRoutesVisible(checked)} />} />}
           {pdfVisible && !pdfError && halls.some(hall => !pdfImages.has(hall))
             && <LinearProgress aria-label="加载 PDF 原图" />}
           {pdfVisible && pdfError && <Alert severity="warning" action={<Button onClick={() => {
