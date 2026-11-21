@@ -296,6 +296,20 @@ def build_path_graph(
             for x1, y1, x2, y2 in best]
 
 
+def _remove_west_guide_lines(image: Image.Image) -> Image.Image:
+    config = json.loads(Path(__file__).with_name("west_line_cleanup.json").read_text(encoding="utf-8"))
+    if image.size != (config["width"], config["height"]):
+        return image
+    cleaned = image.copy()
+    left, right = config["left"], config["right"]
+    for band in config["bands"]:
+        sample = band["sample"]
+        row = image.crop((left, sample, right, sample + 1))
+        for y in range(band["top"], band["bottom"]):
+            cleaned.paste(row, (left, y))
+    return cleaned
+
+
 def save_path_graphs(result: Path) -> list[Path]:
     targets = []
     for page in json.loads(result.read_text(encoding="utf-8"))["pages"]:
@@ -310,7 +324,10 @@ def save_path_graphs(result: Path) -> list[Path]:
             )]
         boundary = [(round(a * p["x"] + c * p["y"] + e), round(b * p["x"] + d * p["y"] + f)) for p in polygon]
         with Image.open(result.with_name(preview["image"])) as image:
-            segments = build_path_graph(image, boundary, ignore_edge_frame=page["page"] == 2)
+            path_image = (
+                _remove_west_guide_lines(image) if page.get("hallOutline", {}).get("method") == "layout_notch" else image
+            )
+            segments = build_path_graph(path_image, boundary, ignore_edge_frame=page["page"] == 2)
             graph = {"width": image.width, "height": image.height, "segments": segments}
         target = result.with_name(f"page-{page['page']:03}-paths.json")
         pending = target.with_suffix(".tmp")

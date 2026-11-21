@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Box, LinearProgress } from '@mui/material'
 import type { PreviewPage } from './data'
 import type { PreviewOptions } from './layers'
@@ -7,6 +7,8 @@ import { previewSurface } from './pdfPreview'
 import { preprocessPdfBackground } from './pdfBackground'
 import { parsePathGraph } from './pathGraph'
 import type { PathSegment } from './pathGraph'
+import { inferBoothFacings } from './boothFacing'
+import { facingColors } from './BoothFacingLayer'
 
 interface MapCanvasProps {
   page: PreviewPage
@@ -22,8 +24,12 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
   const [availableWidth, setAvailableWidth] = useState(0)
   const [paths, setPaths] = useState<PathSegment[] | null>(null)
   const [pathError, setPathError] = useState<string | null>(null)
+  const needsPaths = options.pathGraph || options.boothFacing
+  const facings = useMemo(() => options.boothFacing && (paths || pathError)
+    ? inferBoothFacings(page, paths ?? []) : null, [options.boothFacing, page, paths, pathError])
   const background = page.pdfPreview ?? page
   const isPdf = !!page.pdfPreview
+  const removeWestGuideLines = page.hallOutline?.method === 'layout_notch'
   const image = (options.preprocessPdf ? images?.processed : null) ?? images?.original
 
   useEffect(() => {
@@ -54,7 +60,7 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
         if (loaded.naturalWidth !== background.width || loaded.naturalHeight !== background.height) {
           throw new Error('背景图片尺寸与识别坐标不一致，请重新生成识别输出')
         }
-        setImages({ original: loaded, processed: isPdf ? preprocessPdfBackground(loaded) : null })
+        setImages({ original: loaded, processed: isPdf ? preprocessPdfBackground(loaded, removeWestGuideLines) : null })
       } catch (reason) {
         if (active) {
           console.error('Map image loading failed:', reason)
@@ -68,10 +74,10 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
       controller.abort()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [background.image, background.width, background.height, isPdf])
+  }, [background.image, background.width, background.height, isPdf, removeWestGuideLines])
 
   useEffect(() => {
-    if (!options.pathGraph || !page.pdfPreview) return
+    if (!needsPaths || !page.pdfPreview) return
     const controller = new AbortController()
     const { width, height } = page.pdfPreview
     const load = async () => {
@@ -91,7 +97,7 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
       setPathError(reason instanceof Error ? reason.message : '路径图加载失败')
     })
     return () => controller.abort()
-  }, [options.pathGraph, page.page, page.pdfPreview])
+  }, [needsPaths, page.page, page.pdfPreview])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -102,7 +108,7 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
       try {
         renderer = new MapPreviewRenderer(canvas)
         const viewWidth = previewSurface(page, previewMargin(page, options)).width
-        renderer.draw(page, image, options, zoom === 'fit' ? availableWidth : viewWidth * zoom, paths)
+        renderer.draw(page, image, options, zoom === 'fit' ? availableWidth : viewWidth * zoom, paths, facings)
       } catch (reason) {
         console.error('Map rendering failed:', reason)
         setError(reason instanceof Error ? reason.message : '地图绘制失败')
@@ -112,13 +118,22 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
       cancelAnimationFrame(frame)
       renderer?.dispose()
     }
-  }, [page, images, image, options, zoom, availableWidth, background.width, background.height, paths])
+  }, [page, images, image, options, zoom, availableWidth, background.width, background.height, paths, facings])
+
+  const shownFacings = facings && page.booths
+    .filter(booth => options.selectedIsland === null || options.selectedIsland === booth.islandId)
+    .map(booth => facings.get(booth.id)!)
 
   return (
     <Box ref={containerRef} sx={{ width: '100%', minWidth: 0 }}>
       {error && <Alert severity="error">{error}</Alert>}
-      {options.pathGraph && pathError && <Alert severity="error">{pathError}</Alert>}
-      {options.pathGraph && !paths && !pathError && <LinearProgress aria-label="加载路径图" />}
+      {needsPaths && pathError && <Alert severity="error">{pathError}</Alert>}
+      {needsPaths && !paths && !pathError && <LinearProgress aria-label="加载路径图" />}
+      {shownFacings && <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, fontSize: 13, mb: 1 }}>
+        <Box component="span" sx={{ color: facingColors.wall }}>壁摊 {shownFacings.filter(item => item.wall).length}</Box>
+        <Box component="span" sx={{ color: facingColors.aisle }}>普通摊位朝向 {shownFacings.filter(item => !item.wall && item.direction).length}</Box>
+        <Box component="span">圆点：待确认 {shownFacings.filter(item => !item.direction).length}</Box>
+      </Box>}
       {!image && !error && <LinearProgress aria-label="加载地图背景" />}
       <Box sx={{ overflow: 'auto', maxHeight: '75vh', bgcolor: '#eceff1', border: '1px solid', borderColor: 'divider' }}>
         <canvas

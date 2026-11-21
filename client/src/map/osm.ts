@@ -8,6 +8,12 @@ export function tagValues(tags: Tags, key: string): string[] {
   return value === undefined ? [] : Array.isArray(value) ? value : [value]
 }
 
+export function onewayDirection(tags: Tags): -1 | 0 | 1 {
+  const values = tagValues(tags, 'oneway').map(value => value.trim().toLowerCase())
+  return values.some(value => ['-1', 'reverse'].includes(value)) ? -1
+    : values.some(value => ['yes', 'true', '1'].includes(value)) ? 1 : 0
+}
+
 export function featureLevels(tags: Tags): number[] {
   return [...new Set(tagValues(tags, 'level').flatMap(value => value.split(/[;,]/))
     .map(value => value.trim()).filter(value => value !== '').map(Number).filter(Number.isFinite))]
@@ -68,6 +74,7 @@ export interface OsmMapData {
   bounds: Bounds
   warnings: string[]
   outsideHallRoutes: ReadonlyMap<string, readonly OsmRouteSegment[]>
+  navigationRoutes?: readonly OsmRouteSegment[]
 }
 
 export interface OsmRouteSegment {
@@ -75,6 +82,7 @@ export interface OsmRouteSegment {
   to: string
   start: Point
   end: Point
+  direction?: ReturnType<typeof onewayDirection>
 }
 
 function boundsOf(paths: Point[][]): Bounds {
@@ -138,6 +146,24 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
   const relationTags = new Map<string, Tags>()
   const outsideHallRoutes = new Map<string, OsmRouteSegment[]>()
   const outsideHallWays = new Map<string, Set<string>>()
+  const isNavigation = (tags: Tags) => Object.keys(tags).some(key =>
+    key.startsWith('outside-hall:') || key === 'outside-hall')
+    || tagValues(tags, 'name').some(name => name.includes('連絡通路'))
+  const navigationWays = new Set(ways.filter(way => isNavigation(way.tags)).map(way => way.id))
+  const segmentsFor = (members: Iterable<string>) => {
+    const segments: OsmRouteSegment[] = []
+    for (const id of members) {
+      const way = wayById.get(id)
+      if (!way) continue
+      const { refs } = way
+      const direction = onewayDirection(way.tags)
+      for (let i = 1; i < refs.length; i++) {
+        const from = refs[i - 1], to = refs[i], start = points.get(from), end = points.get(to)
+        if (start && end && (start.x !== end.x || start.y !== end.y)) segments.push({ from, to, start, end, direction })
+      }
+    }
+    return segments
+  }
   for (const relation of relations) {
     const keys = tagValues(relation.tags, 'outside-hall').map(value => value.trim().toLowerCase())
     if (!keys.length) {
@@ -149,6 +175,9 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
     for (const member of relation.members) {
       if (member.type !== 'way') continue
       relationTags.set(member.ref, mergeTags(relationTags.get(member.ref) ?? {}, relation.tags))
+      if (keys.length || isNavigation(relation.tags)) {
+        navigationWays.add(member.ref)
+      }
       for (const key of keys) {
         let members = outsideHallWays.get(key)
         if (!members) outsideHallWays.set(key, members = new Set())
@@ -157,15 +186,7 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
     }
   }
   for (const [key, members] of outsideHallWays) {
-    const segments: OsmRouteSegment[] = []
-    for (const id of members) {
-      const refs = wayById.get(id)?.refs ?? []
-      for (let i = 1; i < refs.length; i++) {
-        const from = refs[i - 1], to = refs[i], start = points.get(from), end = points.get(to)
-        if (start && end && (start.x !== end.x || start.y !== end.y)) segments.push({ from, to, start, end })
-      }
-    }
-    outsideHallRoutes.set(key, segments)
+    outsideHallRoutes.set(key, segmentsFor(members))
   }
   let incompleteRelations = 0
   for (const relation of relations) {
@@ -237,7 +258,7 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
   const places = nodes.filter(node => tagValues(node.tags, 'name').length).map(node => ({
     point: points.get(node.id)!, name: tagValues(node.tags, 'name')[0],
   }))
-  return { features, places, bounds, warnings, outsideHallRoutes }
+  return { features, places, bounds, warnings, outsideHallRoutes, navigationRoutes: segmentsFor(navigationWays) }
 }
 
 function attribute(element: Element, name: string): string {

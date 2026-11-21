@@ -1,0 +1,10 @@
+{
+  "width": 4162,
+  "height": 2941,
+  "left": 734,
+  "right": 1698,
+  "bands": [
+    { "top": 1520, "bottom": 1524, "sample": 1519 },
+    { "top": 1545, "bottom": 1549, "sample": 1549 }
+  ]
+}

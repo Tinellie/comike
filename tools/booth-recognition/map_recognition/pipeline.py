@@ -52,9 +52,13 @@ class MapRecognizer:
             )
             for page in result.booths.pages
         })
-        LOGGER.info("Hall outline: closed source frame or nonwhite pixel bounds")
+        LOGGER.info("Hall outline: closed source frame, known layout or nonwhite pixel bounds")
+        venues = result.venues or {}
         result = replace(result, hall_outlines={
-            page.page: detect_hall_outline(page.image, [b.bbox for b in page.booths])
+            page.page: detect_hall_outline(
+                page.image, [b.bbox for b in page.booths],
+                venue_label=venues[page.page].label if page.page in venues else None,
+            )
             for page in result.booths.pages
         })
         LOGGER.info("Step 5: Island marker center alignment")

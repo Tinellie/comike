@@ -45,6 +45,9 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
   const tooltipRef = useRef<BoothHoverHandle | null>(null)
   const [pdfVisible, setPdfVisible] = useState(false)
   const [routesVisible, setRoutesVisible] = useState(true)
+  const [navigationNotice, setNavigationNotice] = useState<{ transforms: HallTransforms; halls: MapHall[]; message: string } | null>(null)
+  const navigationMessage = navigationNotice?.transforms === transforms && navigationNotice.halls === halls
+    ? navigationNotice.message : ''
   const routesState = useRef(routesVisible)
   const [pdfImages, setPdfImages] = useState<ReadonlyMap<MapHall, HTMLImageElement>>(new Map())
   const [pdfError, setPdfError] = useState<string | null>(null)
@@ -251,9 +254,25 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
       else return
       event.preventDefault()
     }
+    function navigationKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.repeat || event.isComposing || drag
+        || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
+        || (event.target instanceof HTMLElement
+          && (event.target.isContentEditable || event.target.closest('input, textarea, select, button, a, [role="combobox"]')))) return
+      if (event.code === 'Space') {
+        const message = renderer?.selectNavigationPoint()
+        if (!message) return
+        setNavigationNotice({ ...hallState.current, message })
+      } else if (event.key.toLowerCase() === 'x' && renderer?.hasNavigationSelection()) {
+        renderer.clearNavigation()
+        setNavigationNotice(null)
+      } else return
+      event.preventDefault()
+    }
     resize()
     observer.observe(container)
     window.addEventListener('resize', resize)
+    window.addEventListener('keydown', navigationKeyDown)
     canvas.addEventListener('pointerdown', pointerDown)
     canvas.addEventListener('pointermove', pointerMove)
     canvas.addEventListener('pointerleave', pointerLeave)
@@ -265,6 +284,7 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
     return () => {
       observer.disconnect()
       window.removeEventListener('resize', resize)
+      window.removeEventListener('keydown', navigationKeyDown)
       canvas.removeEventListener('pointerdown', pointerDown)
       canvas.removeEventListener('pointermove', pointerMove)
       canvas.removeEventListener('pointerleave', pointerLeave)
@@ -307,6 +327,9 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
             onChange={(_, checked) => { setPdfVisible(checked); setPdfError(null) }} />} />
           {halls.some(hall => hall.pathGraph?.edges.length) && <FormControlLabel label="路径图"
             control={<Switch checked={routesVisible} onChange={(_, checked) => setRoutesVisible(checked)} />} />}
+          <Typography variant="caption" component="p" role="status" sx={{ mb: 1 }}>
+            {navigationMessage || '悬浮摊位，按两次空格依次选起点和终点。X 清除路线。'}
+          </Typography>
           {pdfVisible && !pdfError && halls.some(hall => !pdfImages.has(hall))
             && <LinearProgress aria-label="加载 PDF 原图" />}
           {pdfVisible && pdfError && <Alert severity="warning" action={<Button onClick={() => {

@@ -2,6 +2,7 @@ import { statusColors } from './data'
 import type { PreviewBooth, PreviewPage } from './data'
 import { inverseTransform } from './pdfPreview'
 import type { PathSegment } from './pathGraph'
+import type { BoothFacing } from './boothFacing'
 
 export interface PreviewOptions {
   background: boolean
@@ -16,6 +17,7 @@ export interface PreviewOptions {
   hallOutline?: boolean
   hallLabels?: boolean
   pathGraph?: boolean
+  boothFacing?: boolean
   selectedIsland: string | null
 }
 
@@ -29,6 +31,7 @@ export interface DrawingScene {
   numberColor?: string
   numberBackground?: boolean
   paths?: PathSegment[] | null
+  facings?: ReadonlyMap<string, BoothFacing> | null
 }
 
 export function drawSceneText(scene: Pick<DrawingScene, 'drawText'>, x: number, y: number, draw: () => void) {

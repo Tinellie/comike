@@ -24,7 +24,8 @@ export default function Preview() {
   const [zoom, setZoom] = useState<number | 'fit'>('fit')
   const [options, setOptions] = useState<PreviewOptions>({
     background: true, preprocessPdf: true, boxes: true, blockFrames: true, numbers: true, islands: true,
-    groups: true, gaps: true, halfBooths: true, hallOutline: true, hallLabels: true, pathGraph: false, selectedIsland: null,
+    groups: true, gaps: true, halfBooths: true, hallOutline: true, hallLabels: true, pathGraph: false,
+    boothFacing: false, selectedIsland: null,
   })
 
   useEffect(() => {
@@ -161,6 +162,7 @@ export default function Preview() {
               ['hallOutline', 'Hall 边框'],
               ['hallLabels', '场馆标签'],
               ['pathGraph', '路径图'],
+              ['boothFacing', '摊位朝向'],
             ] as const).map(([key, label]) => (
               <FormControlLabel
                 key={key} label={label}
@@ -171,6 +173,7 @@ export default function Preview() {
                   || (key === 'hallOutline' && !page.hallOutline)
                   || (key === 'hallLabels' && !page.hallLabels?.length)
                   || (key === 'pathGraph' && !page.pdfPreview)
+                  || (key === 'boothFacing' && (!page.pdfPreview || page.halfBooths === null))
                   || (key === 'preprocessPdf' && (!options.background || !page.pdfPreview))
                   || ((key === 'groups' || key === 'gaps') && page.islandAssignment === null)
                 } onChange={(_, checked) =>

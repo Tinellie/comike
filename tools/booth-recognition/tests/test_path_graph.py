@@ -4,12 +4,28 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from map_recognition.path_graph import (
-    _edge_walkable_pixels, _extend_open_ends, _extend_to_venue_edge, _straighten_paths,
+    _edge_walkable_pixels, _extend_open_ends, _extend_to_venue_edge, _remove_west_guide_lines, _straighten_paths,
     build_path_graph, walkable_pixels,
 )
 
 
 class PathGraphTests(unittest.TestCase):
+    def test_west_guide_line_cleanup_opens_aisle_without_erasing_walls(self):
+        image = Image.new("RGB", (4162, 2941), "white")
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((734, 1510, 776, 1560), fill="#595959")
+        draw.rectangle((1552, 1510, 1697, 1560), fill="#595959")
+        for y in (1522, 1546):
+            draw.line((734, y, 1697, y), fill="black")
+        draw.point((1000, 1532), fill="black")
+        cleaned = _remove_west_guide_lines(image)
+        for y in (1522, 1546):
+            self.assertEqual(cleaned.getpixel((1000, y)), (255, 255, 255))
+            self.assertEqual(cleaned.getpixel((760, y)), (89, 89, 89))
+            self.assertEqual(cleaned.getpixel((1580, y)), (89, 89, 89))
+            self.assertEqual(image.getpixel((1000, y)), (0, 0, 0))
+        self.assertEqual(cleaned.getpixel((1000, 1532)), (0, 0, 0))
+
     def test_edge_frame_can_be_crossed_but_booth_and_wall_remain_blocked(self):
         image = Image.new("RGB", (181, 160), "white")
         draw = ImageDraw.Draw(image)

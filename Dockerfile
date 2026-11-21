@@ -9,6 +9,7 @@ RUN npm ci
 COPY client ./client
 COPY server ./server
 COPY ref/hall-meta.json ./ref/hall-meta.json
+COPY tools/booth-recognition/map_recognition/west_line_cleanup.json ./tools/booth-recognition/map_recognition/
 RUN npm run build && npm prune --omit=dev
 
 FROM node:22-bookworm-slim AS runtime

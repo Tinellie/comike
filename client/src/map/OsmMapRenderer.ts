@@ -10,6 +10,8 @@ import { hallMatrix, hallWorldBounds } from './halls'
 import { HallVisibility, intersectsBounds } from './hallVisibility'
 import type { HallPlacement, HallTransforms, MapHall } from './halls'
 import { outsideHallKey, projectHallPerimeter } from './hallPerimeter'
+import { boothRoutePoint, buildNavigation, shortestRoute } from './navigation'
+import type { RoutePoint } from './navigation'
 import type { Bounds } from './viewport'
 import type { HallRegistrationReport } from './hallRegistration'
 import { boothHover, BoothOccupancy } from './boothOccupancy'
@@ -81,6 +83,42 @@ export class OsmMapRenderer {
   private hover: { hallIndex: number; bbox: PreviewBooth['bbox'] } | null = null
   private pdfImages: ReadonlyMap<MapHall, HTMLImageElement> = new Map()
   private routesVisible = true
+  private navigation: ReturnType<typeof buildNavigation> | null = null
+  private routeStart: RoutePoint | null = null
+  private routeEnd: RoutePoint | null = null
+  private routeLine: Path2D | null = null
+  private routeHover: { hallIndex: number; booth: PreviewBooth; bbox: PreviewBooth['bbox'] } | null = null
+
+  hasNavigationSelection() { return this.routeStart !== null }
+
+  clearNavigation() {
+    this.routeStart = this.routeEnd = null
+    this.routeLine = null
+    this.requestDraw()
+  }
+
+  selectNavigationPoint() {
+    this.updateHover()
+    if (!this.routeHover) return null
+    if (this.routeEnd) return '按 X 清除当前路线后，可重新选点'
+    this.navigation ??= buildNavigation(this.data, this.halls, this.transforms)
+    const { hallIndex, booth, bbox } = this.routeHover
+    const selection = boothRoutePoint(this.navigation, hallIndex, booth, bbox)
+    if (!selection.target) return selection.error
+    if (!this.routeStart) {
+      this.routeStart = selection.target
+      this.requestDraw()
+      return '已选起点。悬浮另一个摊位，按空格选终点；按 X 取消。'
+    }
+    const route = shortestRoute(this.navigation.nodes, this.navigation.edges, this.routeStart, selection.target)
+    if (!route) return '这两个摊位的路径不连通，请换一个终点，或按 X 取消。'
+    this.routeEnd = selection.target
+    this.routeLine = localPath([route.points], this.origin, false)
+    this.requestDraw()
+    const length = route.points.slice(1).reduce((sum, p, i) =>
+      sum + Math.hypot(p.x - route.points[i].x, p.y - route.points[i].y), 0)
+    return `路线约 ${Math.round(length * this.metersPerUnit)} 米。按 X 清除。`
+  }
   private readonly perimeterPaths = new WeakMap<MapHall, {
     placement: HallPlacement; perimeter: Path2D; links: Path2D
   }>()
@@ -176,6 +214,10 @@ export class OsmMapRenderer {
   }
 
   setHalls(halls: MapHall[], transforms: HallTransforms, display: HallDisplay, selected: number | null) {
+    if (halls !== this.halls || transforms !== this.transforms) {
+      this.navigation = null
+      this.clearNavigation()
+    }
     this.halls = halls
     this.transforms = transforms
     this.hallDisplay = display
@@ -230,6 +272,7 @@ export class OsmMapRenderer {
   }
 
   private updateHover(redraw = true): MapBoothHit | null {
+    this.routeHover = null
     let label = ''
     let selected: MapBoothHit | null = null
     let hover: typeof this.hover = null
@@ -261,6 +304,7 @@ export class OsmMapRenderer {
         if (!hit) continue
         const islandCode = hit.block.islandId === null ? null : hall.islandCodes.get(hit.block.islandId)
         const appearance = boothHover(hit, islandCode ?? null, this.occupancy)
+        this.routeHover = { hallIndex: hall.index, booth: hit.booth, bbox: hit.half.bbox }
         hover = appearance.bbox ? { hallIndex: hall.index, bbox: appearance.bbox } : null
         label = `${hall.name ?? `Hall ${hall.index + 1}`} / ${islandCode ?? hit.block.islandId ?? '?'} / ${hit.booth.number ?? '?'}${appearance.suffix}`
         if (appearance.bbox && hall.name && islandCode && hit.booth.number && (hit.half.suffix === 'a' || hit.half.suffix === 'b')) {
@@ -444,6 +488,30 @@ export class OsmMapRenderer {
         const highlights = this.favoriteHighlights.byHall.get(hall.index)
         if (!filtered && highlights?.length) this.hallLayer.drawFavorites(ctx, hall, placement, this.origin, highlights)
       }
+    }
+    if (this.routeStart) {
+      ctx.save()
+      ctx.setLineDash([])
+      ctx.lineJoin = ctx.lineCap = 'round'
+      if (this.routeLine) {
+        ctx.strokeStyle = '#fff'
+        ctx.lineWidth = 8 / view.scale
+        ctx.stroke(this.routeLine)
+        ctx.strokeStyle = '#df4913'
+        ctx.lineWidth = 5 / view.scale
+        ctx.stroke(this.routeLine)
+      }
+      for (const [marker, color] of [[this.routeStart, '#067348'], [this.routeEnd, '#df4913']] as const) {
+        if (!marker) continue
+        ctx.beginPath()
+        ctx.arc(marker.point.x - this.origin.x, marker.point.y - this.origin.y, 6 / view.scale, 0, 2 * Math.PI)
+        ctx.fillStyle = color
+        ctx.fill()
+        ctx.strokeStyle = '#fff'
+        ctx.lineWidth = 2 / view.scale
+        ctx.stroke()
+      }
+      ctx.restore()
     }
     this.onZoom(Math.round(view.scale / fitViewport(this.data.bounds, size).scale * 100))
   }

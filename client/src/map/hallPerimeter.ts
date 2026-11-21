@@ -9,8 +9,16 @@ export function outsideHallKey(codes: readonly (string | null)[]): string | null
 
 type HallEdge = { from: number; to: number; kind: 'indoor' | 'perimeter' }
 
+export function projectOntoSegment(point: Point, start: Point, end: Point) {
+  const dx = end.x - start.x, dy = end.y - start.y
+  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy || 1)))
+  const projected = t === 0 ? start : t === 1 ? end : { x: start.x + t * dx, y: start.y + t * dy }
+  return { point: projected, t, distance: (point.x - projected.x) ** 2 + (point.y - projected.y) ** 2 }
+}
+
 export function projectHallPerimeter(
   nodes: readonly Point[], edges: readonly HallEdge[], route: readonly OsmRouteSegment[],
+  onLink?: (hallNode: number, segment: OsmRouteSegment, t: number, point: Point) => void,
 ): { perimeter: Point[][]; links: Point[][]; disconnected: number } {
   const rim = edges.filter(edge => edge.kind === 'perimeter')
   const indoor = new Set(edges.filter(edge => edge.kind === 'indoor').flatMap(edge => [edge.from, edge.to]))
@@ -32,11 +40,8 @@ export function projectHallPerimeter(
     const original = nodes[id]
     let best: { segment: number; t: number; point: Point; distance: number } | undefined
     route.forEach(({ start, end }, segment) => {
-      const dx = end.x - start.x, dy = end.y - start.y
-      const t = Math.max(0, Math.min(1, ((original.x - start.x) * dx + (original.y - start.y) * dy) / (dx * dx + dy * dy)))
-      const point = t === 0 ? start : t === 1 ? end : { x: start.x + t * dx, y: start.y + t * dy }
-      const distance = (point.x - original.x) ** 2 + (point.y - original.y) ** 2
-      if (!best || distance < best.distance) best = { segment, t, point, distance }
+      const hit = projectOntoSegment(original, start, end)
+      if (!best || hit.distance < best.distance) best = { segment, ...hit }
     })
     if (!best) continue
     const { segment, t, point, distance } = best
@@ -46,7 +51,10 @@ export function projectHallPerimeter(
       cuts[segment].set(t, vertex)
     }
     projected.set(id, vertex)
-    if (indoor.has(id) && distance > 0) links.push([original, point])
+    if (indoor.has(id)) {
+      onLink?.(id, route[segment], t, point)
+      if (distance > 0) links.push([original, point])
+    }
   }
 
   const adjacency = vertices.map(() => new Map<number, number>())

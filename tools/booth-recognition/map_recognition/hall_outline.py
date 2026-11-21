@@ -109,7 +109,9 @@ class HallOutline:
         }
 
 
-def detect_hall_outline(image: Image.Image, booths: Sequence[Box]) -> HallOutline:
+def detect_hall_outline(
+    image: Image.Image, booths: Sequence[Box], *, venue_label: str | None = None,
+) -> HallOutline:
     rgb = np.asarray(opaque_rgb(image))
     height, width = rgb.shape[:2]
     for box in booths:
@@ -165,8 +167,19 @@ def detect_hall_outline(image: Image.Image, booths: Sequence[Box]) -> HallOutlin
 
     ys, xs = np.nonzero(nonwhite)
     x, y, right, bottom = int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())
+    bbox = Box(x, y, right - x + 1, bottom - y + 1)
+    if venue_label == "\u897f12" and image.size == (2680, 2520) and bbox == Box(0, 0, 2680, 2520):
+        # The West 1–2 PDF crop has no closed frame around its open central recess.
+        inner, top, lower = 984, 762, 1757
+        if booths and all(b.x + b.width - 1 <= inner or b.y + b.height - 1 <= top or b.y >= lower for b in booths):
+            LOGGER.info("Hall outline: West 1-2 layout recess")
+            return HallOutline("layout_notch", (
+                (x, y), (right, y), (right, top), (inner, top),
+                (inner, lower), (right, lower), (right, bottom), (x, bottom),
+            ), bbox)
+        LOGGER.warning("Hall outline: West 1-2 layout recess could not be verified against Booths")
     LOGGER.info("Hall outline: no enclosing closed frame; using all nonwhite pixel bounds")
     return HallOutline(
         "nonwhite_bbox", ((x, y), (right, y), (right, bottom), (x, bottom)),
-        Box(x, y, right - x + 1, bottom - y + 1),
+        bbox,
     )
