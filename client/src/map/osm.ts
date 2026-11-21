@@ -76,6 +76,14 @@ export interface OsmMapData {
   outsideHallRoutes: ReadonlyMap<string, readonly OsmRouteSegment[]>
   navigationRoutes?: readonly OsmRouteSegment[]
   venueRoutes?: readonly OsmRouteSegment[]
+  namedRoutes?: readonly OsmNamedRoute[]
+}
+
+export interface OsmNamedRoute {
+  id: string
+  name: string
+  hall: string
+  wayIds: string[]
 }
 
 export interface OsmRouteSegment {
@@ -266,8 +274,20 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
   const places = nodes.filter(node => tagValues(node.tags, 'name').length).map(node => ({
     point: points.get(node.id)!, name: tagValues(node.tags, 'name')[0],
   }))
+  const featureIds = new Set(features.map(feature => feature.id))
+  const namedRoutes = relations.flatMap(({ id, tags, members }): OsmNamedRoute[] => {
+    const name = tagValues(tags, 'name')[0]?.trim()
+    if (!name) return []
+    const normalized = name.normalize('NFKC').replace(/东/g, '東')
+    const hall = /^[東西南北]+\s*[-‐‑–—→]\s*([東西南北])\s*[連连][絡络]通路$/.exec(normalized)?.[1]
+      ?? /^([東西南北])[東西南北]*\s*待[機机]列$/.exec(normalized)?.[1]
+    if (!hall) return []
+    const wayIds = [...new Set(members.filter(member => member.type === 'way')
+      .map(member => `way/${member.ref}`).filter(ref => featureIds.has(ref)))]
+    return wayIds.length ? [{ id, name, hall, wayIds }] : []
+  })
   return { features, places, bounds, warnings, outsideHallRoutes, navigationRoutes: segmentsFor(navigationWays),
-    venueRoutes: segmentsFor(venueWays) }
+    venueRoutes: segmentsFor(venueWays), namedRoutes }
 }
 
 function attribute(element: Element, name: string): string {

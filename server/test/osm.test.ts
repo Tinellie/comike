@@ -37,6 +37,25 @@ test('outside hall paths use only the matching relation members and do not bridg
   assert.deepEqual(data.outsideHallRoutes.get('w12')?.map(({ from, to }) => [from, to]), [['2', '3']])
 })
 
+test('named queue and connector highlights use the correct hall and only their own drawable way members', () => {
+  const wayMember = (ref: string) => ({ type: 'way', ref, role: '' })
+  const data = buildOsmMap(nodes(), [
+    { id: 'shared', refs: ['1', '2'], tags: {} },
+    { id: 'connector', refs: ['2', '3'], tags: {} },
+    { id: 'node-only', refs: ['3', '4'], tags: {} },
+  ], [
+    { id: '1', tags: { name: '西南待機列' }, members: [
+      wayMember('shared'), wayMember('shared'), wayMember('missing'), { type: 'node', ref: 'node-only', role: '' },
+    ] },
+    { id: '2', tags: { name: '西-東連絡通路' }, members: [wayMember('shared'), wayMember('connector')] },
+    { id: '3', tags: { name: 'outside-hall-e123' }, members: [wayMember('node-only')] },
+  ])
+  assert.deepEqual(data.namedRoutes, [
+    { id: '1', name: '西南待機列', hall: '西', wayIds: ['way/shared'] },
+    { id: '2', name: '西-東連絡通路', hall: '東', wayIds: ['way/shared', 'way/connector'] },
+  ])
+})
+
 test('all perimeter nodes snap to the nearest road and projected edges follow bends', () => {
   const p = (x: number, y: number) => ({ x, y })
   const route = [

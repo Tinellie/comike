@@ -8,7 +8,7 @@ import type { OsmMapData } from './osm'
 import { OsmMapRenderer } from './OsmMapRenderer'
 import type { MapBoothHit } from './OsmMapRenderer'
 import type { HallTransforms, MapHall } from './halls'
-import { defaultHallDisplay } from './HallMapLayer'
+import { defaultHallDisplay, hallRouteColor } from './HallMapLayer'
 import { dragRotation } from './viewport'
 import type { MapBoothData, MapBoothLocation } from '../booths/api'
 import BoothHoverPreview from './BoothHoverPreview'
@@ -47,6 +47,8 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
   const tooltipRef = useRef<BoothHoverHandle | null>(null)
   const [pdfVisible, setPdfVisible] = useState(false)
   const routesState = useRef(routesVisible)
+  const [selectedRoutes, setSelectedRoutes] = useState<ReadonlySet<string>>(() => new Set())
+  const selectedRoutesState = useRef(selectedRoutes)
   const [pdfImages, setPdfImages] = useState<ReadonlyMap<MapHall, HTMLImageElement>>(new Map())
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [pdfAttempt, setPdfAttempt] = useState(0)
@@ -62,6 +64,11 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
     routesState.current = routesVisible
     rendererRef.current?.setRoutesVisible(routesVisible)
   }, [routesVisible])
+
+  useEffect(() => {
+    selectedRoutesState.current = selectedRoutes
+    rendererRef.current?.setSelectedRoutes(selectedRoutes)
+  }, [selectedRoutes])
 
   useEffect(() => {
     genreState.current = { enabled: genreEnabled, selected: selectedGenres }
@@ -176,6 +183,7 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
         renderer.setGenreDisplay(genreState.current.enabled, genreState.current.selected)
         renderer.setPdfImages(pdfState.current)
         renderer.setRoutesVisible(routesState.current)
+        renderer.setSelectedRoutes(selectedRoutesState.current)
       } catch (reason) {
         console.error('OSM rendering failed:', reason)
         onError(reason instanceof Error ? reason.message : 'OSM 地图绘制失败')
@@ -400,6 +408,31 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
               </Box>
             </>}
           </Popover>
+          {!!data.namedRoutes?.length && (
+            <Accordion disableGutters elevation={0}>
+              <AccordionSummary aria-controls="map-route-options" id="map-routes-label"
+                expandIcon={<Box sx={{ width: 7, height: 7, borderRight: '1px solid', borderBottom: '1px solid',
+                  transform: 'rotate(45deg)' }} />}>
+                <Typography variant="body2">routes</Typography>
+              </AccordionSummary>
+              <AccordionDetails sx={{ p: 0 }}>
+                <FormGroup aria-labelledby="map-routes-label" sx={{ '& .MuiFormControlLabel-root': { m: 0, minHeight: 28 },
+                  '& .MuiCheckbox-root': { p: 0.5 }, '& .MuiFormControlLabel-label': { fontSize: 12 } }}>
+                  {data.namedRoutes.map(({ id, name, hall }) => (
+                    <FormControlLabel key={id} label={name}
+                      control={<Checkbox size="small" checked={selectedRoutes.has(id)}
+                        sx={{ '&.Mui-checked': { color: hallRouteColor(hall) } }}
+                        onChange={(_, checked) => setSelectedRoutes(previous => {
+                          const next = new Set(previous)
+                          if (checked) next.add(id)
+                          else next.delete(id)
+                          return next
+                        })} />} />
+                  ))}
+                </FormGroup>
+              </AccordionDetails>
+            </Accordion>
+          )}
           <Typography variant="caption" component="div" sx={{
             color: 'text.secondary', overflowWrap: 'anywhere', minHeight: '1.5em',
           }}>

@@ -1,10 +1,10 @@
 import type { OsmFeature, OsmMapData } from './osm'
-import { featureLevels } from './osm'
+import { featureLevels, tagValues } from './osm'
 import { fitViewport, panViewport, rotatePoint, screenToWorld, viewportBounds, worldToScreen, zoomViewport } from './viewport'
 import type { Point, Size, Viewport } from './viewport'
 import { compareMapStyles, filteredLevelStyle, gridColor, hallLabel, mapBackground, mapStyle, matchesLevels, onewayTriangles } from './style'
 import type { MapStyle } from './style'
-import { HallMapLayer, defaultHallDisplay, hallMetadata } from './HallMapLayer'
+import { HallMapLayer, defaultHallDisplay, hallMetadata, hallRouteColor } from './HallMapLayer'
 import type { HallDisplay } from './HallMapLayer'
 import { hallMatrix, hallWorldBounds } from './halls'
 import { HallVisibility, intersectsBounds } from './hallVisibility'
@@ -60,6 +60,8 @@ export class OsmMapRenderer {
   private readonly metersPerUnit: number
   private readonly context: CanvasRenderingContext2D
   private readonly features: StyledFeature[]
+  private readonly namedRoutePaths: { id: string; member: StyledFeature; area: boolean; color: string; fill: string }[]
+  private selectedRoutes: ReadonlySet<string> = new Set()
   private size: Size = { width: 1, height: 1 }
   private view: Viewport | null = null
   private pixelRatio = 1
@@ -168,6 +170,12 @@ export class OsmMapRenderer {
     this.requestDraw()
   }
 
+  setSelectedRoutes(routes: ReadonlySet<string>) {
+    if (this.selectedRoutes === routes) return
+    this.selectedRoutes = routes
+    this.requestDraw()
+  }
+
   setPdfImages(images: ReadonlyMap<MapHall, HTMLImageElement>) {
     this.pdfImages = images
     this.requestDraw()
@@ -214,6 +222,22 @@ export class OsmMapRenderer {
       style: mapStyle(feature),
       levels: featureLevels(feature.tags),
     })).sort((a, b) => compareMapStyles(a.style, b.style))
+    const featurePaths = new Map(this.features.map(item => [item.feature.id, item]))
+    this.namedRoutePaths = (data.namedRoutes ?? []).flatMap(({ id, hall, wayIds }) => {
+      const color = hallRouteColor(hall)
+      const tint = [1, 3, 5].map(offset => Math.round(255 * 0.7 + Number.parseInt(color.slice(offset, offset + 2), 16) * 0.3))
+      const fill = `rgb(${tint.join(', ')})`
+      return wayIds.flatMap(way => {
+        const member = featurePaths.get(way)
+        if (!member) return []
+        const { feature } = member
+        const [ring] = feature.paths
+        // An explicitly tagged route area can also be a member of a separate multipolygon.
+        const area = feature.area || (feature.polygonMember === true && tagValues(feature.tags, 'area').includes('yes')
+          && feature.paths.length === 1 && ring.length >= 4 && ring[0] === ring.at(-1))
+        return [{ id, member, area, color, fill }]
+      })
+    }).sort((a, b) => a.member.style.level - b.member.style.level)
   }
 
   resize(width: number, height: number, pixelRatio: number) {
@@ -441,9 +465,13 @@ export class OsmMapRenderer {
         }
       }
     }
+    const highlighted = this.namedRoutePaths.filter(route => this.selectedRoutes.has(route.id))
+    const stairArrows = highlighted.filter(({ area, member }) => !area && member.style.lineDash.length)
+    const highlightedAreas = new Set(highlighted.filter(({ area }) => area).map(({ member }) => member.feature.id))
     for (const level of levels) {
       const items = visible.filter(item => item.style.level === level)
       for (const { feature, path, style, arrows, filtered } of items) {
+        if (highlightedAreas.has(feature.id)) continue
         if (style.fill && feature.area) {
           ctx.fillStyle = style.fill
           ctx.fill(path, 'evenodd')
@@ -507,6 +535,52 @@ export class OsmMapRenderer {
         if (!filtered && highlights?.length) this.hallLayer.drawFavorites(ctx, hall, placement, this.origin, highlights)
       }
     }
+    if (highlighted.length) {
+      ctx.save()
+      ctx.lineJoin = ctx.lineCap = 'round'
+      const stairWidth = 2.6
+      const strokeRoute = ({ path, style }: StyledFeature, casing = 0) => {
+        ctx.lineWidth = ((style.lineDash.length ? stairWidth : 1.8) + casing) / this.metersPerUnit
+        ctx.setLineDash(casing ? [] : style.lineDash.map(length => length / this.metersPerUnit))
+        ctx.lineCap = style.lineDash.length ? 'butt' : 'round'
+        ctx.stroke(path)
+      }
+      for (const level of new Set(highlighted.map(({ member }) => member.style.level))) {
+        const items = highlighted.filter(({ member }) => member.style.level === level)
+        for (const { member, area, fill } of items) {
+          if (!area) continue
+          ctx.fillStyle = fill
+          ctx.fill(member.path, 'evenodd')
+        }
+        const lines = items.filter(({ area }) => !area)
+        ctx.strokeStyle = '#fff'
+        for (const { member } of lines) strokeRoute(member, 1.2)
+        ctx.save()
+        ctx.setLineDash([])
+        ctx.lineCap = 'butt'
+        ctx.lineWidth = stairWidth / this.metersPerUnit
+        ctx.globalAlpha = 0.5
+        for (const { member, color } of lines) {
+          if (!member.style.lineDash.length) continue
+          ctx.strokeStyle = color
+          ctx.stroke(member.path)
+        }
+        ctx.restore()
+        ctx.setLineDash([])
+        ctx.lineCap = 'round'
+        ctx.strokeStyle = '#fff'
+        ctx.lineWidth = 1.2 / this.metersPerUnit
+        for (const { member } of lines) {
+          if (!member.style.lineDash.length) ctx.stroke(member.arrows)
+        }
+        for (const { member, color } of lines) {
+          ctx.strokeStyle = ctx.fillStyle = color
+          strokeRoute(member)
+          if (!member.style.lineDash.length) ctx.fill(member.arrows)
+        }
+      }
+      ctx.restore()
+    }
     if (this.routeStart) {
       ctx.save()
       ctx.setLineDash([])
@@ -536,6 +610,19 @@ export class OsmMapRenderer {
         ctx.strokeStyle = '#fff'
         ctx.lineWidth = 2 / view.scale
         ctx.stroke()
+      }
+      ctx.restore()
+    }
+    if (stairArrows.length) {
+      ctx.save()
+      ctx.setLineDash([])
+      ctx.lineJoin = 'round'
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 1.2 / this.metersPerUnit
+      for (const { member, color } of stairArrows) {
+        ctx.stroke(member.arrows)
+        ctx.fillStyle = color
+        ctx.fill(member.arrows)
       }
       ctx.restore()
     }

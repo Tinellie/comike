@@ -37,6 +37,15 @@ export function hallMarkerColor(hall: MapHall): string {
   return hallMetadata(hall).color
 }
 
+export function hallRouteColor(name: string) {
+  const color = hallEntries.find(entry => entry.name === name)?.color ?? '#666666'
+  const channels = [1, 3, 5].map(offset => Number.parseInt(color.slice(offset, offset + 2), 16))
+  const min = Math.min(...channels), max = Math.max(...channels)
+  if (max === min) return color
+  return `#${channels.map(channel => Math.round((channel - min) * max / (max - min))
+    .toString(16).padStart(2, '0')).join('')}`
+}
+
 export interface HallDisplay {
   visible: boolean
   boxes: boolean
