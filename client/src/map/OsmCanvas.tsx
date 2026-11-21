@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { MouseEvent } from 'react'
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, FormControlLabel,
   Chip, FormGroup, LinearProgress, MenuItem, Paper, Popover, Slider, Switch, TextField, Typography,
@@ -354,43 +355,50 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
               </FormGroup>
             </AccordionDetails>
           </Accordion>
-          <Accordion disableGutters elevation={0} defaultExpanded>
-            <AccordionSummary>
-              <Typography variant="body2">genre</Typography>
-            </AccordionSummary>
-            <AccordionDetails sx={{ p: 0 }}>
-              <FormControlLabel label="类别上色" sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: 13 } }}
-                control={<Checkbox size="small" checked={genreEnabled} onChange={(_, checked) => {
-                  setGenreEnabled(checked)
-                  if (!checked) setGenreAnchor(null)
-                }} />} />
-              {genreEnabled && <>
-                {!boothData?.genreReady
-                  ? <Typography variant="caption" color="warning.main">请先在 Crawler 整理 genre 数据</Typography>
-                  : <Button size="small" fullWidth onClick={event => setGenreAnchor(event.currentTarget)}>选择 genre
-                    {selectedGenres === null ? '（全部）' : `（${selectedGenres.length}）`}</Button>}
-              </>}
-            </AccordionDetails>
-          </Accordion>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Typography component={genreEnabled ? 'button' : 'span'} variant="body2"
+              type={genreEnabled ? 'button' : undefined}
+              aria-haspopup={genreEnabled ? 'dialog' : undefined}
+              aria-expanded={genreEnabled ? genreAnchor !== null : undefined}
+              aria-controls={genreAnchor ? 'map-genre-options' : undefined}
+              onClick={genreEnabled ? (event: MouseEvent<HTMLElement>) => setGenreAnchor(event.currentTarget) : undefined}
+              sx={{
+                display: 'flex', alignItems: 'center', flex: 1, height: 30, px: 0.5,
+                border: 0, borderRadius: 1, color: 'text.primary',
+                bgcolor: genreEnabled ? 'action.hover' : 'transparent',
+                ...(genreEnabled && { cursor: 'pointer', '&:hover': { bgcolor: 'action.selected' } }),
+              }}>genre</Typography>
+            <Checkbox size="small" checked={genreEnabled} sx={{ p: 0.5 }}
+              slotProps={{ input: { 'aria-label': '启用 genre 上色' } }}
+              onChange={(_, checked) => {
+                setGenreEnabled(checked)
+                if (!checked) setGenreAnchor(null)
+              }} />
+          </Box>
           <Popover open={genreEnabled && genreAnchor !== null} anchorEl={genreAnchor} onClose={() => setGenreAnchor(null)}
             anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-            slotProps={{ paper: { sx: { p: 1.5, maxWidth: 'min(560px, calc(100vw - 32px))', maxHeight: '65vh' } } }}>
-            <Typography variant="subtitle2">genre（社团数）</Typography>
-            <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-              <Button size="small" onClick={() => setSelectedGenres(null)}>全部上色</Button>
-              <Button size="small" onClick={() => setSelectedGenres([])}>全部取消</Button>
-            </Box>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-              {boothData?.genres.map(genre => {
-                const active = selectedGenres === null || selectedGenres.includes(genre.key)
-                return <Chip key={genre.key} size="small" label={`${genre.name || '未分类'}（${genre.count}）`}
-                  title={genre.code ? `genre code: ${genre.code}` : '无 genre code'}
-                  aria-pressed={active} variant={active ? 'filled' : 'outlined'}
-                  icon={<Box component="span" sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: genre.color }} />}
-                  onClick={() => setSelectedGenres(previous => previous === null ? [genre.key]
-                    : previous.includes(genre.key) ? previous.filter(key => key !== genre.key) : [...previous, genre.key])} />
-              })}
-            </Box>
+            slotProps={{ paper: { id: 'map-genre-options', role: 'dialog', 'aria-labelledby': 'map-genre-title',
+              sx: { p: 1.5, maxWidth: 'min(560px, calc(100vw - 32px))', maxHeight: '65vh' } } }}>
+            <Typography id="map-genre-title" variant="subtitle2">genre（社团数）</Typography>
+            {!boothData?.genreReady ? (
+              <Typography variant="caption" color="warning.main">请先在 Crawler 整理 genre 数据</Typography>
+            ) : <>
+              <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                <Button size="small" onClick={() => setSelectedGenres(null)}>全部上色</Button>
+                <Button size="small" onClick={() => setSelectedGenres([])}>全部取消</Button>
+              </Box>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                {boothData.genres.map(genre => {
+                  const active = selectedGenres === null || selectedGenres.includes(genre.key)
+                  return <Chip key={genre.key} size="small" label={`${genre.name || '未分类'}（${genre.count}）`}
+                    title={genre.code ? `genre code: ${genre.code}` : '无 genre code'}
+                    aria-pressed={active} variant={active ? 'filled' : 'outlined'}
+                    icon={<Box component="span" sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: genre.color }} />}
+                    onClick={() => setSelectedGenres(previous => previous === null ? [genre.key]
+                      : previous.includes(genre.key) ? previous.filter(key => key !== genre.key) : [...previous, genre.key])} />
+                })}
+              </Box>
+            </>}
           </Popover>
           <Typography variant="caption" component="div" sx={{
             color: 'text.secondary', overflowWrap: 'anywhere', minHeight: '1.5em',
