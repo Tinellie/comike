@@ -75,6 +75,7 @@ export interface OsmMapData {
   warnings: string[]
   outsideHallRoutes: ReadonlyMap<string, readonly OsmRouteSegment[]>
   navigationRoutes?: readonly OsmRouteSegment[]
+  venueRoutes?: readonly OsmRouteSegment[]
 }
 
 export interface OsmRouteSegment {
@@ -83,6 +84,7 @@ export interface OsmRouteSegment {
   start: Point
   end: Point
   direction?: ReturnType<typeof onewayDirection>
+  levels?: readonly number[]
 }
 
 function boundsOf(paths: Point[][]): Bounds {
@@ -157,9 +159,10 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
       if (!way) continue
       const { refs } = way
       const direction = onewayDirection(way.tags)
+      const levels = featureLevels(way.tags)
       for (let i = 1; i < refs.length; i++) {
         const from = refs[i - 1], to = refs[i], start = points.get(from), end = points.get(to)
-        if (start && end && (start.x !== end.x || start.y !== end.y)) segments.push({ from, to, start, end, direction })
+        if (start && end && (start.x !== end.x || start.y !== end.y)) segments.push({ from, to, start, end, direction, levels })
       }
     }
     return segments
@@ -222,6 +225,7 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
     }
   }
   let missingReferences = 0
+  const venueWays = new Set<string>()
   for (const way of ways) {
     const paths: Point[][] = []
     let segment: Point[] = []
@@ -241,10 +245,14 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
     if (!paths.length) continue
     const closed = !missing && way.refs.length >= 4 && way.refs[0] === way.refs.at(-1)
     const tags = mergeTags(relationTags.get(way.id) ?? {}, way.tags)
+    const polygonMember = polygonMembers.has(way.id)
+    const area = !polygonMember && isArea(tags, closed)
+    if (!area && !polygonMember && !navigationWays.has(way.id)
+      && tagValues(tags, 'tokyo-big-sight').includes('yes')
+      && (tagValues(way.tags, 'highway').some(value => ['footway', 'pedestrian', 'path', 'steps', 'corridor'].includes(value))
+        || Object.keys(way.tags).some(key => /^(?:path:.+|pathway)$/.test(key)))) venueWays.add(way.id)
     features.push({
-      id: `way/${way.id}`, paths, tags, bounds: boundsOf(paths),
-      area: !polygonMembers.has(way.id) && isArea(tags, closed),
-      polygonMember: polygonMembers.has(way.id),
+      id: `way/${way.id}`, paths, tags, bounds: boundsOf(paths), area, polygonMember,
     })
   }
   if (!features.length) throw new Error('OSM 文件中没有可绘制的有效地图线段或区域')
@@ -258,7 +266,8 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
   const places = nodes.filter(node => tagValues(node.tags, 'name').length).map(node => ({
     point: points.get(node.id)!, name: tagValues(node.tags, 'name')[0],
   }))
-  return { features, places, bounds, warnings, outsideHallRoutes, navigationRoutes: segmentsFor(navigationWays) }
+  return { features, places, bounds, warnings, outsideHallRoutes, navigationRoutes: segmentsFor(navigationWays),
+    venueRoutes: segmentsFor(venueWays) }
 }
 
 function attribute(element: Element, name: string): string {

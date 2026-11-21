@@ -21,6 +21,16 @@ export interface Size {
   height: number
 }
 
+export function pointInRing(point: Point, ring: readonly Point[]): boolean {
+  let inside = false
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length]
+    if ((a.y > point.y) !== (b.y > point.y)
+      && point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x) inside = !inside
+  }
+  return inside
+}
+
 export function projectCoordinate(latitude: number, longitude: number): Point {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
     || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {

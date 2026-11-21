@@ -3,11 +3,13 @@ import type { PreviewBooth } from '../preview/data'
 import { projectOntoSegment, outsideHallKey, projectHallPerimeter } from './hallPerimeter'
 import { hallMatrix } from './halls'
 import type { HallTransforms, MapHall } from './halls'
-import type { OsmMapData, OsmRouteSegment } from './osm'
+import { featureLevels, hallCodes, tagValues } from './osm'
+import type { OsmFeature, OsmMapData, OsmRouteSegment } from './osm'
+import { pointInRing } from './viewport'
 import type { Point } from './viewport'
 
-type Edge = { from: number; to: number; multiplier: number; oneway?: boolean }
-export type RoutePoint = { edge: Edge; point: Point }
+type Edge = { from: number; to: number; multiplier: number; oneway?: boolean; levels?: readonly number[]; venueOnly?: boolean }
+export type RoutePoint = { edge: Edge; point: Point; origin?: Point; front?: Point; insideHall?: boolean }
 type HallNavigation = { hall: MapHall; edges: Edge[]; toWorld: (p: Point) => Point }
 type Arc = { to: number; cost: number }
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
@@ -20,7 +22,9 @@ export function shortestRoute(nodes: Point[], edges: Edge[], start: RoutePoint, 
     const cost = distance(points[from], points[to]) * multiplier
     links[from].push({ to, cost })
   }
-  for (const { from, to, multiplier, oneway } of edges) {
+  const hallOnly = start.insideHall && end.insideHall
+  for (const { from, to, multiplier, oneway, venueOnly } of edges) {
+    if (hallOnly && venueOnly) continue
     connect(from, to, multiplier)
     if (!oneway) connect(to, from, multiplier)
   }
@@ -59,12 +63,14 @@ export function shortestRoute(nodes: Point[], edges: Edge[], start: RoutePoint, 
   return null
 }
 
-export function buildNavigation(data: OsmMapData, halls: MapHall[], transforms: HallTransforms) {
+export function buildNavigation(data: OsmMapData, halls: MapHall[], transforms: HallTransforms, hallLevel: (hall: MapHall) => number) {
   const nodes: Point[] = [], edges: Edge[] = []
   const addNode = (point: Point) => nodes.push(point) - 1
   const connect = (from: number, to: number, multiplier: number) => edges.push({ from, to, multiplier })
   const osmNodes = new Map<string, number>()
-  const osmEdges = new Map<string, { cuts: Map<number, number>; forward: boolean; backward: boolean }>()
+  const osmEdges = new Map<string, {
+    cuts: Map<number, number>; forward: boolean; backward: boolean; levels: Set<number>; venueOnly: boolean
+  }>()
   function osmNode(id: string, point: Point) {
     let vertex = osmNodes.get(id)
     if (vertex === undefined) {
@@ -73,18 +79,20 @@ export function buildNavigation(data: OsmMapData, halls: MapHall[], transforms: 
     }
     return vertex
   }
-  function cut(segment: OsmRouteSegment, t: number, point: Point) {
+  function cut(segment: OsmRouteSegment, t: number, point: Point, venueOnly = false) {
     const ordered = segment.from < segment.to
-    const key = `${ordered ? segment.from : segment.to}/${ordered ? segment.to : segment.from}`
+    const key = `${venueOnly}/${ordered ? segment.from : segment.to}/${ordered ? segment.to : segment.from}`
     let edge = osmEdges.get(key)
     if (!edge) {
       const start = osmNode(segment.from, segment.start), end = osmNode(segment.to, segment.end)
-      edge = { cuts: new Map([[0, ordered ? start : end], [1, ordered ? end : start]]), forward: false, backward: false }
+      edge = { cuts: new Map([[0, ordered ? start : end], [1, ordered ? end : start]]),
+        forward: false, backward: false, levels: new Set(), venueOnly }
       osmEdges.set(key, edge)
     }
     const direction = segment.direction ?? 0
     edge.forward ||= direction !== (ordered ? -1 : 1)
     edge.backward ||= direction !== (ordered ? 1 : -1)
+    for (const level of defaultLevel(segment.levels)) edge.levels.add(level)
     const { cuts } = edge
     const fraction = Math.round((ordered ? t : 1 - t) * 1e10) / 1e10
     let vertex = cuts.get(fraction)
@@ -95,6 +103,7 @@ export function buildNavigation(data: OsmMapData, halls: MapHall[], transforms: 
     return vertex
   }
   for (const segment of data.navigationRoutes ?? []) cut(segment, 0, segment.start)
+  for (const segment of data.venueRoutes ?? []) cut(segment, 0, segment.start, true)
   const byHall = new Map<number, HallNavigation>()
   for (const placement of transforms.placements) {
     const hall = halls.find(item => item.index === placement.hallIndex)
@@ -104,7 +113,8 @@ export function buildNavigation(data: OsmMapData, halls: MapHall[], transforms: 
     const world = hall.pathGraph.nodes.map(toWorld)
     const indices = world.map(addNode)
     const indoor = hall.pathGraph.edges.filter(edge => edge.kind === 'indoor')
-    const hallEdges = indoor.map(({ from, to }) => ({ from: indices[from], to: indices[to], multiplier: 1 }))
+    const levels = [hallLevel(hall)]
+    const hallEdges = indoor.map(({ from, to }) => ({ from: indices[from], to: indices[to], multiplier: 1, levels }))
     edges.push(...hallEdges)
     byHall.set(hall.index, { hall, edges: hallEdges, toWorld })
     const key = outsideHallKey(hall.labels.map(label => label.code))
@@ -115,14 +125,58 @@ export function buildNavigation(data: OsmMapData, halls: MapHall[], transforms: 
       })
     }
   }
-  for (const { cuts, forward, backward } of osmEdges.values()) {
+  for (const { cuts, forward, backward, levels, venueOnly } of osmEdges.values()) {
     const ids = [...cuts].sort(([a], [b]) => a - b).map(([, id]) => id)
+    const edgeLevels = [...levels]
     for (let i = 1; i < ids.length; i++) {
-      if (forward && backward) connect(ids[i - 1], ids[i], 1)
-      else edges.push({ from: forward ? ids[i - 1] : ids[i], to: forward ? ids[i] : ids[i - 1], multiplier: 1, oneway: true })
+      edges.push({ from: forward ? ids[i - 1] : ids[i], to: forward ? ids[i] : ids[i - 1],
+        multiplier: 1, oneway: !(forward && backward), levels: edgeLevels, venueOnly })
     }
   }
   return { nodes, edges, byHall }
+}
+
+function defaultLevel(levels?: readonly number[]) {
+  return levels?.length ? levels : [0]
+}
+
+export function areaRoutePoint(
+  { nodes, edges }: ReturnType<typeof buildNavigation>, features: readonly OsmFeature[],
+  origin: Point, selectedLevels: ReadonlySet<number>,
+): { target: RoutePoint; error?: never } | { error: string; target?: never } | null {
+  const hallLevels = new Set<number>()
+  const venueLevels = new Set<number>()
+  const entryLevels = new Set<number>()
+  for (const { area, tags, paths, bounds } of features) {
+    if (!area
+      || origin.x < bounds.minX || origin.x > bounds.maxX || origin.y < bounds.minY || origin.y > bounds.maxY
+      || !paths.reduce((inside, ring) => inside !== pointInRing(origin, ring), false)) continue
+    const levels = featureLevels(tags)
+    if (hallCodes(tags).length) {
+      for (const level of defaultLevel(levels)) hallLevels.add(level)
+    }
+    if (!tagValues(tags, 'tokyo-big-sight').includes('yes')) continue
+    const entry = Object.keys(tags).some(key => /^path:[^:]+-entry$/.test(key))
+    for (const level of defaultLevel(levels)) {
+      venueLevels.add(level)
+      if (entry) entryLevels.add(level)
+    }
+  }
+  const insideHall = hallLevels.size > 0
+  const candidates = [...(insideHall ? hallLevels : venueLevels)]
+  const visible = candidates.filter(level => !selectedLevels.size || selectedLevels.has(level))
+  const floor = Math.max(...(insideHall && !visible.length ? candidates : visible))
+  if (!venueLevels.has(floor)) return null
+  if (entryLevels.has(floor)) return { error: '该入口区域不能选点。' }
+  let target: RoutePoint | undefined, nearest = Infinity
+  for (const edge of edges) {
+    if ((insideHall && edge.venueOnly) || !edge.levels?.includes(floor)) continue
+    const { point, distance } = projectOntoSegment(origin, nodes[edge.from], nodes[edge.to])
+    if (distance >= nearest) continue
+    target = { edge, point, origin, insideHall }
+    nearest = distance
+  }
+  return target ? { target } : { error: '该楼层没有可接入的导航路径。' }
 }
 
 function crossesBooth(start: Point, end: Point, box: PreviewBooth['bbox']) {
@@ -154,7 +208,8 @@ export function boothRoutePoint(
   const facing = hallFacings(hall).get(booth.id)?.direction
   if (!facing) return { error: '无法判定该摊位朝向，请选择其他摊位' }
   const { x, y, width, height } = booth.bbox
-  const anchor = { x: target.x + target.width / 2, y: target.y + target.height / 2 }
+  const center = { x: target.x + target.width / 2, y: target.y + target.height / 2 }
+  const anchor = { ...center }
   const axis = facing.x ? 'x' : 'y', sign = facing[axis]
   anchor[axis] = axis === 'x' ? x + (sign > 0 ? width : 0) : y + (sign > 0 ? height : 0)
   const world = toWorld(anchor)
@@ -174,7 +229,7 @@ export function boothRoutePoint(
     if (hit.distance >= nearest || (local[axis] - anchor[axis]) * sign <= 0
       || (hallBounds && crossesBoundary(anchor, local, hallBounds))
       || hall.page.booths.some(other => other !== booth && crossesBooth(anchor, local, other.bbox))) continue
-    best = { edge: edges[i], point: hit.point }
+    best = { edge: edges[i], point: hit.point, origin: toWorld(center), front: world, insideHall: true }
     nearest = hit.distance
   }
   return best ? { target: best } : { error: '摊位朝向一侧没有可接入的路径' }

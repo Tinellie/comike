@@ -19,6 +19,7 @@ interface OsmCanvasProps {
   data: OsmMapData
   halls: MapHall[]
   transforms: HallTransforms
+  routesVisible: boolean
   onError: (message: string) => void
   onBoothClick: (hit: MapBoothHit) => void
   days: { weekday: string; label: string }[]
@@ -29,7 +30,7 @@ interface OsmCanvasProps {
   loadBooth: (hit: MapBoothHit) => Promise<MapBoothLocation>
 }
 
-export default function OsmCanvas({ data, halls, transforms, onError, onBoothClick, days, weekday, onDayChange, boothData, favoriteHighlights, loadBooth }: OsmCanvasProps) {
+export default function OsmCanvas({ data, halls, transforms, routesVisible, onError, onBoothClick, days, weekday, onDayChange, boothData, favoriteHighlights, loadBooth }: OsmCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<OsmMapRenderer | null>(null)
@@ -44,10 +45,6 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
   const genreState = useRef({ enabled: genreEnabled, selected: selectedGenres })
   const tooltipRef = useRef<BoothHoverHandle | null>(null)
   const [pdfVisible, setPdfVisible] = useState(false)
-  const [routesVisible, setRoutesVisible] = useState(true)
-  const [navigationNotice, setNavigationNotice] = useState<{ transforms: HallTransforms; halls: MapHall[]; message: string } | null>(null)
-  const navigationMessage = navigationNotice?.transforms === transforms && navigationNotice.halls === halls
-    ? navigationNotice.message : ''
   const routesState = useRef(routesVisible)
   const [pdfImages, setPdfImages] = useState<ReadonlyMap<MapHall, HTMLImageElement>>(new Map())
   const [pdfError, setPdfError] = useState<string | null>(null)
@@ -260,12 +257,9 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
         || (event.target instanceof HTMLElement
           && (event.target.isContentEditable || event.target.closest('input, textarea, select, button, a, [role="combobox"]')))) return
       if (event.code === 'Space') {
-        const message = renderer?.selectNavigationPoint()
-        if (!message) return
-        setNavigationNotice({ ...hallState.current, message })
+        if (!renderer?.selectNavigationPoint()) return
       } else if (event.key.toLowerCase() === 'x' && renderer?.hasNavigationSelection()) {
         renderer.clearNavigation()
-        setNavigationNotice(null)
       } else return
       event.preventDefault()
     }
@@ -315,40 +309,41 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
           style={{ display: 'block', width: '100%', height: '100%', cursor: 'grab', touchAction: 'none' }}
         />
         <Paper elevation={4} sx={{
-          position: 'absolute', right: 16, top: 72, width: 180, p: 2,
-          maxHeight: 'calc(100% - 120px)', overflow: 'auto',
+          position: 'absolute', right: 16, top: 58, width: 180, pt: 2.5, px: 2, pb: 2,
+          maxHeight: 'calc(100% - 94px)', overflow: 'auto',
+          display: 'flex', flexDirection: 'column', gap: 0.75,
+          '& > *': { flexShrink: 0 },
+          '& .MuiAccordionSummary-root': { minHeight: 30, px: 0.5 },
+          '& .MuiAccordionSummary-content': { my: 0.5 },
         }}>
-          <Typography variant="body2" sx={{ mb: 1 }}>日目</Typography>
-          <TextField select fullWidth size="small" label="参展日期" value={weekday}
-            disabled={!days.length} onChange={event => onDayChange(event.target.value)} sx={{ mb: 2 }}>
+          <TextField select fullWidth size="small" label="日期" value={weekday}
+            disabled={!days.length} onChange={event => onDayChange(event.target.value)}>
             {days.map(day => <MenuItem key={day.weekday} value={day.weekday}>{day.label}（{day.weekday}）</MenuItem>)}
           </TextField>
-          <FormControlLabel label="PDF 原图" control={<Switch checked={pdfVisible}
+          <FormControlLabel label="PDF 原图" sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: 13 } }}
+            control={<Switch size="small" checked={pdfVisible}
             onChange={(_, checked) => { setPdfVisible(checked); setPdfError(null) }} />} />
-          {halls.some(hall => hall.pathGraph?.edges.length) && <FormControlLabel label="路径图"
-            control={<Switch checked={routesVisible} onChange={(_, checked) => setRoutesVisible(checked)} />} />}
-          <Typography variant="caption" component="p" role="status" sx={{ mb: 1 }}>
-            {navigationMessage || '悬浮摊位，按两次空格依次选起点和终点。X 清除路线。'}
-          </Typography>
           {pdfVisible && !pdfError && halls.some(hall => !pdfImages.has(hall))
             && <LinearProgress aria-label="加载 PDF 原图" />}
           {pdfVisible && pdfError && <Alert severity="warning" action={<Button onClick={() => {
             setPdfError(null); setPdfAttempt(value => value + 1)
           }}>重试</Button>}>{pdfError}</Alert>}
-          <Typography id="map-rotation-label" variant="body2">rotation</Typography>
-          <Slider aria-labelledby="map-rotation-label" value={rotation} min={-180} max={180}
-            step={1} valueLabelDisplay="auto" valueLabelFormat={value => `${Math.round(value)}°`}
-            onChange={(_, value) => {
-              if (typeof value === 'number') setRotation(value)
-            }} />
-          <Accordion disableGutters elevation={0} defaultExpanded>
+          <Box>
+            <Typography id="map-rotation-label" variant="body2">rotation</Typography>
+            <Slider size="small" aria-labelledby="map-rotation-label" value={rotation} min={-180} max={180}
+              step={1} valueLabelDisplay="auto" valueLabelFormat={value => `${Math.round(value)}°`}
+              onChange={(_, value) => {
+                if (typeof value === 'number') setRotation(value)
+              }} />
+          </Box>
+          <Accordion disableGutters elevation={0}>
             <AccordionSummary aria-controls="map-level-options" id="map-level-label"
               expandIcon={<Box sx={{ width: 7, height: 7, borderRight: '1px solid', borderBottom: '1px solid',
                 transform: 'rotate(45deg)' }} />}>
               <Typography variant="body2">level</Typography>
             </AccordionSummary>
             <AccordionDetails id="map-level-options" sx={{ p: 0 }}>
-              <FormGroup aria-labelledby="map-level-label" sx={{ '& .MuiFormControlLabel-root': { m: 0, minHeight: 28 },
+              <FormGroup row aria-labelledby="map-level-label" sx={{ '& .MuiFormControlLabel-root': { m: 0, minHeight: 28 },
                 '& .MuiCheckbox-root': { p: 0.5 }, '& .MuiFormControlLabel-label': { fontSize: 13 } }}>
                 {[1, 2, 3, 4].map(level => (
                   <FormControlLabel key={level} label={String(level)}
@@ -360,7 +355,7 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
             </AccordionDetails>
           </Accordion>
           <Accordion disableGutters elevation={0} defaultExpanded>
-            <AccordionSummary sx={{ minHeight: 36, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
+            <AccordionSummary>
               <Typography variant="body2">genre</Typography>
             </AccordionSummary>
             <AccordionDetails sx={{ p: 0 }}>
@@ -398,12 +393,12 @@ export default function OsmCanvas({ data, halls, transforms, onError, onBoothCli
             </Box>
           </Popover>
           <Typography variant="caption" component="div" sx={{
-            mt: 1, color: 'text.secondary', overflowWrap: 'anywhere', minHeight: '1.5em',
+            color: 'text.secondary', overflowWrap: 'anywhere', minHeight: '1.5em',
           }}>
             {hoverLabel || '—'}
           </Typography>
         </Paper>
-        <Box sx={{ position: 'absolute', right: 6, bottom: 4, bgcolor: 'rgba(255,255,255,0.9)', px: 0.5 }}>
+        <Box sx={{ position: 'absolute', right: 16, bottom: 8, bgcolor: 'rgba(255,255,255,0.9)', px: 0.5 }}>
           <Typography variant="caption">
             © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
           </Typography>

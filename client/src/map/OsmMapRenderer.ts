@@ -10,7 +10,7 @@ import { hallMatrix, hallWorldBounds } from './halls'
 import { HallVisibility, intersectsBounds } from './hallVisibility'
 import type { HallPlacement, HallTransforms, MapHall } from './halls'
 import { outsideHallKey, projectHallPerimeter } from './hallPerimeter'
-import { boothRoutePoint, buildNavigation, shortestRoute } from './navigation'
+import { areaRoutePoint, boothRoutePoint, buildNavigation, shortestRoute } from './navigation'
 import type { RoutePoint } from './navigation'
 import type { Bounds } from './viewport'
 import type { HallRegistrationReport } from './hallRegistration'
@@ -44,6 +44,11 @@ function localPath(paths: Point[][], origin: Point, closed: boolean): Path2D {
     if (closed) path.closePath()
   }
   return path
+}
+
+function approachPoints({ origin, front, point }: RoutePoint): Point[] {
+  if (!origin) return []
+  return front ? [origin, front, point] : [origin, point]
 }
 
 export class OsmMapRenderer {
@@ -87,6 +92,7 @@ export class OsmMapRenderer {
   private routeStart: RoutePoint | null = null
   private routeEnd: RoutePoint | null = null
   private routeLine: Path2D | null = null
+  private routeApproach: Path2D | null = null
   private routeHover: { hallIndex: number; booth: PreviewBooth; bbox: PreviewBooth['bbox'] } | null = null
 
   hasNavigationSelection() { return this.routeStart !== null }
@@ -94,30 +100,42 @@ export class OsmMapRenderer {
   clearNavigation() {
     this.routeStart = this.routeEnd = null
     this.routeLine = null
+    this.routeApproach = null
     this.requestDraw()
   }
 
   selectNavigationPoint() {
     this.updateHover()
-    if (!this.routeHover) return null
-    if (this.routeEnd) return '按 X 清除当前路线后，可重新选点'
-    this.navigation ??= buildNavigation(this.data, this.halls, this.transforms)
-    const { hallIndex, booth, bbox } = this.routeHover
-    const selection = boothRoutePoint(this.navigation, hallIndex, booth, bbox)
-    if (!selection.target) return selection.error
+    const hover = this.routeHover
+    if (!hover && (!this.pointer || !this.view)) return false
+    if (this.routeEnd) return true
+    this.navigation ??= buildNavigation(this.data, this.halls, this.transforms, hall => hallMetadata(hall).level)
+    const selection = hover ? boothRoutePoint(this.navigation, hover.hallIndex, hover.booth, hover.bbox)
+      : this.pointer && this.view ? areaRoutePoint(this.navigation, this.data.features,
+        screenToWorld(this.pointer, this.view, this.size), this.selectedLevels) : null
+    if (!selection) return false
+    if (!selection.target) {
+      console.warn('Map navigation:', selection.error)
+      return true
+    }
     if (!this.routeStart) {
       this.routeStart = selection.target
+      this.routeApproach = localPath([approachPoints(selection.target)], this.origin, false)
       this.requestDraw()
-      return '已选起点。悬浮另一个摊位，按空格选终点；按 X 取消。'
+      return true
     }
     const route = shortestRoute(this.navigation.nodes, this.navigation.edges, this.routeStart, selection.target)
-    if (!route) return '这两个摊位的路径不连通，请换一个终点，或按 X 取消。'
+    if (!route) {
+      console.warn('Map navigation: 起点无法到达该终点。')
+      return true
+    }
     this.routeEnd = selection.target
     this.routeLine = localPath([route.points], this.origin, false)
+    const startApproach = approachPoints(this.routeStart)
+    const endApproach = approachPoints(this.routeEnd)
+    this.routeApproach = localPath([startApproach, endApproach], this.origin, false)
     this.requestDraw()
-    const length = route.points.slice(1).reduce((sum, p, i) =>
-      sum + Math.hypot(p.x - route.points[i].x, p.y - route.points[i].y), 0)
-    return `路线约 ${Math.round(length * this.metersPerUnit)} 米。按 X 清除。`
+    return true
   }
   private readonly perimeterPaths = new WeakMap<MapHall, {
     placement: HallPlacement; perimeter: Path2D; links: Path2D
@@ -501,10 +519,18 @@ export class OsmMapRenderer {
         ctx.lineWidth = 5 / view.scale
         ctx.stroke(this.routeLine)
       }
+      if (this.routeApproach) {
+        ctx.setLineDash([5 / view.scale, 4 / view.scale])
+        ctx.strokeStyle = '#df4913'
+        ctx.lineWidth = 3 / view.scale
+        ctx.stroke(this.routeApproach)
+        ctx.setLineDash([])
+      }
       for (const [marker, color] of [[this.routeStart, '#067348'], [this.routeEnd, '#df4913']] as const) {
         if (!marker) continue
         ctx.beginPath()
-        ctx.arc(marker.point.x - this.origin.x, marker.point.y - this.origin.y, 6 / view.scale, 0, 2 * Math.PI)
+        const point = marker.origin ?? marker.point
+        ctx.arc(point.x - this.origin.x, point.y - this.origin.y, 6 / view.scale, 0, 2 * Math.PI)
         ctx.fillStyle = color
         ctx.fill()
         ctx.strokeStyle = '#fff'
