@@ -85,7 +85,8 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, onCon
       return
     }
     mapRef.current = map
-    let drag: { id: number; x: number; y: number; startX: number; startY: number; moved: boolean } | null = null
+    let drag: { id: number; type: string; x: number; y: number; startX: number; startY: number; moved: boolean } | null = null
+    let secondTouch: (Point & { id: number }) | null = null
     const resize = () => {
       const { width, height } = canvas.getBoundingClientRect()
       map.resize(width, height, window.devicePixelRatio || 1)
@@ -99,18 +100,43 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, onCon
       }
     }
     const down = (event: PointerEvent) => {
-      if (event.button !== 0 || drag) return
+      if (event.button !== 0) return
+      if (drag) {
+        if (drag.type !== 'touch' || event.pointerType !== 'touch' || secondTouch) return
+        event.preventDefault()
+        canvas.setPointerCapture(event.pointerId)
+        secondTouch = { id: event.pointerId, x: event.clientX, y: event.clientY }
+        drag.moved = true
+        layer?.pointer?.(null)
+        return
+      }
       event.preventDefault()
       canvas.focus({ preventScroll: true })
       canvas.setPointerCapture(event.pointerId)
-      drag = { id: event.pointerId, x: event.clientX, y: event.clientY, startX: event.clientX,
+      drag = { id: event.pointerId, type: event.pointerType, x: event.clientX, y: event.clientY, startX: event.clientX,
         startY: event.clientY, moved: event.altKey }
       canvas.style.cursor = event.altKey ? 'crosshair' : 'grabbing'
       layer?.pointer?.(pointer(event))
     }
     const move = (event: PointerEvent) => {
+      if (drag && secondTouch) {
+        const touch = event.pointerId === drag.id ? drag : event.pointerId === secondTouch.id ? secondTouch : null
+        if (!touch) return
+        const previousDistance = Math.max(1, Math.hypot(drag.x - secondTouch.x, drag.y - secondTouch.y))
+        map.pan((event.clientX - touch.x) / 2, (event.clientY - touch.y) / 2)
+        touch.x = event.clientX
+        touch.y = event.clientY
+        const distance = Math.max(1, Math.hypot(drag.x - secondTouch.x, drag.y - secondTouch.y))
+        const { left, top } = canvas.getBoundingClientRect()
+        map.zoom(distance / previousDistance, {
+          x: (drag.x + secondTouch.x) / 2 - left,
+          y: (drag.y + secondTouch.y) / 2 - top,
+        })
+        return
+      }
+      if (drag && drag.id !== event.pointerId) return
       layer?.pointer?.(pointer(event))
-      if (!drag || drag.id !== event.pointerId) return
+      if (!drag) return
       if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) drag.moved = true
       if (event.altKey) {
         const bounds = canvas.getBoundingClientRect()
@@ -125,6 +151,14 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, onCon
       drag.y = event.clientY
     }
     const end = (event: PointerEvent) => {
+      if (drag && secondTouch) {
+        if (event.pointerId === drag.id) {
+          drag = { ...secondTouch, type: 'touch', startX: secondTouch.x, startY: secondTouch.y, moved: true }
+        } else if (event.pointerId !== secondTouch.id) return
+        secondTouch = null
+        if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
+        return
+      }
       if (!drag || drag.id !== event.pointerId) return
       const clicked = event.type === 'pointerup' && !drag.moved
       drag = null
@@ -183,6 +217,7 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, onCon
       canvas.removeEventListener('wheel', wheel)
       canvas.removeEventListener('keydown', keyDown)
       if (drag && canvas.hasPointerCapture(drag.id)) canvas.releasePointerCapture(drag.id)
+      if (secondTouch && canvas.hasPointerCapture(secondTouch.id)) canvas.releasePointerCapture(secondTouch.id)
       canvas.style.cursor = 'grab'
       map.dispose()
       mapRef.current = null
