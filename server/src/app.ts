@@ -20,11 +20,14 @@ import type { PixivService } from './social/pixiv/service.js'
 import type { TwitterService } from './social/twitter/service.js'
 import { twitterRouter } from './social/twitter/routes.js'
 
+const esriTiles = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile'
+
 export interface AppOptions {
   checkDatabase: () => Promise<void>
   clientDirectory?: string
   recognitionDirectory?: string
   osmFile?: string
+  referenceOsmFile?: string
   hallTransformsFile?: string
   hallEditorOrigin?: string
   regeneratePreview?: () => Promise<void>
@@ -42,7 +45,7 @@ export interface AppOptions {
 }
 
 export function createApp({
-  checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
+  checkDatabase, clientDirectory, recognitionDirectory, osmFile, referenceOsmFile, hallTransformsFile, hallEditorOrigin,
   regeneratePreview,
   crawler, initializeDatabase, authStore, secureCookie, trustProxy,
   boothStore, mediaRoot, favorites, colourStore, pixiv, twitter,
@@ -170,21 +173,49 @@ export function createApp({
     })
   })
 
-  app.get('/api/map/osm-map.osm', (_req, res, next) => {
-    if (!osmFile) {
+  app.get('/api/map/imagery/:zoom/:row/:col', async (req, res) => {
+    const parts = [req.params.zoom, req.params.row, req.params.col] as const
+    const [zoom, row, col] = [Number(parts[0]), Number(parts[1]), Number(parts[2])]
+    if (!parts.every(value => /^\d{1,6}$/.test(value)) || zoom > 19 || row >= 2 ** zoom || col >= 2 ** zoom) {
+      res.status(400).json({ message: '卫星瓦片坐标无效' })
+      return
+    }
+    try {
+      const upstream = await fetch(`${esriTiles}/${zoom}/${row}/${col}`, {
+        redirect: 'error',
+        signal: AbortSignal.timeout(8_000),
+      })
+      if (!upstream.ok || upstream.headers.get('content-type')?.split(';')[0] !== 'image/jpeg') {
+        await upstream.body?.cancel()
+        throw new Error(`Esri tile response: HTTP ${upstream.status}, ${upstream.headers.get('content-type')}`)
+      }
+      const image = Buffer.from(await upstream.arrayBuffer())
+      const cacheControl = upstream.headers.get('cache-control')
+      if (cacheControl) res.set('Cache-Control', cacheControl)
+      res.type('image/jpeg').set('X-Content-Type-Options', 'nosniff').send(image)
+    } catch (reason) {
+      console.warn(`Esri imagery tile unavailable (${zoom}/${row}/${col}):`, reason)
+      res.set('Cache-Control', 'no-store').status(502).json({ message: '卫星瓦片暂时无法加载' })
+    }
+  })
+
+  app.get(/^\/api\/map\/(osm-map\.osm|ref\.osm)$/, (req, res, next) => {
+    const name = req.params[0]
+    const file = name === 'ref.osm' ? referenceOsmFile : osmFile
+    if (!file) {
       res.status(404).json({ message: 'OSM map is not configured' })
       return
     }
     res.type('application/xml')
-    res.sendFile(osmFile, (error) => {
+    res.sendFile(file, (error) => {
       if (!error) return
       if (res.headersSent || res.destroyed) {
         next(error)
         return
       }
       if ('code' in error && error.code === 'ENOENT') {
-        console.warn('OSM map file missing:', osmFile)
-        res.status(404).type('json').json({ message: 'OSM map not found. Add ref/osm-map.osm first.' })
+        console.warn('OSM map file missing:', file)
+        res.status(404).type('json').json({ message: `OSM map not found. Add ref/${name} first.` })
         return
       }
       res.removeHeader('Content-Type')

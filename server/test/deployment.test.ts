@@ -17,7 +17,7 @@ test('container seeding initializes writable directories without overwriting use
   await mkdir(join(root, 'seed', 'ref'), { recursive: true })
   await mkdir(join(root, 'ref'))
   await copyFile(entrypoint, join(root, 'deploy', 'entrypoint.mjs'))
-  const names = ['hall-meta.json', 'hall-transforms.json', 'osm-map.osm', 'official-map.pdf']
+  const names = ['hall-meta.json', 'hall-transforms.json', 'osm-map.osm', 'ref.osm', 'official-map.pdf']
   for (const name of names) await writeFile(join(root, 'seed', 'ref', name), `seed:${name}`)
   await writeFile(join(root, 'ref', 'hall-transforms.json'), 'personal transforms')
   for (let attempt = 0; attempt < 2; attempt++) {

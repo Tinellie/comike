@@ -9,6 +9,37 @@ import { get } from 'node:http'
 import { createAdminApp as createApp } from './authFixture.js'
 import { createApp as createPublicApp } from '../src/app.js'
 
+test('public map imagery relays only valid Esri tile coordinates and JPEG responses', async t => {
+  const request = globalThis.fetch
+  const urls: string[] = []
+  t.mock.method(globalThis, 'fetch', async (url: string) => {
+    urls.push(url)
+    if (url.endsWith('/29107')) return new Response('<html>Service unavailable</html>', {
+      headers: { 'content-type': 'text/html' },
+    })
+    return new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), {
+      headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=60' },
+    })
+  })
+  const server = createPublicApp({ checkDatabase: async () => {} }).listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/map/imagery`
+  assert.equal((await request(`${base}/20/0/0`)).status, 400)
+  assert.equal((await request(`${base}/15/32768/0`)).status, 400)
+  assert.equal((await request(`${base}/15/12906/abc`)).status, 400)
+  assert.equal(urls.length, 0)
+  const response = await request(`${base}/15/12906/29106`)
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'image/jpeg')
+  assert.equal(response.headers.get('cache-control'), 'public, max-age=60')
+  assert.deepEqual(Array.from(new Uint8Array(await response.arrayBuffer())), [0xff, 0xd8, 0xff, 0xd9])
+  assert.equal(urls[0], 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/15/12906/29106')
+  const error = await request(`${base}/15/12906/29107`)
+  assert.equal(error.status, 502)
+  assert.equal(error.headers.get('cache-control'), 'no-store')
+})
+
 test('Map PDF originals remain public without exposing other preview assets', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'comike-public-pdf-'))
   await writeFile(join(directory, 'page-001-pdf.png'), 'pdf image fixture')
@@ -85,11 +116,14 @@ test('Express APIs and SPA deep links', async (t) => {
   await writeFile(join(directory, 'page-001-paths.json'), JSON.stringify(paths))
   const osm = '<osm version="0.6"><node id="1" lat="35.63" lon="139.79"/></osm>'
   await writeFile(join(directory, 'osm-map.osm'), osm)
+  const referenceOsm = osm.replace('35.63', '22.72')
+  await writeFile(join(directory, 'ref.osm'), referenceOsm)
   let databaseAvailable = true
   const app = createApp({
     clientDirectory: directory,
     recognitionDirectory: directory,
     osmFile: join(directory, 'osm-map.osm'),
+    referenceOsmFile: join(directory, 'ref.osm'),
     checkDatabase: async () => {
       if (!databaseAvailable) {
         throw new Error('Test database unavailable')
@@ -165,6 +199,10 @@ test('Express APIs and SPA deep links', async (t) => {
     assert.equal(response.status, 200)
     assert.match(response.headers.get('content-type') ?? '', /application\/xml/)
     assert.equal(await response.text(), osm)
+    const reference = await fetch(`${base}/api/map/ref.osm`)
+    assert.equal(reference.status, 200)
+    assert.match(reference.headers.get('content-type') ?? '', /application\/xml/)
+    assert.equal(await reference.text(), referenceOsm)
     for (const name of ['index.html', 'other.osm', '%2e%2e%2findex.html']) {
       const forbidden = await fetch(`${base}/api/map/${name}`)
       assert.equal(forbidden.status, 404)
@@ -179,7 +217,7 @@ test('Express APIs and SPA deep links', async (t) => {
     assert.deepEqual(await response.json(), { message: 'OSM map not found. Add ref/osm-map.osm first.' })
   })
   await t.test('home, map, preview and login serve the SPA entry', async () => {
-    for (const path of ['/', '/map', '/preview', '/login']) {
+    for (const path of ['/', '/map', '/map2', '/preview', '/login']) {
       const response = await fetch(`${base}${path}`)
       assert.equal(response.status, 200)
       assert.equal(await response.text(), html)

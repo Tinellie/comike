@@ -1,9 +1,8 @@
-import type { OsmFeature, OsmMapData } from './osm'
+import type { OsmMapData } from './osm'
 import { featureLevels, tagValues } from './osm'
-import { fitViewport, panViewport, rotatePoint, screenToWorld, viewportBounds, worldToScreen, zoomViewport } from './viewport'
-import type { Point, Size, Viewport } from './viewport'
-import { compareMapStyles, filteredLevelStyle, gridColor, hallLabel, mapBackground, mapStyle, matchesLevels, onewayTriangles } from './style'
-import type { MapStyle } from './style'
+import { rotatePoint, screenToWorld, worldToScreen } from './viewport'
+import type { Point } from './viewport'
+import { filteredLevelStyle, hallLabel, matchesLevels } from './style'
 import { HallMapLayer, defaultHallDisplay, hallMetadata, hallRouteColor } from './HallMapLayer'
 import type { HallDisplay } from './HallMapLayer'
 import { hallMatrix, hallWorldBounds } from './halls'
@@ -18,14 +17,8 @@ import { boothHover, BoothOccupancy } from './boothOccupancy'
 import type { MapBoothData } from '../booths/api'
 import type { PreviewBooth } from '../preview/data'
 import type { FavoriteHighlights } from './favoriteHighlights'
-
-interface StyledFeature {
-  feature: OsmFeature
-  path: Path2D
-  arrows: Path2D
-  style: MapStyle
-  levels: number[]
-}
+import { localPath } from './basemap/BasemapRenderer'
+import type { BasemapFrame, BasemapPass, BasemapRenderer, StyledFeature } from './basemap/BasemapRenderer'
 
 export interface MapBoothHit {
   hallGroup: string
@@ -43,18 +36,6 @@ export interface RouteListStop {
 
 type PlannedStop = RoutePoint & RouteListStop & { hallIndex: number; bbox: PreviewBooth['bbox']; coefficient: number }
 type PlannedRoute = { queue: NonNullable<ReturnType<typeof queueStart>>; visited: PlannedStop[]; legs: RouteStep[][] }
-
-function localPath(paths: Point[][], origin: Point, closed: boolean): Path2D {
-  const path = new Path2D()
-  for (const points of paths) {
-    if (!points.length) continue
-    // Local coordinates preserve sub-meter Path2D precision at high zoom.
-    path.moveTo(points[0].x - origin.x, points[0].y - origin.y)
-    for (const point of points.slice(1)) path.lineTo(point.x - origin.x, point.y - origin.y)
-    if (closed) path.closePath()
-  }
-  return path
-}
 
 function approachPoints({ origin, front, point }: RoutePoint): Point[] {
   if (!origin) return []
@@ -89,24 +70,20 @@ function plannerGradient(ctx: CanvasRenderingContext2D, a: Point, b: Point, from
   return gradient
 }
 
-export class OsmMapRenderer {
-  private readonly canvas: HTMLCanvasElement
+export class ComiketMapLayer {
+  private readonly map: BasemapRenderer
   private readonly data: OsmMapData
-  private readonly onZoom: (percent: number) => void
-  private readonly onRotation: (degrees: number) => void
-  private readonly origin: Point
-  private readonly metersPerUnit: number
-  private readonly context: CanvasRenderingContext2D
   private readonly routeContext: CanvasRenderingContext2D
   private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
   private routeFrame: number | null = null
-  private readonly features: StyledFeature[]
+  private readonly levelsByFeature = new Map<StyledFeature, number[]>()
   private readonly namedRoutePaths: { id: string; member: StyledFeature; area: boolean; color: string; fill: string }[]
   private selectedRoutes: ReadonlySet<string> = new Set()
-  private size: Size = { width: 1, height: 1 }
-  private view: Viewport | null = null
-  private pixelRatio = 1
-  private frame: number | null = null
+  private get size() { return this.map.size }
+  private get view() { return this.map.view }
+  private get pixelRatio() { return this.map.pixelRatio }
+  private get origin() { return this.map.origin }
+  private get metersPerUnit() { return this.map.metersPerUnit }
   private halls: MapHall[] = []
   private transforms: HallTransforms = { schemaVersion: 1, placements: [] }
   private hallDisplay: HallDisplay = defaultHallDisplay
@@ -184,7 +161,7 @@ export class OsmMapRenderer {
       const { x, y } = worldToScreen(point, this.view, this.size)
       const { width, height } = this.size
       if (x < 0 || x > width || y < 0 || y > height) {
-        this.view = { ...this.view, center: point }
+        this.map.centerOn(point)
       }
     }
     this.requestDraw()
@@ -193,7 +170,7 @@ export class OsmMapRenderer {
   plannedStopAnchor(): Point | null {
     const point = this.inspectedStop?.origin
     if (!point || !this.view) return null
-    const { left, top } = this.canvas.getBoundingClientRect()
+    const { left, top } = this.map.canvas.getBoundingClientRect()
     const { x, y } = worldToScreen(point, this.view, this.size)
     return { x: left + x, y: top + y }
   }
@@ -368,39 +345,21 @@ export class OsmMapRenderer {
   }
 
   constructor(
-    canvas: HTMLCanvasElement,
+    map: BasemapRenderer,
     routeCanvas: HTMLCanvasElement,
     data: OsmMapData,
-    onZoom: (percent: number) => void,
-    onRotation: (degrees: number) => void = () => {},
     onHover: (label: string, clickable: boolean, hit: MapBoothHit | null, colour?: string) => void = () => {},
     onPlannedRoute: (stops: RouteListStop[]) => void = () => {},
   ) {
-    this.canvas = canvas
+    this.map = map
     this.data = data
-    this.onZoom = onZoom
-    this.onRotation = onRotation
     this.onHover = onHover
     this.onPlannedRoute = onPlannedRoute
-    this.origin = {
-      x: (data.bounds.minX + data.bounds.maxX) / 2,
-      y: (data.bounds.minY + data.bounds.maxY) / 2,
-    }
-    // Match the reference's ground-meter styles without changing Mercator geometry.
-    this.metersPerUnit = 1 / Math.cosh(this.origin.y / 6378137)
-    const context = canvas.getContext('2d')
     const routeContext = routeCanvas.getContext('2d')
-    if (!context || !routeContext) throw new Error('浏览器无法创建 Canvas 2D 上下文')
-    this.context = context
+    if (!routeContext) throw new Error('浏览器无法创建 Canvas 2D 上下文')
     this.routeContext = routeContext
-    this.features = data.features.map(feature => ({
-      feature,
-      path: localPath(feature.paths, this.origin, feature.area),
-      arrows: localPath(onewayTriangles(feature.paths, feature.tags, this.metersPerUnit), this.origin, true),
-      style: mapStyle(feature),
-      levels: featureLevels(feature.tags),
-    })).sort((a, b) => compareMapStyles(a.style, b.style))
-    const featurePaths = new Map(this.features.map(item => [item.feature.id, item]))
+    for (const item of map.features) this.levelsByFeature.set(item, featureLevels(item.feature.tags))
+    const featurePaths = new Map(map.features.map(item => [item.feature.id, item]))
     this.namedRoutePaths = (data.namedRoutes ?? []).flatMap(({ id, hall, wayIds }) => {
       const color = hallRouteColor(hall)
       const tint = [1, 3, 5].map(offset => Math.round(255 * 0.7 + Number.parseInt(color.slice(offset, offset + 2), 16) * 0.3))
@@ -419,21 +378,9 @@ export class OsmMapRenderer {
     this.reducedMotion.addEventListener('change', this.updateRoutePulses)
   }
 
-  resize(width: number, height: number, pixelRatio: number) {
-    if (width <= 0 || height <= 0) return
-    this.size = { width, height }
-    this.pixelRatio = Math.max(1, pixelRatio)
-    this.canvas.width = Math.round(width * this.pixelRatio)
-    this.canvas.height = Math.round(height * this.pixelRatio)
-    this.routeContext.canvas.width = this.canvas.width
-    this.routeContext.canvas.height = this.canvas.height
-    if (!this.view) this.view = fitViewport(this.sceneBounds(), this.size)
-    this.requestDraw()
-  }
-
-  fit() {
-    this.view = fitViewport(this.sceneBounds(), this.size, this.view?.rotation ?? 0)
-    this.requestDraw()
+  resize(width: number, height: number) {
+    this.routeContext.canvas.width = width
+    this.routeContext.canvas.height = height
   }
 
   setHalls(halls: MapHall[], transforms: HallTransforms, display: HallDisplay, selected: number | null) {
@@ -452,27 +399,12 @@ export class OsmMapRenderer {
     const hall = this.halls.find(h => h.index === index)
     const placement = this.transforms.placements.find(p => p.hallIndex === index)
     if (!hall || !placement) throw new Error('找不到 Hall 定位数据')
-    this.view = fitViewport(hallWorldBounds(hall, placement, this.pdfImages.has(hall)), this.size, this.view?.rotation ?? 0)
-    this.requestDraw()
+    this.map.fit(hallWorldBounds(hall, placement, this.pdfImages.has(hall)))
   }
 
   setRegistrationReports(reports: HallRegistrationReport[]) {
     this.registrationReports = reports
     this.requestDraw()
-  }
-
-  setRotation(degrees: number) {
-    if (!Number.isFinite(degrees)) throw new Error('地图旋转角度无效')
-    if (!this.view) return
-    const normalized = ((degrees + 180) % 360 + 360) % 360 - 180
-    const rotation = normalized === -180 && degrees > 0 ? 180 : normalized
-    this.view = { ...this.view, rotation }
-    this.onRotation(rotation)
-    this.requestDraw()
-  }
-
-  rotate(degrees: number) {
-    if (this.view) this.setRotation((this.view.rotation ?? 0) + degrees)
   }
 
   setLevels(levels: number[]) {
@@ -550,7 +482,7 @@ export class OsmMapRenderer {
     return selected
   }
 
-  private sceneBounds(): Bounds {
+  fitBounds(): Bounds {
     const bounds = { ...this.data.bounds }
     if (this.hallDisplay.visible) {
       for (const placement of this.transforms.placements) {
@@ -578,61 +510,17 @@ export class OsmMapRenderer {
     }
   }
 
-  pan(dx: number, dy: number) {
-    if (!this.view) return
-    this.view = panViewport(this.view, dx, dy)
-    this.requestDraw()
-  }
+  private requestDraw() { this.map.requestDraw() }
 
-  zoom(factor: number, anchor: Point = { x: this.size.width / 2, y: this.size.height / 2 }) {
-    if (!this.view) return
-    const fitScale = fitViewport(this.data.bounds, this.size).scale
-    this.view = zoomViewport(this.view, factor, anchor, this.size, fitScale / 4, fitScale * 256)
-    this.requestDraw()
-  }
-
-  private requestDraw() {
-    if (this.frame !== null) return
-    this.frame = requestAnimationFrame(() => {
-      this.frame = null
-      this.draw()
-    })
-  }
-
-  private draw() {
-    if (!this.view) return
+  prepare({ context: ctx, view, pixelRatio: dpr, overlaps }: BasemapFrame): BasemapPass {
     this.updateHover(false)
-    const { context: ctx, size, view, pixelRatio: dpr } = this
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.fillStyle = mapBackground
-    ctx.fillRect(0, 0, size.width, size.height)
-    const margin = 100 * view.scale / this.metersPerUnit
-    const visibleBounds = viewportBounds(view, size, margin)
-    const angle = (view.rotation ?? 0) * Math.PI / 180
-    const cosine = Math.cos(angle), sine = Math.sin(angle)
-    const originScreen = worldToScreen(this.origin, view, size)
-    ctx.setTransform(
-      dpr * view.scale * cosine, dpr * view.scale * sine,
-      -dpr * view.scale * sine, dpr * view.scale * cosine,
-      dpr * originScreen.x, dpr * originScreen.y,
-    )
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    this.drawGrid()
-    const overlaps = (b: Bounds) => !(b.maxX < visibleBounds.minX || b.minX > visibleBounds.maxX
-      || b.maxY < visibleBounds.minY || b.minY > visibleBounds.maxY)
-    const visible = this.features.filter(item => overlaps(item.feature.bounds)).map(item => {
-      const filtered = !matchesLevels(item.levels, this.selectedLevels)
-      return { ...item, filtered, style: filtered ? filteredLevelStyle(item.style) : item.style }
-    })
     const hallItems = this.transforms.placements.flatMap(placement => {
       const hall = this.halls.find(h => h.index === placement.hallIndex)
       if (!hall || !overlaps(hallWorldBounds(hall, placement, this.pdfImages.has(hall)))) return []
       const level = hallMetadata(hall).level
       return [{ hall, placement, level, filtered: !matchesLevels([level], this.selectedLevels) }]
     })
-    const levels = [...new Set([...visible.map(item => item.style.level), ...hallItems.map(item => item.level)])]
-      .sort((a, b) => a - b)
+    hallItems.sort((a, b) => a.level - b.level)
     const occupiedCodes = new Map<number, Set<string>>()
     if (this.hallDisplay.visible) {
       for (const hall of this.halls) {
@@ -652,29 +540,8 @@ export class OsmMapRenderer {
     const highlighted = this.namedRoutePaths.filter(route => this.selectedRoutes.has(route.id))
     const stairArrows = highlighted.filter(({ area, member }) => !area && member.style.lineDash.length)
     const highlightedAreas = new Set(highlighted.filter(({ area }) => area).map(({ member }) => member.feature.id))
-    for (const level of levels) {
-      const items = visible.filter(item => item.style.level === level)
-      for (const { feature, path, style, arrows, filtered } of items) {
-        if (highlightedAreas.has(feature.id)) continue
-        if (style.fill && feature.area) {
-          ctx.fillStyle = style.fill
-          ctx.fill(path, 'evenodd')
-        }
-        if (style.stroke) {
-          ctx.setLineDash(style.lineDash.map(length => length / this.metersPerUnit))
-          ctx.strokeStyle = style.stroke
-          ctx.lineWidth = style.strokeWidth / this.metersPerUnit
-          ctx.stroke(path)
-        }
-        if (!filtered) {
-          ctx.fillStyle = style.stroke ?? 'rgba(41, 65, 73, 0.78)'
-          ctx.fill(arrows)
-        }
-      }
-      ctx.setLineDash([])
-      ctx.save()
-      this.drawLabels(items, occupiedCodes.get(level))
-      ctx.restore()
+    const levelSelected = (item: StyledFeature) => matchesLevels(this.levelsByFeature.get(item) ?? [], this.selectedLevels)
+    const afterLevel = (level: number) => {
       for (const { hall, placement, filtered } of hallItems.filter(item => item.level === level)) {
         this.hallLayer.draw(ctx, hall, placement, this.origin, this.hallDisplay,
           hall.index === this.selectedHall, view.rotation ?? 0, filtered, true, this.occupancy,
@@ -696,20 +563,35 @@ export class OsmMapRenderer {
         }
       }
     }
+    return {
+      levels: hallItems.map(item => item.level),
+      featureStyle: item => highlightedAreas.has(item.feature.id) ? null : levelSelected(item) ? item.style
+        : filteredLevelStyle({ ...item.style, hallLabel: null, lineDash: [...item.style.lineDash] }),
+      showArrows: levelSelected,
+      label: item => levelSelected(item) && 'hallLabel' in item.style && item.style.hallLabel
+        ? hallLabel(item.feature.tags, occupiedCodes.get(item.style.level)) : null,
+      afterLevel,
+      afterFeatures: () => this.drawOverlays(ctx, view.scale, hallItems, highlighted, stairArrows),
+    }
+  }
+
+  private drawOverlays(ctx: CanvasRenderingContext2D, scale: number,
+    hallItems: { hall: MapHall; placement: HallPlacement; filtered: boolean }[],
+    highlighted: ComiketMapLayer['namedRoutePaths'], stairArrows: ComiketMapLayer['namedRoutePaths']) {
     const report = this.hallDisplay.visible ? this.registrationReports.find(report => report.hallIndex === this.selectedHall) : undefined
     if (report) {
       ctx.save()
-      ctx.lineWidth = 1.5 / view.scale
+      ctx.lineWidth = 1.5 / scale
       ctx.strokeStyle = '#7b1fa2'
-      ctx.setLineDash([6 / view.scale, 4 / view.scale])
+      ctx.setLineDash([6 / scale, 4 / scale])
       ctx.stroke(localPath([report.envelope], this.origin, true))
       if (report.alignment) {
         ctx.setLineDash([])
         ctx.strokeStyle = '#00a6bd'
-        ctx.lineWidth = 3 / view.scale
+        ctx.lineWidth = 3 / scale
         ctx.stroke(localPath([[report.alignment.target.start, report.alignment.target.end]], this.origin, false))
         ctx.strokeStyle = '#ef6c00'
-        ctx.lineWidth = 2 / view.scale
+        ctx.lineWidth = 2 / scale
         ctx.stroke(localPath([[report.alignment.source.start, report.alignment.source.end]], this.origin, false))
       }
       ctx.restore()
@@ -772,10 +654,10 @@ export class OsmMapRenderer {
       ctx.lineJoin = ctx.lineCap = 'round'
       if (this.routeLine) {
         ctx.strokeStyle = '#fff'
-        ctx.lineWidth = (this.plannedSegments.length ? 5 : 8) / view.scale
+        ctx.lineWidth = (this.plannedSegments.length ? 5 : 8) / scale
         ctx.stroke(this.routeLine)
       }
-      ctx.lineWidth = (this.plannedSegments.length ? 3 : 5) / view.scale
+      ctx.lineWidth = (this.plannedSegments.length ? 3 : 5) / scale
       if (this.plannedSegments.length) {
         for (const { line, start, end, from, to } of this.plannedSegments) {
           if (from === to) {
@@ -792,8 +674,8 @@ export class OsmMapRenderer {
         ctx.stroke(this.routeLine)
       }
       if (this.routeApproach || this.plannedSegments.length) {
-        ctx.setLineDash([5 / view.scale, 4 / view.scale])
-        ctx.lineWidth = 3 / view.scale
+        ctx.setLineDash([5 / scale, 4 / scale])
+        ctx.lineWidth = 3 / scale
         if (this.routeApproach) {
           ctx.strokeStyle = '#df4913'
           ctx.stroke(this.routeApproach)
@@ -811,11 +693,11 @@ export class OsmMapRenderer {
         if (!marker) continue
         ctx.beginPath()
         const point = marker.origin ?? marker.point
-        ctx.arc(point.x - this.origin.x, point.y - this.origin.y, 6 / view.scale, 0, 2 * Math.PI)
+        ctx.arc(point.x - this.origin.x, point.y - this.origin.y, 6 / scale, 0, 2 * Math.PI)
         ctx.fillStyle = color
         ctx.fill()
         ctx.strokeStyle = '#fff'
-        ctx.lineWidth = 2 / view.scale
+        ctx.lineWidth = 2 / scale
         ctx.stroke()
       }
       ctx.restore()
@@ -833,7 +715,6 @@ export class OsmMapRenderer {
       }
       ctx.restore()
     }
-    this.onZoom(Math.round(view.scale / fitViewport(this.data.bounds, size).scale * 100))
   }
 
   private stopRoutePulses() {
@@ -954,64 +835,10 @@ export class OsmMapRenderer {
     this.updateRoutePulses()
   }
 
-  private drawGrid() {
-    if (!this.view) return
-    const { context: ctx, size, view, origin } = this
-    const bounds = viewportBounds(view, size)
-    const step = 100 / this.metersPerUnit
-    ctx.strokeStyle = gridColor
-    ctx.lineWidth = Math.max(0.5 / view.scale, 0.02 / this.metersPerUnit)
-    ctx.setLineDash([])
-    ctx.beginPath()
-    for (let x = Math.floor((bounds.minX - origin.x) / step) * step; x <= bounds.maxX - origin.x; x += step) {
-      ctx.moveTo(x, bounds.minY - origin.y)
-      ctx.lineTo(x, bounds.maxY - origin.y)
-    }
-    for (let y = Math.floor((bounds.minY - origin.y) / step) * step; y <= bounds.maxY - origin.y; y += step) {
-      ctx.moveTo(bounds.minX - origin.x, y)
-      ctx.lineTo(bounds.maxX - origin.x, y)
-    }
-    ctx.stroke()
-  }
-
-  private drawLabels(features: StyledFeature[], occupiedCodes?: ReadonlySet<string>) {
-    if (!this.view) return
-    const ctx = this.context
-    const view = this.view
-    const groundZoom = view.scale / this.metersPerUnit
-    const fontSize = Math.max(13, 11 * groundZoom)
-    ctx.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0)
-    ctx.setLineDash([])
-    ctx.font = `${fontSize}px "Noto Sans CJK TC", "Microsoft JhengHei", sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    const occupied: { x: number; y: number; width: number }[] = []
-    for (const { feature, style } of [...features].reverse()) {
-      if (!style.hallLabel) continue
-      const label = hallLabel(feature.tags, occupiedCodes)
-      if (!label) continue
-      const b = feature.bounds
-      const p = worldToScreen({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 }, view, this.size)
-      const width = ctx.measureText(label.text).width + 10
-      if (p.x + width / 2 < 0 || p.y + fontSize / 2 < 0
-        || p.x - width / 2 > this.size.width || p.y - fontSize / 2 > this.size.height) continue
-      if (occupied.some(other => Math.abs(p.x - other.x) < (width + other.width) / 2
-        && Math.abs(p.y - other.y) < fontSize + 4)) continue
-      occupied.push({ ...p, width })
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.88)'
-      ctx.lineWidth = Math.max(2.6, groundZoom)
-      ctx.strokeText(label.text, p.x, p.y)
-      ctx.fillStyle = label.color
-      ctx.fillText(label.text, p.x, p.y)
-    }
-  }
-
   dispose() {
     this.reducedMotion.removeEventListener('change', this.updateRoutePulses)
     this.stopRoutePulses()
     if (this.hoverFrame !== null) cancelAnimationFrame(this.hoverFrame)
     this.hoverFrame = null
-    if (this.frame !== null) cancelAnimationFrame(this.frame)
-    this.frame = null
   }
 }

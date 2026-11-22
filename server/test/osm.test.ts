@@ -3,12 +3,35 @@ import { test } from 'node:test'
 import { buildOsmMap, featureLevels, hallCodes, mergeTags, stitchRings, tagValues } from '../../client/src/map/osm.ts'
 import type { OsmFeature, OsmNode, OsmWay, Tags } from '../../client/src/map/osm.ts'
 import { outsideHallKey, projectHallPerimeter } from '../../client/src/map/hallPerimeter.ts'
+import { imageryTiles } from '../../client/src/map/satelliteImagery.ts'
 import {
   compareMapStyles, filteredLevelStyle, filteredOutline, hallLabel, mapBackground, mapStyle, matchesLevels, onewayTriangles, opaqueOnWhite,
 } from '../../client/src/map/style.ts'
 import {
   dragRotation, fitViewport, panViewport, projectCoordinate, screenToWorld, viewportBounds, worldToScreen, zoomViewport,
 } from '../../client/src/map/viewport.ts'
+
+test('World Imagery selects the Esri row and column containing the OSM venue', () => {
+  const center = projectCoordinate(35.63, 139.8)
+  const tiles = imageryTiles({ center, scale: 4 }, { width: 1, height: 1 }, 1)
+  assert.deepEqual(tiles.map(({ zoom, row, col }) => [zoom, row, col]), [[19, 206544, 465742]])
+  const [{ x, y, width }] = tiles
+  assert.ok(x <= center.x && center.x < x + width && y <= center.y && center.y < y + width)
+})
+
+test('World Imagery covers the rotated viewport and bounds tile selection on large screens', () => {
+  const view = { center: projectCoordinate(35.63, 139.8), scale: 1.4, rotation: 37 }
+  const size = { width: 3840, height: 2160 }
+  const tiles = imageryTiles(view, size, 2)
+  assert.ok(tiles.length > 0 && tiles.length <= 64)
+  for (const x of [0, size.width]) {
+    for (const y of [0, size.height]) {
+      const point = screenToWorld({ x, y }, view, size)
+      assert.ok(tiles.some(tile => tile.x <= point.x && point.x <= tile.x + tile.width
+        && tile.y <= point.y && point.y <= tile.y + tile.width))
+    }
+  }
+})
 
 function nodes(): OsmNode[] {
   return [

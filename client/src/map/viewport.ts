@@ -21,6 +21,9 @@ export interface Size {
   height: number
 }
 
+const mercatorRadius = 6378137
+export const mercatorWorldWidth = 2 * Math.PI * mercatorRadius
+
 export function pointInRing(point: Point, ring: readonly Point[]): boolean {
   let inside = false
   for (let i = 0; i < ring.length; i++) {
@@ -39,8 +42,8 @@ export function projectCoordinate(latitude: number, longitude: number): Point {
   const radians = Math.PI / 180
   const lat = Math.max(-85.05112878, Math.min(85.05112878, latitude)) * radians
   return {
-    x: 6378137 * longitude * radians,
-    y: -6378137 * Math.log(Math.tan(Math.PI / 4 + lat / 2)),
+    x: mercatorRadius * longitude * radians,
+    y: -mercatorRadius * Math.log(Math.tan(Math.PI / 4 + lat / 2)),
   }
 }
 

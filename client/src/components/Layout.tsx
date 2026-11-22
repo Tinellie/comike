@@ -25,6 +25,7 @@ export default function Layout() {
             {[
               { to: '/', label: 'Home' },
               { to: '/map', label: 'Map' },
+              { to: '/map2', label: 'Map2' },
               ...(user ? [{ to: '/import', label: 'Import' }] : []),
               ...(user?.isAdmin ? [
                 { to: '/preview', label: 'Preview' },

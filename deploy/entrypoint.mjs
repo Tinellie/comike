@@ -10,7 +10,7 @@ async function seed() {
   for (const directory of ['ref', 'storage', '.local', 'tools/booth-recognition/output/official-map']) {
     await mkdir(resolve(root, directory), { recursive: true })
   }
-  for (const name of ['hall-meta.json', 'hall-transforms.json', 'osm-map.osm', 'official-map.pdf']) {
+  for (const name of ['hall-meta.json', 'hall-transforms.json', 'osm-map.osm', 'ref.osm', 'official-map.pdf']) {
     const target = resolve(root, 'ref', name)
     if (!existsSync(target)) await copyFile(resolve(root, 'seed/ref', name), target, constants.COPYFILE_EXCL)
   }

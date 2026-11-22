@@ -1,6 +1,6 @@
 import { readBoothApi } from '../booths/api'
 import type { MapBoothLocation } from '../booths/api'
-import type { MapBoothHit } from './OsmMapRenderer'
+import type { MapBoothHit } from './ComiketMapLayer'
 
 export function mapBoothKey(hit: MapBoothHit) {
   return JSON.stringify([hit.hallGroup, hit.island, hit.number, hit.suffix])

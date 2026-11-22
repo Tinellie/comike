@@ -28,7 +28,7 @@ COPY --from=build /app/server/package.json ./server/package.json
 COPY server/drizzle ./server/drizzle
 COPY deploy/*.mjs ./deploy/
 COPY tools/booth-recognition ./tools/booth-recognition
-COPY ref/hall-meta.json ref/hall-transforms.json ref/osm-map.osm ref/official-map.pdf ./seed/ref/
+COPY ref/hall-meta.json ref/hall-transforms.json ref/osm-map.osm ref/ref.osm ref/official-map.pdf ./seed/ref/
 RUN npx --no-install playwright install --with-deps chromium && apt-get clean
 RUN mkdir -p storage .local ref tools/booth-recognition/output/official-map \
     && chown node:node storage .local ref tools/booth-recognition/output/official-map
