@@ -33,7 +33,7 @@ try {
   ], { ...process.env, MYSQL_PWD: decodeURIComponent(url.password) })
   for (const [name, directory] of Object.entries(directories)) {
     await run('tar', ['-czf', resolve(output, `${name}.tar.gz`), '-C', directory,
-      ...(name === 'ref' ? ['hall-meta.json', 'hall-transforms.json', 'osm-map.osm', 'official-map.pdf'] : ['.'])])
+      ...(name === 'ref' ? ['hall-meta.json', 'hall-transforms.json', 'osm-map.osm', 'ref.osm', 'official-map.pdf'] : ['.'])])
   }
   console.info(`Export ready: ${output}`)
   console.info('Contains private user data. Transfer over SSH; do not commit or publish. Circle.ms login state is intentionally excluded.')

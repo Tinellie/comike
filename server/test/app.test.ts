@@ -116,11 +116,14 @@ test('Express APIs and SPA deep links', async (t) => {
   await writeFile(join(directory, 'page-001-paths.json'), JSON.stringify(paths))
   const osm = '<osm version="0.6"><node id="1" lat="35.63" lon="139.79"/></osm>'
   await writeFile(join(directory, 'osm-map.osm'), osm)
+  const referenceOsm = osm.replace('35.63', '22.72')
+  await writeFile(join(directory, 'ref.osm'), referenceOsm)
   let databaseAvailable = true
   const app = createApp({
     clientDirectory: directory,
     recognitionDirectory: directory,
     osmFile: join(directory, 'osm-map.osm'),
+    referenceOsmFile: join(directory, 'ref.osm'),
     checkDatabase: async () => {
       if (!databaseAvailable) {
         throw new Error('Test database unavailable')
@@ -196,6 +199,10 @@ test('Express APIs and SPA deep links', async (t) => {
     assert.equal(response.status, 200)
     assert.match(response.headers.get('content-type') ?? '', /application\/xml/)
     assert.equal(await response.text(), osm)
+    const reference = await fetch(`${base}/api/map/ref.osm`)
+    assert.equal(reference.status, 200)
+    assert.match(reference.headers.get('content-type') ?? '', /application\/xml/)
+    assert.equal(await reference.text(), referenceOsm)
     for (const name of ['index.html', 'other.osm', '%2e%2e%2findex.html']) {
       const forbidden = await fetch(`${base}/api/map/${name}`)
       assert.equal(forbidden.status, 404)
@@ -210,7 +217,7 @@ test('Express APIs and SPA deep links', async (t) => {
     assert.deepEqual(await response.json(), { message: 'OSM map not found. Add ref/osm-map.osm first.' })
   })
   await t.test('home, map, preview and login serve the SPA entry', async () => {
-    for (const path of ['/', '/map', '/preview', '/login']) {
+    for (const path of ['/', '/map', '/map2', '/preview', '/login']) {
       const response = await fetch(`${base}${path}`)
       assert.equal(response.status, 200)
       assert.equal(await response.text(), html)

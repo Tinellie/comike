@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Box, Button, LinearProgress, Stack } from '@mui/material'
-import OsmCanvas from '../map/OsmCanvas'
+import ComiketMap from '../map/ComiketMap'
 import { parseOsm } from '../map/osm'
 import type { OsmMapData } from '../map/osm'
 import { parseHalls, parseHallTransforms } from '../map/halls'
 import type { HallTransforms, MapHall } from '../map/halls'
 import { recalculateHallTransforms } from '../map/hallPreparation'
-import type { MapBoothHit } from '../map/OsmMapRenderer'
+import type { MapBoothHit } from '../map/ComiketMapLayer'
 import BoothDetail from '../booths/BoothDetail'
 import { readBoothApi } from '../booths/api'
 import type { BoothDays, BoothDetail as Detail, MapBoothData, MapFavorite, MapVacancy } from '../booths/api'
@@ -215,7 +215,7 @@ export default function Map() {
         </Button>}
       </Stack>
       {data && transforms && (
-        <OsmCanvas data={data} halls={halls} transforms={transforms} onError={setError}
+        <ComiketMap data={data} halls={halls} transforms={transforms} onError={setError}
           routesVisible={routesVisible}
           boothData={boothData}
           favoriteHighlights={highlights}

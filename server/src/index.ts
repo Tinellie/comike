@@ -39,6 +39,7 @@ const recognitionDirectory = fileURLToPath(
   new URL('../../tools/booth-recognition/output/official-map/', import.meta.url),
 )
 const osmFile = fileURLToPath(new URL('../../ref/osm-map.osm', import.meta.url))
+const referenceOsmFile = fileURLToPath(new URL('../../ref/ref.osm', import.meta.url))
 const hallTransformsFile = fileURLToPath(new URL('../../ref/hall-transforms.json', import.meta.url))
 const hallEditorOrigin = process.env.HALL_EDITOR_ORIGIN ?? 'http://localhost:5173'
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url))
@@ -70,7 +71,7 @@ const app = createApp({
   authStore: new MysqlAuthStore(),
   secureCookie: process.env.NODE_ENV === 'production' || process.env.AUTH_COOKIE_SECURE === 'true',
   trustProxy: process.env.TRUST_PROXY === 'true',
-  checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
+  checkDatabase, clientDirectory, recognitionDirectory, osmFile, referenceOsmFile, hallTransformsFile, hallEditorOrigin,
   ...(process.env.OCR_ENABLED !== 'false' ? {
     regeneratePreview: () => regeneratePreview(fileURLToPath(new URL('../../', import.meta.url)), recognitionDirectory),
   } : {}),

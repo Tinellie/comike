@@ -5,7 +5,7 @@ import type { Instance } from '@popperjs/core'
 import { BoothImages } from '../booths/BoothMedia'
 import { locationLabel } from '../booths/api'
 import type { MapBoothLocation } from '../booths/api'
-import type { MapBoothHit } from './OsmMapRenderer'
+import type { MapBoothHit } from './ComiketMapLayer'
 
 export interface BoothHoverHandle {
   move: (x: number, y: number) => void

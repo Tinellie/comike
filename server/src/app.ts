@@ -27,6 +27,7 @@ export interface AppOptions {
   clientDirectory?: string
   recognitionDirectory?: string
   osmFile?: string
+  referenceOsmFile?: string
   hallTransformsFile?: string
   hallEditorOrigin?: string
   regeneratePreview?: () => Promise<void>
@@ -44,7 +45,7 @@ export interface AppOptions {
 }
 
 export function createApp({
-  checkDatabase, clientDirectory, recognitionDirectory, osmFile, hallTransformsFile, hallEditorOrigin,
+  checkDatabase, clientDirectory, recognitionDirectory, osmFile, referenceOsmFile, hallTransformsFile, hallEditorOrigin,
   regeneratePreview,
   crawler, initializeDatabase, authStore, secureCookie, trustProxy,
   boothStore, mediaRoot, favorites, colourStore, pixiv, twitter,
@@ -198,21 +199,23 @@ export function createApp({
     }
   })
 
-  app.get('/api/map/osm-map.osm', (_req, res, next) => {
-    if (!osmFile) {
+  app.get(/^\/api\/map\/(osm-map\.osm|ref\.osm)$/, (req, res, next) => {
+    const name = req.params[0]
+    const file = name === 'ref.osm' ? referenceOsmFile : osmFile
+    if (!file) {
       res.status(404).json({ message: 'OSM map is not configured' })
       return
     }
     res.type('application/xml')
-    res.sendFile(osmFile, (error) => {
+    res.sendFile(file, (error) => {
       if (!error) return
       if (res.headersSent || res.destroyed) {
         next(error)
         return
       }
       if ('code' in error && error.code === 'ENOENT') {
-        console.warn('OSM map file missing:', osmFile)
-        res.status(404).type('json').json({ message: 'OSM map not found. Add ref/osm-map.osm first.' })
+        console.warn('OSM map file missing:', file)
+        res.status(404).type('json').json({ message: `OSM map not found. Add ref/${name} first.` })
         return
       }
       res.removeHeader('Content-Type')

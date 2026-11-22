@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Box, LinearProgress, Paper, Typography } from '@mui/material'
 import { locationLabel } from '../booths/api'
 import type { BoothDetail, MapBoothLocation } from '../booths/api'
-import type { MapBoothHit, RouteListStop } from './OsmMapRenderer'
+import type { MapBoothHit, RouteListStop } from './ComiketMapLayer'
 
 interface Props {
   stops: RouteListStop[]
