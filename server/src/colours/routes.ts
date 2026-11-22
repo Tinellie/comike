@@ -33,6 +33,19 @@ export function coloursRouter(store: ColourStore, userFor: (req: Request) => Aut
     }
     res.json({ colours: await store.reorder(userFor(req).id, body.colours) })
   })
+  router.patch('/coefficient', async (req, res) => {
+    const body: unknown = req.body
+    if (!body || typeof body !== 'object' || Object.keys(body).length !== 2
+      || !('colour' in body) || typeof body.colour !== 'string' || !/^#[\dA-F]{6}$/.test(body.colour)
+      || !('coefficient' in body) || typeof body.coefficient !== 'number' || !Number.isFinite(body.coefficient)
+      || (body.coefficient !== 0 && (body.coefficient < 0.01 || body.coefficient > 1000))) {
+      console.warn('Rejected invalid colour coefficient')
+      res.status(400).json({ message: '颜色系数必须为 0 或 0.01 到 1000 之间的数字' })
+      return
+    }
+    await store.setCoefficient(userFor(req).id, body.colour, body.coefficient)
+    res.status(204).end()
+  })
   const errors: ErrorRequestHandler = (error: unknown, _req, res, next) => {
     if (res.headersSent || res.destroyed) { next(error); return }
     console.error('Colour preferences request failed:', error)

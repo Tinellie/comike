@@ -1,10 +1,184 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { parseHalls } from '../../client/src/map/halls.ts'
-import { areaRoutePoint, boothRoutePoint, buildNavigation, shortestRoute } from '../../client/src/map/navigation.ts'
+import { areaRoutePoint, boothRoutePoint, buildNavigation, greedyBoothRoute, plannerRouteProgress, queueStart, reorderBoothRoute, shortestRoute } from '../../client/src/map/navigation.ts'
 import { buildOsmMap } from '../../client/src/map/osm.ts'
 import type { OsmFeature } from '../../client/src/map/osm.ts'
 import { projectCoordinate } from '../../client/src/map/viewport.ts'
+
+test('planner follows the selected queue by topology and direction, excluding area boundaries', () => {
+  const nodes = [0, 1, 2, 3, 4].map(id => ({ id: String(id), lat: id % 2 / 1000, lon: id / 1000, tags: {} }))
+  const data = buildOsmMap(nodes, [
+    { id: 'last', refs: ['1', '2'], tags: { 'tokyo-big-sight': 'yes' } },
+    { id: 'first', refs: ['1', '0'], tags: { oneway: '-1' } },
+    { id: 'area', refs: ['0', '1', '4', '0'], tags: { area: 'yes' } },
+    { id: 'exit', refs: ['2', '3'], tags: { highway: 'footway', 'tokyo-big-sight': 'yes' } },
+  ], [{
+    id: 'east', tags: { name: '東待機列' },
+    members: ['last', 'first', 'area', 'last'].map(ref => ({ type: 'way', ref, role: '' })),
+  }])
+  const navigation = buildNavigation(data, [], { schemaVersion: 1, placements: [] }, () => 1)
+  const queue = queueStart(data, navigation, '東')
+  assert.deepEqual(queue?.points, nodes.slice(1, 3).map(({ lat, lon }) => projectCoordinate(lat, lon)))
+  assert.deepEqual(queue?.start.point, queue?.points.at(-1))
+  assert.equal(queueStart(data, navigation, '西南'), null)
+})
+
+test('navigation cannot backtrack through untagged queue segments, even as regular venue paths', () => {
+  const nodes = [0, 1, 2, 3].map(id => ({ id: String(id), lat: 0, lon: id / 1000, tags: {} }))
+  const venue = { 'tokyo-big-sight': 'yes', highway: 'footway' }
+  const data = buildOsmMap(nodes, [
+    { id: 'outside', refs: ['0', '1'], tags: { oneway: 'yes' } },
+    { id: 'queue', refs: ['2', '1'], tags: venue },
+    { id: 'exit', refs: ['2', '3'], tags: venue },
+  ], [{
+    id: 'east', tags: { name: '東待機列' },
+    members: ['queue', 'outside'].map(ref => ({ type: 'way', ref, role: '' })),
+  }])
+  const graph = buildNavigation(data, [], { schemaVersion: 1, placements: [] }, () => 1)
+  const from = graph.osmNodes.get('1'), to = graph.osmNodes.get('2')
+  const edge = graph.edges.find(edge => edge.from === from && edge.to === to || edge.from === to && edge.to === from)!
+  const entry = { edge, point: projectCoordinate(0, 0.001) }
+  const queueMidpoint = { edge, point: projectCoordinate(0, 0.0015) }
+  const exit = queueStart(data, graph, '東')
+  assert.ok(exit)
+  assert.ok(shortestRoute(graph.nodes, graph.edges, entry, exit.start))
+  assert.equal(shortestRoute(graph.nodes, graph.edges, exit.start, queueMidpoint), null)
+  assert.deepEqual(greedyBoothRoute(graph, exit.start, [queueMidpoint]).visited, [])
+  assert.equal(graph.osmNodes.has('0'), false)
+})
+
+test('planner picks the nearest reachable booth by walking distance and preserves one-way paths', () => {
+  const nodes = [
+    { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 1 },
+    { x: -1, y: 0 }, { x: -2, y: 0 },
+  ]
+  const edges = [
+    { from: 0, to: 1, multiplier: 1, oneway: true },
+    { from: 1, to: 2, multiplier: 1, connector: true },
+    { from: 2, to: 3, multiplier: 1 },
+    { from: 5, to: 4, multiplier: 1, oneway: true },
+    { from: 4, to: 0, multiplier: 1, oneway: true },
+  ]
+  const start = { edge: edges[0], point: nodes[0] }
+  const fartherWalk = { edge: edges[2], point: nodes[3], insideHall: true }
+  const shorterWalk = { edge: edges[0], point: { x: 5, y: 0 }, insideHall: true }
+  const unreachable = { edge: edges[3], point: nodes[4], insideHall: true }
+  const result = greedyBoothRoute({ nodes, edges }, start, [fartherWalk, unreachable, shorterWalk])
+  assert.deepEqual(result.visited, [shorterWalk, fartherWalk])
+  assert.deepEqual(result.remaining, [unreachable])
+  assert.deepEqual(result.legs.map(steps => steps.filter(step => step.start !== step.end).map(step => step.end)),
+    [[shorterWalk.point], nodes.slice(1, 4)])
+  assert.deepEqual(result.legs.flat().filter(step => step.connector), [{ start: nodes[1], end: nodes[2], connector: true }])
+})
+
+test('planner divides walking distance by the destination coefficient without changing the shortest path', () => {
+  const nodes = [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 8 }]
+  const edges = [
+    { from: 0, to: 1, multiplier: 1 },
+    { from: 1, to: 2, multiplier: 1, oneway: true },
+    { from: 0, to: 3, multiplier: 1 },
+    { from: 3, to: 2, multiplier: 1 },
+  ]
+  const start = { edge: edges[0], point: nodes[0] }
+  const near = { edge: edges[0], point: nodes[1], coefficient: 1 }
+  const far = { edge: edges[1], point: nodes[2], coefficient: 3 }
+  const graph = { nodes, edges }
+  assert.equal(greedyBoothRoute(graph, start, [near, far]).visited[0], far)
+  assert.deepEqual(greedyBoothRoute(graph, start, [near, far]).legs[0]
+    .filter(step => step.start !== step.end).map(step => step.end), [nodes[1], nodes[2]])
+  assert.equal(greedyBoothRoute(graph, start, [near, { ...far, coefficient: 0.5 }]).visited[0], near)
+  const excluded = { ...far, coefficient: 0 }
+  const filtered = greedyBoothRoute(graph, start, [near, excluded])
+  assert.deepEqual(filtered.visited, [near])
+  assert.deepEqual(filtered.remaining, [])
+  assert.deepEqual(greedyBoothRoute(graph, start, [excluded]), { visited: [], remaining: [], legs: [] })
+})
+
+test('planner discounts or increases ordinary walking distance but not connector length', () => {
+  const nodes = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 110, y: 0 }, { x: 0, y: 90 }, { x: 0, y: -130 }]
+  const edges = [
+    { from: 0, to: 1, multiplier: 1, connector: true },
+    { from: 1, to: 2, multiplier: 1 },
+    { from: 0, to: 3, multiplier: 1 },
+    { from: 0, to: 4, multiplier: 1 },
+  ]
+  const graph = { nodes, edges }
+  const start = { edge: edges[0], point: nodes[0] }
+  const local = { edge: edges[2], point: nodes[3] }
+  const longLocal = { edge: edges[3], point: nodes[4] }
+  const across = { edge: edges[1], point: nodes[2], coefficient: 10 }
+  assert.equal(greedyBoothRoute(graph, start, [across, local]).visited[0], local)
+  const lowPriorityAcross = { ...across, coefficient: 0.5 }
+  assert.equal(greedyBoothRoute(graph, start, [lowPriorityAcross, longLocal]).visited[0], lowPriorityAcross)
+})
+
+test('planner counts only the traversed part of a connector and weights the booth approach separately', () => {
+  const nodes = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 0, y: 60 }, { x: 0, y: 70 }]
+  const edges = [
+    { from: 0, to: 1, multiplier: 1, connector: true },
+    { from: 0, to: 2, multiplier: 1 },
+    { from: 0, to: 3, multiplier: 1 },
+  ]
+  const graph = { nodes, edges }
+  const start = { edge: edges[0], point: nodes[0] }
+  const across = { edge: edges[0], point: { x: 50, y: 0 }, origin: { x: 50, y: 30 }, coefficient: 2 }
+  const nearer = { edge: edges[1], point: nodes[2] }
+  const farther = { edge: edges[2], point: nodes[3] }
+  assert.equal(greedyBoothRoute(graph, start, [across, nearer]).visited[0], nearer)
+  assert.equal(greedyBoothRoute(graph, start, [across, farther]).visited[0], across)
+})
+
+test('planner still draws the actual shortest leg if an ordinary detour would score lower', () => {
+  const nodes = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 110, y: 0 }, { x: 0, y: 50 }]
+  const edges = [
+    { from: 0, to: 1, multiplier: 1, connector: true },
+    { from: 1, to: 2, multiplier: 1 },
+    { from: 0, to: 3, multiplier: 1 },
+    { from: 3, to: 1, multiplier: 1 },
+  ]
+  const start = { edge: edges[0], point: nodes[0] }
+  const across = { edge: edges[1], point: nodes[2], coefficient: 10 }
+  const result = greedyBoothRoute({ nodes, edges }, start, [across])
+  assert.deepEqual(result.legs[0].filter(step => step.start !== step.end).map(step => step.end), nodes.slice(1, 3))
+})
+
+test('moving a route stop only replaces the legs whose endpoints change', () => {
+  const nodes = [0, 1, 2, 3, 4].map(x => ({ x: x * 10, y: 0 }))
+  const edges = nodes.slice(1).map((_, from) => ({ from, to: from + 1, multiplier: 1 }))
+  const graph = { nodes, edges }
+  const start = { point: nodes[0], edge: edges[0] }
+  const stops = nodes.slice(1).map((point, index) => ({ point, edge: edges[index] }))
+  const route = greedyBoothRoute(graph, start, stops)
+  const result = reorderBoothRoute(graph, start, route, 1, 3)
+  assert.ok(result)
+  assert.deepEqual(result.visited, [stops[0], stops[2], stops[3], stops[1]])
+  assert.equal(result.legs[0], route.legs[0])
+  assert.equal(result.legs[2], route.legs[3])
+  assert.deepEqual(result.legs.map(leg => leg.at(-1)?.end), result.visited.map(stop => stop.point))
+  assert.deepEqual(route.visited, stops)
+})
+
+test('moving a route stop rejects an order requiring reverse travel on a one-way segment', () => {
+  const nodes = [0, 1, 2].map(x => ({ x: x * 10, y: 0 }))
+  const edges = [{ from: 0, to: 1, multiplier: 1 }, { from: 1, to: 2, multiplier: 1, oneway: true }]
+  const graph = { nodes, edges }
+  const start = { point: nodes[0], edge: edges[0] }
+  const stops = [{ point: nodes[1], edge: edges[0] }, { point: nodes[2], edge: edges[1] }]
+  const route = greedyBoothRoute(graph, start, stops)
+  assert.equal(reorderBoothRoute(graph, start, route, 0, 1), null)
+  assert.deepEqual(route.visited, stops)
+})
+
+test('planner colors advance continuously across legs but pause throughout connectors', () => {
+  const steps = [0, 2, 5, 10, 14].slice(0, -1).map((x, i) => ({
+    start: { x, y: 0 }, end: { x: [2, 5, 10, 14][i], y: 0 }, connector: i === 1 || i === 2,
+  }))
+  const progress = plannerRouteProgress([steps.slice(0, 2), steps.slice(2)])
+  assert.deepEqual(progress.flat().map(({ from, to }) => [from, to]), [
+    [0, 1 / 3], [1 / 3, 1 / 3], [1 / 3, 1 / 3], [1 / 3, 1],
+  ])
+})
 
 test('A* prefers a longer outdoor detour when its weight is lower', () => {
   const nodes = [{ x: -1, y: 0 }, { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 5 }, { x: 11, y: 0 }]
@@ -33,6 +207,37 @@ test('navigation keeps tagged outside ways and Japanese connector relations, not
     id: 'route', tags: { name: '東-西連絡通路' }, members: [{ type: 'way', ref: 'connector', role: '' }],
   }])
   assert.deepEqual(data.navigationRoutes?.map(({ from, to }) => [from, to]), [['1', '2'], ['2', '3']])
+})
+
+test('only ratioable connector ways allow reverse travel and factor into the booth coefficient', () => {
+  const nodes = [0, 1, 2, 3].map(id => ({
+    id: String(id), lat: 0, lon: [0, 0.001, -0.001, 0.0016][id], tags: {},
+  }))
+  const data = buildOsmMap(nodes, [
+    { id: 'ratioable', refs: ['0', '1'], tags: { oneway: 'yes', ratioable: 'yes' } },
+    { id: 'fixed', refs: ['0', '2'], tags: { oneway: 'yes' } },
+    { id: 'ordinary', refs: ['1', '3'], tags: { oneway: 'yes', ratioable: 'yes', 'outside-hall:e123': 'yes' } },
+  ], [{
+    id: 'route', tags: { name: '東-西連絡通路' },
+    members: ['ratioable', 'fixed'].map(ref => ({ type: 'way', ref, role: '' })),
+  }])
+  const graph = buildNavigation(data, [], { schemaVersion: 1, placements: [] }, () => 1)
+  const point = (id: string) => graph.nodes[graph.osmNodes.get(id)!]
+  const edge = (from: string, to: string) => graph.edges.find(({ from: a, to: b }) =>
+    (graph.nodes[a] === point(from) && graph.nodes[b] === point(to))
+    || (graph.nodes[b] === point(from) && graph.nodes[a] === point(to)))!
+  const ratioable = edge('0', '1'), fixed = edge('0', '2'), ordinary = edge('1', '3')
+  const start = { edge: ordinary, point: point('1') }
+  const across = { edge: ratioable, point: point('0'), coefficient: 2 }
+  const farther = { edge: ordinary, point: point('3') }
+  const end = { edge: fixed, point: point('2'), coefficient: 10 }
+  assert.ok(shortestRoute(graph.nodes, graph.edges, start, across))
+  assert.equal(shortestRoute(graph.nodes, graph.edges, end, across), null)
+  assert.equal(shortestRoute(graph.nodes, graph.edges, farther, start), null)
+  const result = greedyBoothRoute(graph, start, [end, across, farther])
+  assert.equal(result.visited[0], across)
+  assert.ok(result.legs[0].some(step => step.start === start.point && step.end === across.point && step.connector))
+  assert.equal(greedyBoothRoute(graph, start, [end, { ...across, coefficient: 0.5 }, farther]).visited[0], farther)
 })
 
 test('one-way route points only connect forward, with a detour available in reverse', () => {

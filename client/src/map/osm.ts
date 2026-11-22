@@ -77,6 +77,7 @@ export interface OsmMapData {
   navigationRoutes?: readonly OsmRouteSegment[]
   venueRoutes?: readonly OsmRouteSegment[]
   namedRoutes?: readonly OsmNamedRoute[]
+  queueRoutes?: ReadonlyMap<string, readonly OsmRouteSegment[]>
 }
 
 export interface OsmNamedRoute {
@@ -93,6 +94,9 @@ export interface OsmRouteSegment {
   end: Point
   direction?: ReturnType<typeof onewayDirection>
   levels?: readonly number[]
+  connector?: boolean
+  ratioable?: boolean
+  venueEntry?: boolean
 }
 
 function boundsOf(paths: Point[][]): Bounds {
@@ -156,11 +160,13 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
   const relationTags = new Map<string, Tags>()
   const outsideHallRoutes = new Map<string, OsmRouteSegment[]>()
   const outsideHallWays = new Map<string, Set<string>>()
+  const isConnector = (tags: Tags) => tagValues(tags, 'name').some(name => /[連连][絡络]通路/.test(name))
   const isNavigation = (tags: Tags) => Object.keys(tags).some(key =>
     key.startsWith('outside-hall:') || key === 'outside-hall')
-    || tagValues(tags, 'name').some(name => name.includes('連絡通路'))
+    || isConnector(tags)
   const navigationWays = new Set(ways.filter(way => isNavigation(way.tags)).map(way => way.id))
-  const segmentsFor = (members: Iterable<string>) => {
+  const connectorWays = new Set(ways.filter(way => isConnector(way.tags)).map(way => way.id))
+  const segmentsFor = (members: Iterable<string>, queue = false) => {
     const segments: OsmRouteSegment[] = []
     for (const id of members) {
       const way = wayById.get(id)
@@ -170,7 +176,14 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
       const levels = featureLevels(way.tags)
       for (let i = 1; i < refs.length; i++) {
         const from = refs[i - 1], to = refs[i], start = points.get(from), end = points.get(to)
-        if (start && end && (start.x !== end.x || start.y !== end.y)) segments.push({ from, to, start, end, direction, levels })
+        if (start && end && (start.x !== end.x || start.y !== end.y)) {
+          segments.push({ from, to, start, end, direction, levels,
+            ...(connectorWays.has(id) && { connector: true,
+              ...(tagValues(way.tags, 'ratioable').includes('yes') && { ratioable: true }),
+            }),
+            ...(queue && tagValues(way.tags, 'tokyo-big-sight').includes('yes') && { venueEntry: true }),
+          })
+        }
       }
     }
     return segments
@@ -186,6 +199,7 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
     for (const member of relation.members) {
       if (member.type !== 'way') continue
       relationTags.set(member.ref, mergeTags(relationTags.get(member.ref) ?? {}, relation.tags))
+      if (isConnector(relation.tags)) connectorWays.add(member.ref)
       if (keys.length || isNavigation(relation.tags)) {
         navigationWays.add(member.ref)
       }
@@ -275,6 +289,7 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
     point: points.get(node.id)!, name: tagValues(node.tags, 'name')[0],
   }))
   const featureIds = new Set(features.map(feature => feature.id))
+  const queueRoutes = new Map<string, OsmRouteSegment[]>()
   const namedRoutes = relations.flatMap(({ id, tags, members }): OsmNamedRoute[] => {
     const name = tagValues(tags, 'name')[0]?.trim()
     if (!name) return []
@@ -284,10 +299,19 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
     if (!hall) return []
     const wayIds = [...new Set(members.filter(member => member.type === 'way')
       .map(member => `way/${member.ref}`).filter(ref => featureIds.has(ref)))]
+    if (/^[東西南北]+\s*待[機机]列$/.test(normalized)) {
+      const lineMembers = new Set(members.filter(member => {
+        if (member.type !== 'way') return false
+        const way = wayById.get(member.ref)
+        return way && !polygonMembers.has(way.id)
+          && !isArea(way.tags, way.refs.length >= 4 && way.refs[0] === way.refs.at(-1))
+      }).map(member => member.ref))
+      queueRoutes.set(normalized.replace(/\s/g, '').replace('待机列', '待機列'), segmentsFor(lineMembers, true))
+    }
     return wayIds.length ? [{ id, name, hall, wayIds }] : []
   })
   return { features, places, bounds, warnings, outsideHallRoutes, navigationRoutes: segmentsFor(navigationWays),
-    venueRoutes: segmentsFor(venueWays), namedRoutes }
+    venueRoutes: segmentsFor(venueWays), namedRoutes, queueRoutes }
 }
 
 function attribute(element: Element, name: string): string {

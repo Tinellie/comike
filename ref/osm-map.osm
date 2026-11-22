@@ -569,6 +569,7 @@
   <node id='-70335' action='modify' visible='true' lat='35.6344556431' lon='139.79984963781' />
   <node id='-70336' action='modify' visible='true' lat='35.63365715906' lon='139.79842815618' />
   <node id='-70355' action='modify' visible='true' lat='35.62906841274' lon='139.79495215339' />
+  <node id='-70367' action='modify' visible='true' lat='35.63241560139' lon='139.79657122747' />
   <node id='31252897' action='delete' timestamp='2017-03-22T16:15:19Z' uid='3150532' user='dqn' visible='true' version='6' changeset='47072324' lat='35.6335578' lon='139.7815571'>
     <tag k='highway' v='motorway_junction' />
     <tag k='name' v='有明ジャンクション' />
@@ -7375,8 +7376,6 @@
     <tag k='tokyo-big-sight' v='yes' />
   </way>
   <way id='-40864' action='modify' visible='true'>
-    <nd ref='-61283' />
-    <nd ref='-60287' />
     <nd ref='-60285' />
     <nd ref='-60283' />
     <nd ref='-60281' />
@@ -7389,6 +7388,7 @@
     <tag k='level' v='1' />
     <tag k='oneway' v='yes' />
     <tag k='path:e-to-w' v='yes' />
+    <tag k='ratioable' v='yes' />
     <tag k='tokyo-big-sight' v='yes' />
   </way>
   <way id='-40871' action='modify' visible='true'>
@@ -7597,6 +7597,7 @@
   <way id='-41314' action='modify' visible='true'>
     <nd ref='-60532' />
     <nd ref='2511591327' />
+    <nd ref='-70367' />
     <tag k='footway' v='sidewalk' />
     <tag k='highway' v='footway' />
     <tag k='layer' v='1' />
@@ -7973,6 +7974,7 @@
     <tag k='highway' v='footway' />
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
+    <tag k='oneway' v='yes' />
     <tag k='path:e-entry' v='yes' />
     <tag k='tokyo-big-sight' v='yes' />
   </way>
@@ -7997,12 +7999,14 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='path:e-to-w' v='yes' />
+    <tag k='ratioable' v='yes' />
     <tag k='tokyo-big-sight' v='yes' />
   </way>
   <way id='-63848' action='modify' visible='true'>
     <nd ref='-60268' />
     <nd ref='-70186' />
     <nd ref='-70187' />
+    <nd ref='-70367' />
     <nd ref='-70188' />
     <tag k='footway' v='sidewalk' />
     <tag k='highway' v='footway' />
@@ -8017,6 +8021,7 @@
     <tag k='highway' v='footway' />
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
+    <tag k='oneway' v='yes' />
     <tag k='path:e-entry' v='yes' />
     <tag k='tokyo-big-sight' v='yes' />
   </way>
@@ -8119,6 +8124,20 @@
     <tag k='layer' v='-1' />
     <tag k='level' v='1' />
     <tag k='path:e-to-w' v='yes' />
+    <tag k='tokyo-big-sight' v='yes' />
+  </way>
+  <way id='-64218' action='modify' visible='true'>
+    <nd ref='-61283' />
+    <nd ref='-60287' />
+    <nd ref='-60285' />
+    <tag k='covered' v='yes' />
+    <tag k='footway' v='sidewalk' />
+    <tag k='highway' v='footway' />
+    <tag k='layer' v='-1' />
+    <tag k='level' v='1' />
+    <tag k='oneway' v='yes' />
+    <tag k='path:e-to-w' v='yes' />
+    <tag k='ratioable' v='yes' />
     <tag k='tokyo-big-sight' v='yes' />
   </way>
   <way id='4847507' action='delete' timestamp='2024-09-04T13:31:47Z' uid='2929244' user='penguin_the_dawn' visible='true' version='39' changeset='156187174'>
@@ -19454,24 +19473,21 @@
     <tag k='path:w-to-e' v='yes' />
   </relation>
   <relation id='-123' action='modify' visible='true'>
-    <member type='way' ref='608585293' role='' />
     <member type='way' ref='-63905' role='' />
+    <member type='way' ref='-63751' role='' />
+    <member type='way' ref='608585293' role='' />
     <member type='way' ref='-63751' role='' />
     <member type='way' ref='-42667' role='' />
     <member type='way' ref='608585293' role='' />
-    <member type='way' ref='-63905' role='' />
     <member type='way' ref='-63751' role='' />
     <member type='way' ref='-42667' role='' />
     <member type='way' ref='608585293' role='' />
-    <member type='way' ref='-63905' role='' />
     <member type='way' ref='-63751' role='' />
     <member type='way' ref='-42667' role='' />
     <member type='way' ref='608585293' role='' />
-    <member type='way' ref='-63905' role='' />
     <member type='way' ref='-63751' role='' />
     <member type='way' ref='-42667' role='' />
     <member type='way' ref='-42814' role='' />
-    <member type='way' ref='-63905' role='' />
     <member type='way' ref='-63751' role='' />
     <member type='way' ref='-42667' role='' />
     <member type='way' ref='438228290' role='' />
@@ -19485,7 +19501,6 @@
     <member type='way' ref='381863145' role='' />
     <member type='way' ref='-41358' role='' />
     <member type='way' ref='-31181' role='' />
-    <member type='way' ref='-63905' role='' />
     <member type='way' ref='-63751' role='' />
     <member type='way' ref='-42667' role='' />
     <tag k='name' v='東待機列' />
@@ -19495,6 +19510,7 @@
     <member type='way' ref='-42950' role='' />
     <member type='way' ref='385356175' role='' />
     <member type='way' ref='-40864' role='' />
+    <member type='way' ref='-64218' role='' />
     <member type='way' ref='-63769' role='' />
     <member type='way' ref='381873515' role='' />
     <member type='way' ref='385355910' role='' />
@@ -19508,6 +19524,7 @@
   <relation id='-153' action='modify' visible='true'>
     <member type='way' ref='618364223' role='' />
     <member type='way' ref='-40864' role='' />
+    <member type='way' ref='-64218' role='' />
     <member type='way' ref='-63905' role='' />
     <member type='way' ref='-63751' role='' />
     <tag k='name' v='outside-hall-e123' />
@@ -19517,6 +19534,7 @@
     <member type='way' ref='-64137' role='' />
     <member type='way' ref='-63848' role='' />
     <member type='way' ref='-40864' role='' />
+    <member type='way' ref='-64218' role='' />
     <tag k='name' v='outside-hall-e456' />
     <tag k='outside-hall' v='e456' />
   </relation>

@@ -6,15 +6,19 @@ import {
 } from '@mui/material'
 import type { OsmMapData } from './osm'
 import { OsmMapRenderer } from './OsmMapRenderer'
-import type { MapBoothHit } from './OsmMapRenderer'
+import type { MapBoothHit, RouteListStop } from './OsmMapRenderer'
 import type { HallTransforms, MapHall } from './halls'
 import { defaultHallDisplay, hallRouteColor } from './HallMapLayer'
 import { dragRotation } from './viewport'
 import type { MapBoothData, MapBoothLocation } from '../booths/api'
+import { requestColours, saveColourCoefficient } from '../booths/colourApi'
+import type { ColourPriority } from '../booths/colourApi'
 import BoothHoverPreview from './BoothHoverPreview'
 import type { BoothHoverHandle } from './BoothHoverPreview'
 import { mapBoothKey } from './boothLookup'
 import type { FavoriteHighlights } from './favoriteHighlights'
+import type { PlannerSide } from './navigation'
+import RouteList from './RouteList'
 
 interface OsmCanvasProps {
   data: OsmMapData
@@ -28,12 +32,15 @@ interface OsmCanvasProps {
   onDayChange: (weekday: string) => void
   boothData: MapBoothData | null
   favoriteHighlights: FavoriteHighlights
+  userId?: string
   loadBooth: (hit: MapBoothHit) => Promise<MapBoothLocation>
+  loadBoothDetails: (hit: MapBoothHit) => Promise<MapBoothLocation>
 }
 
-export default function OsmCanvas({ data, halls, transforms, routesVisible, onError, onBoothClick, days, weekday, onDayChange, boothData, favoriteHighlights, loadBooth }: OsmCanvasProps) {
+export default function OsmCanvas({ data, halls, transforms, routesVisible, onError, onBoothClick, days, weekday, onDayChange, boothData, favoriteHighlights, userId, loadBooth, loadBoothDetails }: OsmCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const routeCanvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<OsmMapRenderer | null>(null)
   const hallState = useRef({ halls, transforms })
   const [rotation, setRotation] = useState(0)
@@ -49,6 +56,26 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
   const routesState = useRef(routesVisible)
   const [selectedRoutes, setSelectedRoutes] = useState<ReadonlySet<string>>(() => new Set())
   const selectedRoutesState = useRef(selectedRoutes)
+  const [plannerSide, setPlannerSide] = useState<PlannerSide>('東')
+  const [routeStops, setRouteStops] = useState<RouteListStop[]>([])
+  const [inspectedStop, setInspectedStop] = useState<RouteListStop | null>(null)
+  const [reorderError, setReorderError] = useState<string | null>(null)
+  const [coefficientsOpen, setCoefficientsOpen] = useState(false)
+  const [colourAttempt, setColourAttempt] = useState(0)
+  const [plannerColours, setPlannerColours] = useState<{ userId: string; colours: ColourPriority[]; error?: string } | null>(null)
+  const [coefficientDraft, setCoefficientDraft] = useState<{ userId: string; values: ReadonlyMap<string, string> } | null>(null)
+  const [saveErrors, setSaveErrors] = useState<{ userId: string; values: ReadonlyMap<string, string> } | null>(null)
+  const saveScope = useRef<AbortSignal | null>(null)
+  const saves = useRef(new Map<string, Promise<void>>())
+  const colourConfig = plannerColours?.userId === userId ? plannerColours : null
+  const drafts = coefficientDraft?.userId === userId ? coefficientDraft?.values : undefined
+  const invalidCoefficient = (value: string) => {
+    const number = Number(value)
+    return !value.trim() || !Number.isFinite(number) || (number !== 0 && (number < 0.01 || number > 1000))
+  }
+  const [plannerIssue, setPlannerIssue] = useState<{ message: string; favorites: FavoriteHighlights; transforms: HallTransforms } | null>(null)
+  const plannerColor = plannerSide === '東' ? hallRouteColor('東')
+    : `linear-gradient(90deg, ${hallRouteColor('西')} 50%, ${hallRouteColor('南')} 50%)`
   const [pdfImages, setPdfImages] = useState<ReadonlyMap<MapHall, HTMLImageElement>>(new Map())
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [pdfAttempt, setPdfAttempt] = useState(0)
@@ -59,6 +86,62 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
   const boothState = useRef(boothData)
   const favoriteState = useRef(favoriteHighlights)
   useEffect(() => { clickHandler.current = onBoothClick }, [onBoothClick])
+
+  function inspectStop(stop: RouteListStop | null) {
+    const renderer = rendererRef.current
+    renderer?.inspectPlannedStop(stop)
+    const point = renderer?.plannedStopAnchor()
+    if (point) tooltipRef.current?.move(point.x, point.y)
+    setInspectedStop(stop)
+  }
+
+  useEffect(() => {
+    const controller = new AbortController()
+    saveScope.current = controller.signal
+    return () => controller.abort()
+  }, [userId])
+
+  function persistCoefficient(owner: string, colour: string, coefficient: number) {
+    const scope = saveScope.current
+    const key = `${owner}:${colour}`
+    async function save() {
+      if (!scope || scope.aborted) return
+      let error: string | undefined
+      try {
+        await saveColourCoefficient(colour, coefficient)
+      } catch (reason) {
+        console.error('Planner coefficient saving failed:', reason)
+        error = reason instanceof Error ? reason.message : '颜色系数保存失败'
+      }
+      if (scope.aborted) return
+      setSaveErrors(previous => {
+        const values = new Map(previous?.userId === owner ? previous.values : [])
+        if (error) values.set(colour, error)
+        else values.delete(colour)
+        return { userId: owner, values }
+      })
+    }
+    const previous = saves.current.get(key)
+    const pending = previous ? previous.then(save) : save()
+    saves.current.set(key, pending)
+    void pending.then(() => {
+      if (saves.current.get(key) === pending) saves.current.delete(key)
+    })
+  }
+
+  useEffect(() => {
+    if (!userId) return
+    const controller = new AbortController()
+    void requestColours(controller.signal).then(entries => {
+      if (!controller.signal.aborted) setPlannerColours({ userId, colours: entries })
+    }).catch((reason: unknown) => {
+      if (!controller.signal.aborted) {
+        console.error('Planner colour preferences loading failed:', reason)
+        setPlannerColours({ userId, colours: [], error: reason instanceof Error ? reason.message : '颜色配置加载失败' })
+      }
+    })
+    return () => controller.abort()
+  }, [userId, colourAttempt])
 
   useEffect(() => {
     routesState.current = routesVisible
@@ -148,8 +231,9 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
 
   useEffect(() => {
     const canvas = canvasRef.current
+    const routeCanvas = routeCanvasRef.current
     const container = containerRef.current
-    if (!canvas || !container) return
+    if (!canvas || !routeCanvas || !container) return
     let renderer: OsmMapRenderer | null = null
     let drag: {
       id: number; x: number; y: number; startX: number; startY: number; moved: boolean
@@ -160,9 +244,12 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
     }
     const observer = new ResizeObserver(resize)
     function resize() {
-      if (!canvas || !container) return
+      if (!canvas || !routeCanvas || !container) return
       try {
-        renderer ??= new OsmMapRenderer(canvas, data, () => {}, setRotation, (label, canClick, hit) => {
+        renderer ??= new OsmMapRenderer(canvas, routeCanvas, data, () => {
+          const point = renderer?.plannedStopAnchor()
+          if (point) tooltipRef.current?.move(point.x, point.y)
+        }, setRotation, (label, canClick, hit) => {
           setHoverLabel(label)
           clickable = canClick
           updateCursor()
@@ -170,6 +257,10 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
             const next = drag ? null : hit
             return previous && next && mapBoothKey(previous) === mapBoothKey(next) ? previous : next
           })
+        }, stops => {
+          setRouteStops(stops)
+          setReorderError(null)
+          if (!stops.length) setInspectedStop(null)
         })
         const state = hallState.current
         renderer.setHalls(state.halls, state.transforms, defaultHallDisplay, null)
@@ -269,6 +360,7 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
         if (!renderer?.selectNavigationPoint()) return
       } else if (event.key.toLowerCase() === 'x' && renderer?.hasNavigationSelection()) {
         renderer.clearNavigation()
+        setPlannerIssue(null)
       } else return
       event.preventDefault()
     }
@@ -300,6 +392,8 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
       canvas.style.cursor = 'grab'
       renderer?.dispose()
       rendererRef.current = null
+      setRouteStops([])
+      setInspectedStop(null)
     }
   }, [data, onError])
 
@@ -310,13 +404,19 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
           position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden',
         }}
       >
-        <BoothHoverPreview ref={tooltipRef} hit={boothData ? hoverHit : null} load={loadBooth} />
+        <BoothHoverPreview ref={tooltipRef} hit={inspectedStop?.hit ?? (boothData ? hoverHit : null)} load={loadBooth} />
         <canvas
           ref={canvasRef}
           aria-label="OSM 地图，可拖动、滚轮缩放、Alt 拖动旋转，也可用方向键和加减键操作"
           tabIndex={0}
           style={{ display: 'block', width: '100%', height: '100%', cursor: 'grab', touchAction: 'none' }}
         />
+        <canvas ref={routeCanvasRef} aria-hidden="true"
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
+        {!!routeStops.length && <RouteList stops={routeStops} load={loadBoothDetails} error={reorderError}
+          onInspect={inspectStop} onReorder={(from, to) => {
+            setReorderError(rendererRef.current?.reorderPlannedRoute(from, to) ?? null)
+          }} />}
         <Paper elevation={4} sx={{
           position: 'absolute', right: 16, top: 58, width: 180, pt: 2.5, px: 2, pb: 2,
           maxHeight: 'calc(100% - 94px)', overflow: 'auto',
@@ -433,6 +533,78 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
               </AccordionDetails>
             </Accordion>
           )}
+          <Box role="group" aria-labelledby="map-planner-label">
+            <Typography id="map-planner-label" variant="body2" sx={{ px: 0.5 }}>planner</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+              <Typography variant="body2" sx={{ fontWeight: plannerSide === '東' ? 700 : 400 }}>東</Typography>
+              <Switch size="small" checked={plannerSide === '西南'}
+                onChange={(_, checked) => {
+                  setPlannerSide(checked ? '西南' : '東')
+                  setPlannerIssue(null)
+                  rendererRef.current?.clearPlannedRoute()
+                }}
+                slotProps={{ input: { role: 'switch', 'aria-label': 'planner：東 / 西南' } }}
+                sx={{
+                  '& .MuiSwitch-thumb': { background: plannerColor },
+                  '& .MuiSwitch-track, & .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                    background: plannerColor, opacity: 0.35,
+                  },
+                }} />
+              <Typography variant="body2" sx={{ fontWeight: plannerSide === '西南' ? 700 : 400 }}>西南</Typography>
+            </Box>
+            {userId && (
+              <Accordion disableGutters elevation={0} expanded={coefficientsOpen}
+                onChange={(_, expanded) => setCoefficientsOpen(expanded)}>
+                <AccordionSummary aria-controls="map-planner-coefficients" id="map-planner-coefficients-label"
+                  expandIcon={<Box sx={{ width: 7, height: 7, borderRight: '1px solid', borderBottom: '1px solid',
+                    transform: 'rotate(45deg)' }} />}>
+                  <Typography variant="body2">颜色系数</Typography>
+                </AccordionSummary>
+                <AccordionDetails sx={{ p: 0.5, display: 'grid', gap: 0.5 }}>
+                  {!colourConfig && <LinearProgress aria-label="加载颜色系数" />}
+                  {colourConfig?.error && (
+                    <Alert severity="warning" action={<Button size="small" onClick={() => {
+                      setPlannerColours(null)
+                      setColourAttempt(value => value + 1)
+                    }}>重试</Button>}>{colourConfig.error}</Alert>
+                  )}
+                  {colourConfig?.colours.map(({ colour, coefficient }) => {
+                    const value = drafts?.get(colour) ?? String(coefficient)
+                    const saveError = saveErrors?.userId === userId ? saveErrors?.values.get(colour) : undefined
+                    return (
+                      <Box key={colour}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                        <Box title={colour} sx={{ width: 18, height: 18, border: '1px solid', borderColor: 'divider', bgcolor: colour }} />
+                        <TextField size="small" type="number" value={value} error={invalidCoefficient(value)}
+                          sx={{ width: 84 }} slotProps={{ htmlInput: { 'aria-label': `${colour} 系数`, min: 0, max: 1000, step: 'any' } }}
+                          onChange={event => {
+                            const nextValue = event.target.value
+                            setCoefficientDraft(previous => ({
+                              userId, values: new Map([...(previous?.userId === userId ? previous.values : []), [colour, nextValue]]),
+                            }))
+                            if (!invalidCoefficient(nextValue)) persistCoefficient(userId, colour, Number(nextValue))
+                          }} />
+                      </Box>
+                      {saveError && <Alert severity="warning" action={<Button size="small" disabled={invalidCoefficient(value)}
+                        onClick={() => persistCoefficient(userId, colour, Number(value))}>重试</Button>}>{saveError}</Alert>}
+                      </Box>
+                    )
+                  })}
+                </AccordionDetails>
+              </Accordion>
+            )}
+            <Button size="small" fullWidth disabled={Boolean(userId && (!colourConfig || colourConfig.error))
+              || colourConfig?.colours.some(({ colour, coefficient }) => invalidCoefficient(drafts?.get(colour) ?? String(coefficient)))} onClick={() => {
+              const coefficients = new Map(colourConfig?.colours.map(({ colour, coefficient }) => [colour, Number(drafts?.get(colour) ?? coefficient)]))
+              const message = rendererRef.current ? rendererRef.current.planFavoriteRoute(plannerSide, coefficients) : '地图尚未就绪。'
+              setPlannerIssue(message ? { message, favorites: favoriteHighlights, transforms } : null)
+            }}>cal route</Button>
+            {plannerIssue?.favorites === favoriteHighlights && plannerIssue.transforms === transforms && (
+              <Typography variant="caption" component="div" role="status" color="warning.dark" sx={{ px: 0.5 }}>
+                {plannerIssue.message}
+              </Typography>
+            )}
+          </Box>
           <Typography variant="caption" component="div" sx={{
             color: 'text.secondary', overflowWrap: 'anywhere', minHeight: '1.5em',
           }}>

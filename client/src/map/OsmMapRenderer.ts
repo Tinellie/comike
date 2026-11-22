@@ -10,8 +10,8 @@ import { hallMatrix, hallWorldBounds } from './halls'
 import { HallVisibility, intersectsBounds } from './hallVisibility'
 import type { HallPlacement, HallTransforms, MapHall } from './halls'
 import { outsideHallKey, projectHallPerimeter } from './hallPerimeter'
-import { areaRoutePoint, boothRoutePoint, buildNavigation, shortestRoute } from './navigation'
-import type { RoutePoint } from './navigation'
+import { areaRoutePoint, boothRoutePoint, buildNavigation, greedyBoothRoute, plannerRouteProgress, queueStart, reorderBoothRoute, shortestRoute } from './navigation'
+import type { PlannerSide, RoutePoint, RouteStep } from './navigation'
 import type { Bounds } from './viewport'
 import type { HallRegistrationReport } from './hallRegistration'
 import { boothHover, BoothOccupancy } from './boothOccupancy'
@@ -34,6 +34,16 @@ export interface MapBoothHit {
   suffix: 'a' | 'b'
 }
 
+export interface RouteListStop {
+  id: string
+  hit: MapBoothHit
+  suffix: 'a' | 'b' | 'ab'
+  colour: string
+}
+
+type PlannedStop = RoutePoint & RouteListStop & { hallIndex: number; bbox: PreviewBooth['bbox']; coefficient: number }
+type PlannedRoute = { queue: NonNullable<ReturnType<typeof queueStart>>; visited: PlannedStop[]; legs: RouteStep[][] }
+
 function localPath(paths: Point[][], origin: Point, closed: boolean): Path2D {
   const path = new Path2D()
   for (const points of paths) {
@@ -51,6 +61,34 @@ function approachPoints({ origin, front, point }: RoutePoint): Point[] {
   return front ? [origin, front, point] : [origin, point]
 }
 
+const plannerHueBase = 220
+const plannerHueRange = 360
+
+function plannerHue(progress: number) {
+  return plannerHueBase + plannerHueRange * (1 - progress)
+}
+
+function plannerProgressColor(progress: number) {
+  return `hsl(${plannerHue(progress)}, 85%, 42%)`
+}
+
+function plannerGradient(ctx: CanvasRenderingContext2D, a: Point, b: Point, from: number, to: number,
+  color: (progress: number, offset: number) => string = plannerProgressColor) {
+  const gradient = ctx.createLinearGradient(a.x, a.y, b.x, b.y)
+  gradient.addColorStop(0, color(from, 0))
+  // Canvas interpolates RGB; stop at each hue-sector boundary to preserve the color sweep.
+  for (let hue = Math.ceil(plannerHue(from) / 60) * 60 - 60; hue > plannerHueBase; hue -= 60) {
+    const progress = 1 - (hue - plannerHueBase) / plannerHueRange
+    if (progress >= to) break
+    if (progress > from) {
+      const offset = (progress - from) / (to - from)
+      gradient.addColorStop(offset, color(progress, offset))
+    }
+  }
+  gradient.addColorStop(1, color(to, 1))
+  return gradient
+}
+
 export class OsmMapRenderer {
   private readonly canvas: HTMLCanvasElement
   private readonly data: OsmMapData
@@ -59,6 +97,9 @@ export class OsmMapRenderer {
   private readonly origin: Point
   private readonly metersPerUnit: number
   private readonly context: CanvasRenderingContext2D
+  private readonly routeContext: CanvasRenderingContext2D
+  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+  private routeFrame: number | null = null
   private readonly features: StyledFeature[]
   private readonly namedRoutePaths: { id: string; member: StyledFeature; area: boolean; color: string; fill: string }[]
   private selectedRoutes: ReadonlySet<string> = new Set()
@@ -76,6 +117,7 @@ export class OsmMapRenderer {
   private pointer: Point | null = null
   private readonly hitIndexes = new WeakMap<MapHall, HallVisibility>()
   private readonly onHover: (label: string, clickable: boolean, hit: MapBoothHit | null) => void
+  private readonly onPlannedRoute: (stops: RouteListStop[]) => void
   private hoverLabel = ''
   private hoverFrame: number | null = null
   private occupancy: BoothOccupancy | null = null
@@ -95,15 +137,137 @@ export class OsmMapRenderer {
   private routeEnd: RoutePoint | null = null
   private routeLine: Path2D | null = null
   private routeApproach: Path2D | null = null
+  private plannedRoute: PlannedRoute | null = null
+  private inspectedStop: PlannedStop | null = null
+  private plannedSegments: { line: Path2D; start: Point; end: Point; from: number; to: number }[] = []
+  private plannedApproaches: { path: Path2D; color: string }[] = []
+  private plannedBoothFlashes: { corners: Point[]; distance: number; colour: string }[] = []
   private routeHover: { hallIndex: number; booth: PreviewBooth; bbox: PreviewBooth['bbox'] } | null = null
 
   hasNavigationSelection() { return this.routeStart !== null }
 
   clearNavigation() {
+    if (this.plannedRoute) {
+      this.plannedRoute = null
+      this.inspectedStop = null
+      this.onPlannedRoute([])
+    }
+    this.plannedSegments = []
+    this.stopRoutePulses()
+    this.plannedApproaches = []
+    this.plannedBoothFlashes = []
     this.routeStart = this.routeEnd = null
     this.routeLine = null
     this.routeApproach = null
     this.requestDraw()
+  }
+
+  clearPlannedRoute() {
+    if (this.plannedRoute) this.clearNavigation()
+  }
+
+  reorderPlannedRoute(from: number, to: number): string | null {
+    const route = this.plannedRoute
+    if (!route || !this.navigation || !route.visited[from] || !route.visited[to]) return '路线已失效，请重新计算。'
+    if (from === to) return null
+    const reordered = reorderBoothRoute(this.navigation, route.queue.start, route, from, to)
+    if (!reordered) return '按此顺序无法到达所有摊位，已保留原路线。'
+    this.drawPlannedRoute({ queue: route.queue, ...reordered })
+    return null
+  }
+
+  inspectPlannedStop(stop: RouteListStop | null) {
+    this.inspectedStop = this.plannedRoute?.visited.find(candidate => candidate === stop) ?? null
+    const point = this.inspectedStop?.origin
+    if (point && this.view) {
+      const { x, y } = worldToScreen(point, this.view, this.size)
+      const { width, height } = this.size
+      if (x < 0 || x > width || y < 0 || y > height) {
+        this.view = { ...this.view, center: point }
+      }
+    }
+    this.requestDraw()
+  }
+
+  plannedStopAnchor(): Point | null {
+    const point = this.inspectedStop?.origin
+    if (!point || !this.view) return null
+    const { left, top } = this.canvas.getBoundingClientRect()
+    const { x, y } = worldToScreen(point, this.view, this.size)
+    return { x: left + x, y: top + y }
+  }
+
+  planFavoriteRoute(side: PlannerSide, coefficients: ReadonlyMap<string, number>): string | null {
+    this.clearPlannedRoute()
+    const favorites = this.favoriteHighlights
+    if (!favorites || (!favorites.stops.length && !favorites.unmatched)) return '当天没有收藏摊位。'
+    const eligible = favorites.stops.flatMap(stop => {
+      const coefficient = Math.max(...stop.colours.map(colour => coefficients.get(colour) ?? 1))
+      return coefficient === 0 ? [] : [{ ...stop, coefficient }]
+    })
+    let unmatched = 0
+    for (const [colour, count] of favorites.unmatchedByColour) {
+      if (coefficients.get(colour) !== 0) unmatched += count
+    }
+    if (!eligible.length) return unmatched ? '收藏摊位无法匹配当前地图。' : '没有参与路线规划的收藏摊位。'
+    const navigation = this.navigation ??= buildNavigation(this.data, this.halls, this.transforms, hall => hallMetadata(hall).level)
+    const queue = queueStart(this.data, navigation, side)
+    if (!queue) return `无法接入${side}待機列。`
+    const boothColours = new Map<PreviewBooth['bbox'], string>()
+    // Match the topmost favorite color for a rectangle, using the map layer's draw order.
+    for (const highlights of favorites.byHall.values()) {
+      for (const { colour, rectangles } of highlights) {
+        for (const rectangle of rectangles) boothColours.set(rectangle, colour)
+      }
+    }
+    const targets = eligible.flatMap(({ hallIndex, booth, bbox, coefficient, colours }): PlannedStop[] => {
+      const { target } = boothRoutePoint(navigation, hallIndex, booth, bbox)
+      const hall = navigation.byHall.get(hallIndex)?.hall
+      const island = booth.islandId && hall?.islandCodes.get(booth.islandId)
+      if (!target || !hall?.name || !island || !booth.number) return []
+      const half = hall.page.halfBooths?.find(half => half.bbox === bbox)?.suffix
+      const suffix = half === 'a' || half === 'b' ? half : 'ab'
+      return [{ ...target, coefficient, hallIndex, bbox, suffix, id: JSON.stringify([hallIndex, booth.id, suffix]),
+        colour: boothColours.get(bbox) ?? colours[0],
+        hit: { hallGroup: hall.name, island, number: booth.number, suffix: suffix === 'b' ? 'b' : 'a' } }]
+    })
+    const { legs, visited } = greedyBoothRoute(navigation, queue.start, targets)
+    if (!visited.length) return `无法从${side}待機列到达收藏摊位。`
+    this.drawPlannedRoute({ queue, visited, legs })
+    const skipped = eligible.length + unmatched - visited.length
+    return skipped ? `${skipped} 个收藏摊位未能纳入路线。` : null
+  }
+
+  private drawPlannedRoute(route: PlannedRoute) {
+    this.plannedRoute = route
+    const { queue, visited, legs } = route
+    const entry = queue.points.slice(1).map((end, i) => ({ start: queue.points[i], end }))
+    const progress = plannerRouteProgress([entry, ...legs])
+    this.plannedSegments = progress.flat().filter(({ start, end }) => start.x !== end.x || start.y !== end.y)
+      .map(step => ({ ...step, line: localPath([[step.start, step.end]], this.origin, false) }))
+    this.plannedApproaches = visited.map((stop, index) => ({
+      path: localPath([approachPoints(stop)], this.origin, false),
+      color: plannerProgressColor(progress[index + 1].at(-1)?.to ?? 0),
+    }))
+    const legLength = (steps: typeof entry) => steps.reduce((sum, { start, end }) =>
+      sum + Math.hypot(end.x - start.x, end.y - start.y), 0)
+    let distance = legLength(entry)
+    this.plannedBoothFlashes = visited.map(({ hallIndex, bbox, colour }, index) => {
+      distance += legLength(legs[index])
+      const { toWorld } = this.navigation!.byHall.get(hallIndex)!
+      const { x, y, width, height } = bbox
+      const corners = [
+        { x, y }, { x: x + width, y }, { x: x + width, y: y + height }, { x, y: y + height },
+      ].map(toWorld)
+      return { corners, distance, colour }
+    })
+    this.routeStart = { ...queue.start, origin: queue.points[0] }
+    this.routeEnd = visited[visited.length - 1]
+    this.routeLine = localPath([[...queue.points, ...legs.flatMap(steps => steps.map(step => step.end))]], this.origin, false)
+    this.routeApproach = null
+    this.requestDraw()
+    this.updateRoutePulses()
+    this.onPlannedRoute(visited)
   }
 
   selectNavigationPoint() {
@@ -190,22 +354,26 @@ export class OsmMapRenderer {
 
   setFavoriteHighlights(highlights: FavoriteHighlights | null) {
     if (this.favoriteHighlights === highlights) return
+    this.clearPlannedRoute()
     this.favoriteHighlights = highlights
     this.requestDraw()
   }
 
   constructor(
     canvas: HTMLCanvasElement,
+    routeCanvas: HTMLCanvasElement,
     data: OsmMapData,
     onZoom: (percent: number) => void,
     onRotation: (degrees: number) => void = () => {},
     onHover: (label: string, clickable: boolean, hit: MapBoothHit | null) => void = () => {},
+    onPlannedRoute: (stops: RouteListStop[]) => void = () => {},
   ) {
     this.canvas = canvas
     this.data = data
     this.onZoom = onZoom
     this.onRotation = onRotation
     this.onHover = onHover
+    this.onPlannedRoute = onPlannedRoute
     this.origin = {
       x: (data.bounds.minX + data.bounds.maxX) / 2,
       y: (data.bounds.minY + data.bounds.maxY) / 2,
@@ -213,8 +381,10 @@ export class OsmMapRenderer {
     // Match the reference's ground-meter styles without changing Mercator geometry.
     this.metersPerUnit = 1 / Math.cosh(this.origin.y / 6378137)
     const context = canvas.getContext('2d')
-    if (!context) throw new Error('浏览器无法创建 Canvas 2D 上下文')
+    const routeContext = routeCanvas.getContext('2d')
+    if (!context || !routeContext) throw new Error('浏览器无法创建 Canvas 2D 上下文')
     this.context = context
+    this.routeContext = routeContext
     this.features = data.features.map(feature => ({
       feature,
       path: localPath(feature.paths, this.origin, feature.area),
@@ -238,6 +408,7 @@ export class OsmMapRenderer {
         return [{ id, member, area, color, fill }]
       })
     }).sort((a, b) => a.member.style.level - b.member.style.level)
+    this.reducedMotion.addEventListener('change', this.updateRoutePulses)
   }
 
   resize(width: number, height: number, pixelRatio: number) {
@@ -246,6 +417,8 @@ export class OsmMapRenderer {
     this.pixelRatio = Math.max(1, pixelRatio)
     this.canvas.width = Math.round(width * this.pixelRatio)
     this.canvas.height = Math.round(height * this.pixelRatio)
+    this.routeContext.canvas.width = this.canvas.width
+    this.routeContext.canvas.height = this.canvas.height
     if (!this.view) this.view = fitViewport(this.sceneBounds(), this.size)
     this.requestDraw()
   }
@@ -494,7 +667,8 @@ export class OsmMapRenderer {
       for (const { hall, placement, filtered } of hallItems.filter(item => item.level === level)) {
         this.hallLayer.draw(ctx, hall, placement, this.origin, this.hallDisplay,
           hall.index === this.selectedHall, view.rotation ?? 0, filtered, true, this.occupancy,
-          this.hover?.hallIndex === hall.index ? this.hover.bbox : null, this.pdfImages.get(hall), this.genreDisplay)
+          (this.inspectedStop ?? this.hover)?.hallIndex === hall.index ? (this.inspectedStop ?? this.hover)!.bbox : null,
+          this.pdfImages.get(hall), this.genreDisplay)
         if (this.routesVisible && !filtered) {
           const projected = this.projectedPerimeter(hall, placement)
           if (projected) {
@@ -587,20 +761,42 @@ export class OsmMapRenderer {
       ctx.lineJoin = ctx.lineCap = 'round'
       if (this.routeLine) {
         ctx.strokeStyle = '#fff'
-        ctx.lineWidth = 8 / view.scale
-        ctx.stroke(this.routeLine)
-        ctx.strokeStyle = '#df4913'
-        ctx.lineWidth = 5 / view.scale
+        ctx.lineWidth = (this.plannedSegments.length ? 5 : 8) / view.scale
         ctx.stroke(this.routeLine)
       }
-      if (this.routeApproach) {
-        ctx.setLineDash([5 / view.scale, 4 / view.scale])
+      ctx.lineWidth = (this.plannedSegments.length ? 3 : 5) / view.scale
+      if (this.plannedSegments.length) {
+        for (const { line, start, end, from, to } of this.plannedSegments) {
+          if (from === to) {
+            ctx.strokeStyle = plannerProgressColor(from)
+          } else {
+            const { x, y } = this.origin
+            ctx.strokeStyle = plannerGradient(ctx, { x: start.x - x, y: start.y - y },
+              { x: end.x - x, y: end.y - y }, from, to)
+          }
+          ctx.stroke(line)
+        }
+      } else if (this.routeLine) {
         ctx.strokeStyle = '#df4913'
+        ctx.stroke(this.routeLine)
+      }
+      if (this.routeApproach || this.plannedSegments.length) {
+        ctx.setLineDash([5 / view.scale, 4 / view.scale])
         ctx.lineWidth = 3 / view.scale
-        ctx.stroke(this.routeApproach)
+        if (this.routeApproach) {
+          ctx.strokeStyle = '#df4913'
+          ctx.stroke(this.routeApproach)
+        }
+        for (const { path, color } of this.plannedApproaches) {
+          ctx.strokeStyle = color
+          ctx.stroke(path)
+        }
         ctx.setLineDash([])
       }
-      for (const [marker, color] of [[this.routeStart, '#067348'], [this.routeEnd, '#df4913']] as const) {
+      for (const [marker, color] of [
+        [this.routeStart, this.plannedSegments.length ? plannerProgressColor(0) : '#067348'],
+        [this.routeEnd, this.plannedApproaches.at(-1)?.color ?? '#df4913'],
+      ] as const) {
         if (!marker) continue
         ctx.beginPath()
         const point = marker.origin ?? marker.point
@@ -627,6 +823,124 @@ export class OsmMapRenderer {
       ctx.restore()
     }
     this.onZoom(Math.round(view.scale / fitViewport(this.data.bounds, size).scale * 100))
+  }
+
+  private stopRoutePulses() {
+    if (this.routeFrame !== null) cancelAnimationFrame(this.routeFrame)
+    this.routeFrame = null
+    const ctx = this.routeContext
+    ctx.resetTransform()
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+  }
+
+  private updateRoutePulses = () => {
+    if (this.reducedMotion.matches || !this.plannedSegments.length) {
+      this.stopRoutePulses()
+    } else if (this.routeFrame === null) {
+      this.routeFrame = requestAnimationFrame(this.drawRoutePulses)
+    }
+  }
+
+  private drawRoutePulses = (time: number) => {
+    this.routeFrame = null
+    const { routeContext: ctx, view, size, pixelRatio } = this
+    if (!view) return
+    const { metersPerUnit } = this
+    const pulseLength = 128 * metersPerUnit / view.scale, radius = 3.5
+    const speed = 0.18 // Ground meters per millisecond.
+    const spacing = 10240 / 12 // Ground meters between pulse heads.
+    const phase = time * speed % spacing
+    let offset = phase
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+    ctx.clearRect(0, 0, size.width, size.height)
+    ctx.lineWidth = radius * 2
+    ctx.lineCap = 'round'
+    for (const { start, end, from, to } of this.plannedSegments) {
+      const a = worldToScreen(start, view, size)
+      const b = worldToScreen(end, view, size)
+      const length = Math.hypot(end.x - start.x, end.y - start.y) * metersPerUnit
+      if (!length) continue
+      let first = 0, last = 1
+      for (const axis of ['x', 'y'] as const) {
+        const limit = axis === 'x' ? size.width : size.height
+        const delta = b[axis] - a[axis]
+        if (delta === 0) {
+          if (a[axis] < -radius || a[axis] > limit + radius) last = -1
+          continue
+        }
+        const low = (-radius - a[axis]) / delta
+        const high = (limit + radius - a[axis]) / delta
+        first = Math.max(first, Math.min(low, high))
+        last = Math.min(last, Math.max(low, high))
+      }
+      if (first <= last) {
+        const visibleStart = first * length, visibleEnd = last * length
+        const advance = Math.ceil((visibleStart - offset) / spacing)
+        const pointAt = (t: number) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })
+        for (let head = offset + advance * spacing; head - pulseLength < visibleEnd; head += spacing) {
+          const tail = head - pulseLength
+          const begin = Math.max(tail, visibleStart), finish = Math.min(head, visibleEnd)
+          if (begin >= finish) continue
+          const p = pointAt(begin / length), q = pointAt(finish / length)
+          ctx.strokeStyle = plannerGradient(ctx, p, q,
+            from + (to - from) * begin / length, from + (to - from) * finish / length,
+            (progress, t) => {
+              const opacity = (begin - tail + (finish - begin) * t) / pulseLength
+              return `hsl(${plannerHue(progress)}, 85%, 65%, ${opacity})`
+            })
+          ctx.beginPath()
+          ctx.moveTo(p.x, p.y)
+          ctx.lineTo(q.x, q.y)
+          ctx.stroke()
+        }
+      }
+      offset = ((offset - length) % spacing + spacing) % spacing
+    }
+    const flashDuration = 1200
+    ctx.save()
+    ctx.lineJoin = 'round'
+    for (const { corners, distance, colour } of this.plannedBoothFlashes) {
+      const sinceArrival = ((phase - distance * metersPerUnit) % spacing + spacing) % spacing / speed
+      if (sinceArrival >= flashDuration) continue
+      const progress = sinceArrival / flashDuration
+      const strength = 1 - progress ** 2
+      const points = corners.map(corner => worldToScreen(corner, view, size))
+      ctx.beginPath()
+      points.forEach(({ x, y }, index) => {
+        if (index === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      })
+      ctx.closePath()
+      ctx.globalAlpha = 0.9 * strength
+      ctx.fillStyle = colour
+      ctx.fill()
+      ctx.globalAlpha = strength
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 8
+      ctx.stroke()
+      ctx.strokeStyle = colour
+      ctx.lineWidth = 5
+      ctx.stroke()
+      const [a, , b] = points
+      const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+      const radius = Math.hypot(a.x - center.x, a.y - center.y)
+      if (radius > 0) {
+        const expansion = 1 + 12 * (1 - (1 - progress) ** 2) / radius
+        ctx.beginPath()
+        points.forEach((point, index) => {
+          const x = center.x + (point.x - center.x) * expansion
+          const y = center.y + (point.y - center.y) * expansion
+          if (index === 0) ctx.moveTo(x, y)
+          else ctx.lineTo(x, y)
+        })
+        ctx.closePath()
+        ctx.globalAlpha = 0.85 * strength
+        ctx.lineWidth = 4
+        ctx.stroke()
+      }
+    }
+    ctx.restore()
+    this.updateRoutePulses()
   }
 
   private drawGrid() {
@@ -682,6 +996,8 @@ export class OsmMapRenderer {
   }
 
   dispose() {
+    this.reducedMotion.removeEventListener('change', this.updateRoutePulses)
+    this.stopRoutePulses()
     if (this.hoverFrame !== null) cancelAnimationFrame(this.hoverFrame)
     this.hoverFrame = null
     if (this.frame !== null) cancelAnimationFrame(this.frame)

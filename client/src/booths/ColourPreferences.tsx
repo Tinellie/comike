@@ -1,23 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Box, Button, Chip, CircularProgress, IconButton, Popover, Stack, Typography } from '@mui/material'
 
-interface ColourPriority {
-  colour: string
-  priority: number
-}
-
-async function requestColours(signal: AbortSignal, colours?: string[]): Promise<ColourPriority[]> {
-  const response = await fetch('/api/colours', {
-    method: colours ? 'PUT' : 'GET',
-    headers: colours ? { 'Content-Type': 'application/json' } : undefined,
-    body: colours ? JSON.stringify({ colours }) : undefined,
-    cache: 'no-store',
-    signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
-  })
-  const body: { colours: ColourPriority[]; message?: string } = await response.json()
-  if (!response.ok) throw new Error(body.message ?? `颜色配置请求失败（HTTP ${response.status}）`)
-  return body.colours
-}
+import { requestColours } from './colourApi'
 
 export default function ColourPreferences({ onSaved }: { onSaved?: (colours: string[]) => void }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)

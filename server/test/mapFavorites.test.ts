@@ -44,6 +44,9 @@ test('favorites map to exact reversed, vertical and full ab geometry without mod
     favorite({ boothId: '24005', number: '03', suffix: 'ab', colour: '#FFFFFF' }),
   ])
   assert.equal(result.unmatched, 0)
+  assert.deepEqual(result.stops.map(({ booth, bbox }) => [booth.id, bbox.x, bbox.y]), [
+    ['b1', 10, 0], ['b1', 0, 0], ['b2', 20, 10], ['b2', 20, 0], ['b3', 40, 0],
+  ])
   assert.deepEqual(result.byHall.get(0), [
     { colour: '#FF0000', rectangles: [{ x: 10, y: 0, width: 10, height: 20 }, { x: 20, y: 10, width: 20, height: 10 }] },
     { colour: '#0000FF', rectangles: [{ x: 0, y: 0, width: 10, height: 20 }] },

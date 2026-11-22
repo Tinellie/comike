@@ -1,4 +1,4 @@
-import { boolean, char, datetime, index, int, json, longtext, mysqlTable, primaryKey, text, varchar } from 'drizzle-orm/mysql-core'
+import { boolean, char, datetime, double, index, int, json, longtext, mysqlTable, primaryKey, text, varchar } from 'drizzle-orm/mysql-core'
 
 export const users = mysqlTable('users', {
   id: char('id', { length: 36 }).primaryKey(),
@@ -26,6 +26,7 @@ export const userColourPriorities = mysqlTable('user_colour_priorities', {
   user_id: int('user_id').notNull().references(() => users.internal_id, { onDelete: 'cascade' }),
   colour: char('colour', { length: 7 }).notNull(),
   priority: int('priority').notNull(),
+  coefficient: double('coefficient').notNull().default(1),
 }, table => [primaryKey({ columns: [table.user_id, table.colour] })])
 
 export interface MapRectangle { x: number; y: number; width: number; height: number }

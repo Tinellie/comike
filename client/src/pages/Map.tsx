@@ -219,7 +219,9 @@ export default function Map() {
           routesVisible={routesVisible}
           boothData={boothData}
           favoriteHighlights={highlights}
+          userId={userId}
           loadBooth={locationLookup.preview}
+          loadBoothDetails={locationLookup.load}
           days={options?.days ?? []} weekday={weekday} onDayChange={changeDay} onBoothClick={hit => { void selectBooth(hit) }} />
       )}
       <Stack sx={{ position: 'absolute', top: 16, left: 16, maxWidth: 'min(400px, calc(100% - 32px))', gap: 1 }}>
