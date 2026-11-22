@@ -150,8 +150,9 @@ export class BasemapRenderer {
 
   setUserLocation(point: Point | null) {
     if (point === this.userLocation) return
+    const firstFix = !this.userLocation
     this.userLocation = point
-    if (point) this.centerOn(point)
+    if (point && firstFix) this.centerOn(point)
     else this.requestDraw()
   }
 
