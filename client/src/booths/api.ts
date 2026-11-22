@@ -103,6 +103,16 @@ export async function readBoothApi<T>(path: string, signal: AbortSignal): Promis
   return response.json()
 }
 
+export async function saveBoothFavorite(id: string, patch: { colour?: string | null; memo?: string }) {
+  const response = await fetch(`/api/booths/${encodeURIComponent(id)}/favorite`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch), signal: AbortSignal.timeout(20_000),
+  })
+  const result: { colour: string | null; memo: string; message?: string } = await response.json()
+  if (!response.ok) throw new Error(result.message ?? `保存失败（HTTP ${response.status}）`)
+  return result
+}
+
 export function locationLabel(booth: Pick<BoothSummary, 'hall' | 'island_code' | 'booth_number' | 'booth_suffix'>) {
   return `${booth.hall}${booth.island_code}${booth.booth_number}${booth.booth_suffix ?? ''}`
 }
