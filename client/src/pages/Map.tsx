@@ -8,7 +8,7 @@ import type { HallTransforms, MapHall } from '../map/halls'
 import { recalculateHallTransforms } from '../map/hallPreparation'
 import type { MapBoothHit } from '../map/OsmMapRenderer'
 import BoothDetail from '../booths/BoothDetail'
-import { readBoothApi } from '../booths/api'
+import { readBoothApi, saveBoothFavorite } from '../booths/api'
 import type { BoothDays, BoothDetail as Detail, MapBoothData, MapFavorite, MapVacancy } from '../booths/api'
 import { MapBoothLookup } from '../map/boothLookup'
 import { useAuth } from '../auth/context'
@@ -18,6 +18,7 @@ const noFavorites: MapFavorite[] = []
 
 export default function Map() {
   const { user } = useAuth()
+  const isAdmin = user?.isAdmin === true
   const [data, setData] = useState<OsmMapData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -100,6 +101,17 @@ export default function Map() {
     lastHit.current = null
     setPreloadError(null)
     setWeekday(value); setSelected(null); setVacancy(null); setCircles([]); setLookingUp(false); setLookupError(null)
+  }
+
+  async function recolourFavorite(boothId: string, colour: string) {
+    const favorite = personal?.items.find(item => item.boothId === boothId)
+    if (!favorite) throw new Error('收藏已失效，请重试')
+    if (favorite.colour === colour) return
+    const saved = await saveBoothFavorite(boothId, { colour })
+    if (saved.colour !== colour) throw new Error('收藏颜色未保存')
+    setFavorites(previous => previous?.scope === favoriteScope ? {
+      ...previous, items: previous.items.map(item => item.boothId === boothId ? { ...item, colour } : item),
+    } : previous)
   }
 
   async function selectBooth(hit: MapBoothHit) {
@@ -202,7 +214,7 @@ export default function Map() {
       height: { xs: 'calc(100dvh - 56px)', sm: 'calc(100dvh - 64px)' },
     }}>
       <Stack direction="row" spacing={1} sx={{ position: 'absolute', top: 16, right: 16, zIndex: 1 }}>
-        {data && transforms && halls.some(hall => hall.pathGraph?.edges.length) && (
+        {isAdmin && data && transforms && halls.some(hall => hall.pathGraph?.edges.length) && (
           <Button size="small" variant="contained" color={routesVisible ? 'primary' : 'inherit'}
             aria-pressed={routesVisible} onClick={() => setRoutesVisible(visible => !visible)}>路径图</Button>
         )}
@@ -216,9 +228,12 @@ export default function Map() {
       </Stack>
       {data && transforms && (
         <OsmCanvas data={data} halls={halls} transforms={transforms} onError={setError}
-          routesVisible={routesVisible}
+          routesVisible={isAdmin && routesVisible}
           boothData={boothData}
           favoriteHighlights={highlights}
+          favorites={personal?.items ?? noFavorites}
+          favoriteScope={favoriteScope}
+          onRecolourFavorite={recolourFavorite}
           userId={userId}
           loadBooth={locationLookup.preview}
           loadBoothDetails={locationLookup.load}

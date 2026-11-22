@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Box, Button, Chip, CircularProgress, MenuItem, Popover, Stack, TextField, Typography } from '@mui/material'
 import type { BoothListItem } from './api'
+import { saveBoothFavorite } from './api'
 import { BoothLinks } from './BoothMedia'
 import type { BoothLinkField } from './BoothMedia'
 
@@ -61,13 +62,16 @@ export default function BoothEditor({ booth, anchor, isAdmin, onChange, onClose 
     setSaved(false)
     const operation = async () => {
       try {
-        const response = await fetch(`/api/booths/${booth.id}/${edit.kind}`, {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(edit.kind === 'favorite' ? edit.patch : { field: edit.field, value: edit.value }),
-          signal: AbortSignal.timeout(20_000),
-        })
-        const result: { message?: string } = await response.json()
-        if (!response.ok) throw new Error(result.message ?? `保存失败（HTTP ${response.status}）`)
+        if (edit.kind === 'favorite') await saveBoothFavorite(booth.id, edit.patch)
+        else {
+          const response = await fetch(`/api/booths/${booth.id}/link`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ field: edit.field, value: edit.value }),
+            signal: AbortSignal.timeout(20_000),
+          })
+          const result: { message?: string } = await response.json()
+          if (!response.ok) throw new Error(result.message ?? `保存失败（HTTP ${response.status}）`)
+        }
         failures.current.delete(key)
         setError([...failures.current.values()].map(failure => failure.message).join('；') || null)
         setSaved(failures.current.size === 0)

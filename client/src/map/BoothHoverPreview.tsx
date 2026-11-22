@@ -13,11 +13,12 @@ export interface BoothHoverHandle {
 
 interface Props {
   hit: MapBoothHit | null
+  colour?: string
   load: (hit: MapBoothHit) => Promise<MapBoothLocation>
   ref: Ref<BoothHoverHandle>
 }
 
-export default function BoothHoverPreview({ hit, load, ref }: Props) {
+export default function BoothHoverPreview({ hit, colour, load, ref }: Props) {
   const pointer = useRef({ x: 0, y: 0 })
   const popper = useRef<Instance | null>(null)
   const anchor = useMemo(() => ({
@@ -50,11 +51,12 @@ export default function BoothHoverPreview({ hit, load, ref }: Props) {
     modifiers={[
       { name: 'offset', options: { offset: [0, 18] } },
       { name: 'flip', enabled: false },
-      { name: 'preventOverflow', options: { padding: 8, altAxis: true } },
+      { name: 'preventOverflow', enabled: false },
     ]} sx={{ zIndex: theme => theme.zIndex.tooltip, pointerEvents: 'none' }}>
     <Paper elevation={6} sx={{
       position: 'relative', width: 168, maxWidth: 'calc(100vw - 16px)', boxSizing: 'border-box',
       p: 0.5, borderRadius: 2, textAlign: 'center',
+      ...(colour && { borderTop: `4px solid ${colour}` }),
       '&::after': {
         content: '""', position: 'absolute', bottom: -7, left: '50%', ml: '-7px',
         width: 14, height: 14, bgcolor: 'background.paper', transform: 'rotate(45deg)',
