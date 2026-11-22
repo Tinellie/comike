@@ -222,6 +222,8 @@ Map 设置中的「卫星底图」默认关闭。开启后，浏览器按当前�
 
 导航栏的 **Map2**（`/map2`）使用同一底图组件读取 [`ref/ref.osm`](./ref/ref.osm)，不加载 Comiket 叠加层。
 
+底图的「定位」默认关闭。开启后，浏览器请求定位权限，获取一次当前位置，并将地图移到蓝色定位标记；关闭后隐藏标记。高精度定位不可用或超时时会尝试普通定位。若浏览器已经获准但仍无法定位，请检查设备的定位服务，或在系统浏览器中打开页面后重试。定位需要 HTTPS 或 localhost，不会把经纬度单独上传到服务端。
+
 在其他页面可以直接使用 [`<OsmBasemap data={data} />`](./client/src/map/basemap/OsmBasemap.tsx)，父容器需提供可用高度。`data` 只需要 OSM 的 `bounds` 和 `features`（例如 `parseOsm(xml)` 的结果），不需要活动、摊位或用户数据。底图自带网格、卫星开关、平移、缩放和旋转。要叠加自己的内容，可通过 `attachLayer` 接入与底图共用视口的事件和绘制回调；`afterLevel` 逐层绘制，`afterFeatures` 在地物之上绘制。当前 Map 由 [ComiketMap](./client/src/map/ComiketMap.tsx) 接入 [ComiketMapLayer](./client/src/map/ComiketMapLayer.ts)，负责日目、场馆、PDF、摊位、类别颜色和路线规划。
 勾选设置面板中 `genre` 右侧的复选框启用类别上色，再点击 `genre` 打开类别筛选。
 展开 `routes` 可勾选并高亮 OSM 关系中的联络通路和待机列。联络通路用目的馆的主题色，待机列用名称首馆的主题色；高亮显示整条路线，不受楼层筛选影响。

@@ -1,7 +1,8 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Alert, Box, Button, FormControlLabel, Slider, Switch, Typography } from '@mui/material'
-import { dragRotation } from '../viewport'
+import { Alert, Box, Button, FormControlLabel, LinearProgress, Slider, Switch, Typography } from '@mui/material'
+import { dragRotation, projectCoordinate } from '../viewport'
+import type { Point } from '../viewport'
 import { worldImageryService } from '../satelliteImagery'
 import { BasemapRenderer } from './BasemapRenderer'
 import type { BasemapData, BasemapLayer, BasemapStyle, MapPointer } from './BasemapRenderer'
@@ -20,15 +21,53 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, child
   const [rotation, setRotation] = useState(0)
   const [satelliteVisible, setSatelliteVisible] = useState(false)
   const [satelliteError, setSatelliteError] = useState(false)
+  const [locationEnabled, setLocationEnabled] = useState(false)
+  const [locationAttempt, setLocationAttempt] = useState(0)
+  const [location, setLocation] = useState<{ point: Point } | { error: string } | null>(null)
+  const locationPoint = location && 'point' in location ? location.point : null
   const initialize = useEffectEvent((map: BasemapRenderer) => {
     map.setSatelliteVisible(satelliteVisible, setSatelliteError)
     map.setRotation(rotation)
+    map.setUserLocation(locationPoint)
   })
   const reportError = useEffectEvent((message: string) => onError?.(message))
 
   useEffect(() => {
     mapRef.current?.setSatelliteVisible(satelliteVisible, setSatelliteError)
   }, [satelliteVisible])
+
+  useEffect(() => {
+    mapRef.current?.setUserLocation(locationPoint)
+  }, [locationPoint])
+
+  useEffect(() => {
+    if (!locationEnabled) return
+    let active = true
+    const fail = (error: string) => { if (active) setLocation({ error }) }
+    const geolocation = navigator.geolocation
+    const request = (enableHighAccuracy: boolean) => {
+      geolocation.getCurrentPosition(({ coords }) => {
+        if (!active) return
+        try {
+          setLocation({ point: projectCoordinate(coords.latitude, coords.longitude) })
+        } catch {
+          fail('浏览器返回的定位坐标无效')
+        }
+      }, ({ code }) => {
+        if (!active) return
+        if (enableHighAccuracy && (code === 2 || code === 3)) {
+          request(false)
+          return
+        }
+        fail(code === 1 ? '定位权限被拒绝，请在浏览器中允许定位'
+          : code === 3 ? '定位超时，请重试' : '定位服务未能提供位置，请检查设备的定位设置')
+      }, { enableHighAccuracy, timeout: enableHighAccuracy ? 8_000 : 7_000 })
+    }
+    if (!window.isSecureContext) fail('定位需要 HTTPS 或 localhost')
+    else if (!geolocation) fail('当前浏览器不支持定位')
+    else request(true)
+    return () => { active = false }
+  }, [locationEnabled, locationAttempt])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -155,6 +194,14 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, child
         onChange={(_, checked) => { setSatelliteVisible(checked); setSatelliteError(false) }} />} />
     {satelliteVisible && satelliteError && <Alert severity="warning">部分卫星瓦片加载失败
       <Button size="small" onClick={() => mapRef.current?.retrySatellite()}>重试</Button>
+    </Alert>}
+    <FormControlLabel label="定位" sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: 13 } }}
+      control={<Switch size="small" checked={locationEnabled}
+        onChange={(_, checked) => { setLocation(null); setLocationEnabled(checked) }} />} />
+    {locationEnabled && !location && <LinearProgress aria-label="正在定位" />}
+    {locationEnabled && location && 'error' in location && <Alert severity="warning">
+      {location.error}
+      <Button size="small" onClick={() => { setLocation(null); setLocationAttempt(value => value + 1) }}>重试定位</Button>
     </Alert>}
     <Box>
       <Typography variant="body2">rotation</Typography>

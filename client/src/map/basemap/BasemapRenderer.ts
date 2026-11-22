@@ -98,6 +98,7 @@ export class BasemapRenderer {
   private layer: BasemapLayer | undefined
   private imagery: SatelliteImagery | null = null
   private viewport: Viewport | null = null
+  private userLocation: Point | null = null
   private dimensions: Size = { width: 1, height: 1 }
   private dpr = 1
 
@@ -130,8 +131,10 @@ export class BasemapRenderer {
     this.canvas.width = Math.round(width * this.dpr)
     this.canvas.height = Math.round(height * this.dpr)
     this.layer?.resize?.(this.canvas.width, this.canvas.height)
-    if (!this.viewport) this.fit()
-    else this.requestDraw()
+    if (!this.viewport) {
+      this.fit()
+      if (this.userLocation) this.centerOn(this.userLocation)
+    } else this.requestDraw()
   }
 
   fit(bounds = this.layer?.fitBounds?.() ?? this.bounds) {
@@ -143,6 +146,13 @@ export class BasemapRenderer {
     if (!this.view) return
     this.viewport = { ...this.view, center }
     this.requestDraw()
+  }
+
+  setUserLocation(point: Point | null) {
+    if (point === this.userLocation) return
+    this.userLocation = point
+    if (point) this.centerOn(point)
+    else this.requestDraw()
   }
 
   setRotation(degrees: number) {
@@ -242,6 +252,20 @@ export class BasemapRenderer {
     ctx.save()
     pass?.afterFeatures?.()
     ctx.restore()
+    if (this.userLocation) {
+      const { x, y } = worldToScreen(this.userLocation, view, size)
+      ctx.save()
+      ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+      ctx.setLineDash([])
+      ctx.beginPath()
+      ctx.arc(x, y, 7, 0, 2 * Math.PI)
+      ctx.fillStyle = '#1976d2'
+      ctx.fill()
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 2
+      ctx.stroke()
+      ctx.restore()
+    }
   }
 
   private drawGrid(view: Viewport) {
