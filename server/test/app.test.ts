@@ -9,6 +9,37 @@ import { get } from 'node:http'
 import { createAdminApp as createApp } from './authFixture.js'
 import { createApp as createPublicApp } from '../src/app.js'
 
+test('public map imagery relays only valid Esri tile coordinates and JPEG responses', async t => {
+  const request = globalThis.fetch
+  const urls: string[] = []
+  t.mock.method(globalThis, 'fetch', async (url: string) => {
+    urls.push(url)
+    if (url.endsWith('/29107')) return new Response('<html>Service unavailable</html>', {
+      headers: { 'content-type': 'text/html' },
+    })
+    return new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), {
+      headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=60' },
+    })
+  })
+  const server = createPublicApp({ checkDatabase: async () => {} }).listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())))
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/map/imagery`
+  assert.equal((await request(`${base}/20/0/0`)).status, 400)
+  assert.equal((await request(`${base}/15/32768/0`)).status, 400)
+  assert.equal((await request(`${base}/15/12906/abc`)).status, 400)
+  assert.equal(urls.length, 0)
+  const response = await request(`${base}/15/12906/29106`)
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'image/jpeg')
+  assert.equal(response.headers.get('cache-control'), 'public, max-age=60')
+  assert.deepEqual(Array.from(new Uint8Array(await response.arrayBuffer())), [0xff, 0xd8, 0xff, 0xd9])
+  assert.equal(urls[0], 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/15/12906/29106')
+  const error = await request(`${base}/15/12906/29107`)
+  assert.equal(error.status, 502)
+  assert.equal(error.headers.get('cache-control'), 'no-store')
+})
+
 test('Map PDF originals remain public without exposing other preview assets', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'comike-public-pdf-'))
   await writeFile(join(directory, 'page-001-pdf.png'), 'pdf image fixture')

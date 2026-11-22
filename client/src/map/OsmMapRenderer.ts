@@ -18,6 +18,7 @@ import { boothHover, BoothOccupancy } from './boothOccupancy'
 import type { MapBoothData } from '../booths/api'
 import type { PreviewBooth } from '../preview/data'
 import type { FavoriteHighlights } from './favoriteHighlights'
+import { SatelliteImagery } from './satelliteImagery'
 
 interface StyledFeature {
   feature: OsmFeature
@@ -345,6 +346,19 @@ export class OsmMapRenderer {
     this.requestDraw()
   }
 
+  private satelliteImagery: SatelliteImagery | null = null
+
+  setSatelliteVisible(visible: boolean, onError: (failed: boolean) => void) {
+    if (visible === Boolean(this.satelliteImagery)) return
+    this.satelliteImagery?.dispose()
+    this.satelliteImagery = visible ? new SatelliteImagery(() => this.requestDraw(), onError) : null
+    this.requestDraw()
+  }
+
+  retrySatellite() {
+    this.satelliteImagery?.retry()
+  }
+
   setBoothData(data: MapBoothData | null) {
     if (this.boothData === data) return
     this.boothData = data
@@ -607,6 +621,7 @@ export class OsmMapRenderer {
     )
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
+    this.satelliteImagery?.draw(ctx, view, size, dpr, this.origin)
     this.drawGrid()
     const overlaps = (b: Bounds) => !(b.maxX < visibleBounds.minX || b.minX > visibleBounds.maxX
       || b.maxY < visibleBounds.minY || b.minY > visibleBounds.maxY)
@@ -996,6 +1011,7 @@ export class OsmMapRenderer {
   }
 
   dispose() {
+    this.satelliteImagery?.dispose()
     this.reducedMotion.removeEventListener('change', this.updateRoutePulses)
     this.stopRoutePulses()
     if (this.hoverFrame !== null) cancelAnimationFrame(this.hoverFrame)

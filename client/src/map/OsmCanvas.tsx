@@ -10,6 +10,7 @@ import type { MapBoothHit, RouteListStop } from './OsmMapRenderer'
 import type { HallTransforms, MapHall } from './halls'
 import { defaultHallDisplay, hallRouteColor } from './HallMapLayer'
 import { dragRotation } from './viewport'
+import { worldImageryService } from './satelliteImagery'
 import type { MapBoothData, MapBoothLocation } from '../booths/api'
 import { requestColours, saveColourCoefficient } from '../booths/colourApi'
 import type { ColourPriority } from '../booths/colourApi'
@@ -53,6 +54,9 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
   const genreState = useRef({ enabled: genreEnabled, selected: selectedGenres })
   const tooltipRef = useRef<BoothHoverHandle | null>(null)
   const [pdfVisible, setPdfVisible] = useState(false)
+  const [satelliteVisible, setSatelliteVisible] = useState(false)
+  const [satelliteError, setSatelliteError] = useState(false)
+  const satelliteState = useRef(satelliteVisible)
   const routesState = useRef(routesVisible)
   const [selectedRoutes, setSelectedRoutes] = useState<ReadonlySet<string>>(() => new Set())
   const selectedRoutesState = useRef(selectedRoutes)
@@ -164,6 +168,11 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
   }, [pdfVisible, pdfImages])
 
   useEffect(() => {
+    satelliteState.current = satelliteVisible
+    rendererRef.current?.setSatelliteVisible(satelliteVisible, setSatelliteError)
+  }, [satelliteVisible])
+
+  useEffect(() => {
     if (!pdfVisible) return
     const controller = new AbortController()
     const urls: string[] = []
@@ -273,6 +282,7 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
         renderer.setFavoriteHighlights(favoriteState.current)
         renderer.setGenreDisplay(genreState.current.enabled, genreState.current.selected)
         renderer.setPdfImages(pdfState.current)
+        renderer.setSatelliteVisible(satelliteState.current, setSatelliteError)
         renderer.setRoutesVisible(routesState.current)
         renderer.setSelectedRoutes(selectedRoutesState.current)
       } catch (reason) {
@@ -437,6 +447,12 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
           {pdfVisible && pdfError && <Alert severity="warning" action={<Button onClick={() => {
             setPdfError(null); setPdfAttempt(value => value + 1)
           }}>重试</Button>}>{pdfError}</Alert>}
+          <FormControlLabel label="卫星底图" sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: 13 } }}
+            control={<Switch size="small" checked={satelliteVisible}
+              onChange={(_, checked) => { setSatelliteVisible(checked); setSatelliteError(false) }} />} />
+          {satelliteVisible && satelliteError && <Alert severity="warning">部分卫星瓦片加载失败
+            <Button size="small" onClick={() => rendererRef.current?.retrySatellite()}>重试</Button>
+          </Alert>}
           <Box>
             <Typography id="map-rotation-label" variant="body2">rotation</Typography>
             <Slider size="small" aria-labelledby="map-rotation-label" value={rotation} min={-180} max={180}
@@ -614,6 +630,8 @@ export default function OsmCanvas({ data, halls, transforms, routesVisible, onEr
         <Box sx={{ position: 'absolute', right: 16, bottom: 8, bgcolor: 'rgba(255,255,255,0.9)', px: 0.5 }}>
           <Typography variant="caption">
             © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>
+            {satelliteVisible && <> · 影像：<a href={worldImageryService} target="_blank" rel="noreferrer">
+              Esri</a>、Vantor、Earthstar Geographics、GIS User Community</>}
           </Typography>
         </Box>
       </Box>

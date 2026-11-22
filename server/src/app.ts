@@ -20,6 +20,8 @@ import type { PixivService } from './social/pixiv/service.js'
 import type { TwitterService } from './social/twitter/service.js'
 import { twitterRouter } from './social/twitter/routes.js'
 
+const esriTiles = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile'
+
 export interface AppOptions {
   checkDatabase: () => Promise<void>
   clientDirectory?: string
@@ -168,6 +170,32 @@ export function createApp({
       }
       next(error)
     })
+  })
+
+  app.get('/api/map/imagery/:zoom/:row/:col', async (req, res) => {
+    const parts = [req.params.zoom, req.params.row, req.params.col] as const
+    const [zoom, row, col] = [Number(parts[0]), Number(parts[1]), Number(parts[2])]
+    if (!parts.every(value => /^\d{1,6}$/.test(value)) || zoom > 19 || row >= 2 ** zoom || col >= 2 ** zoom) {
+      res.status(400).json({ message: '卫星瓦片坐标无效' })
+      return
+    }
+    try {
+      const upstream = await fetch(`${esriTiles}/${zoom}/${row}/${col}`, {
+        redirect: 'error',
+        signal: AbortSignal.timeout(8_000),
+      })
+      if (!upstream.ok || upstream.headers.get('content-type')?.split(';')[0] !== 'image/jpeg') {
+        await upstream.body?.cancel()
+        throw new Error(`Esri tile response: HTTP ${upstream.status}, ${upstream.headers.get('content-type')}`)
+      }
+      const image = Buffer.from(await upstream.arrayBuffer())
+      const cacheControl = upstream.headers.get('cache-control')
+      if (cacheControl) res.set('Cache-Control', cacheControl)
+      res.type('image/jpeg').set('X-Content-Type-Options', 'nosniff').send(image)
+    } catch (reason) {
+      console.warn(`Esri imagery tile unavailable (${zoom}/${row}/${col}):`, reason)
+      res.set('Cache-Control', 'no-store').status(502).json({ message: '卫星瓦片暂时无法加载' })
+    }
   })
 
   app.get('/api/map/osm-map.osm', (_req, res, next) => {
