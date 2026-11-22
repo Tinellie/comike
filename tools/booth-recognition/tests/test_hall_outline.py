@@ -9,6 +9,23 @@ from map_recognition.hall_outline import _long_line_outline, _simple_polygon, de
 
 
 class HallOutlineTests(unittest.TestCase):
+    def test_west_layout_excludes_the_open_recess_without_cutting_booths(self) -> None:
+        image = Image.new("RGB", (2680, 2520), "white")
+        draw = ImageDraw.Draw(image)
+        draw.point([(0, 0), (2679, 2519)], fill="black")
+        booths = [Box(1500, 600, 30, 30), Box(900, 1200, 30, 30), Box(1500, 1850, 30, 30)]
+        result = detect_hall_outline(image, booths, venue_label="\u897f12")
+        self.assertEqual(result.method, "layout_notch")
+        contour = np.array(result.polygon, dtype=np.int32)
+        self.assertTrue(_simple_polygon(contour))
+        self.assertLess(cv2.pointPolygonTest(contour, (1800, 1200), False), 0)
+        for box in booths:
+            self.assertGreater(cv2.pointPolygonTest(contour, (box.x, box.y), False), 0)
+        self.assertEqual(detect_hall_outline(image, booths).method, "nonwhite_bbox")
+        with self.assertLogs("map_recognition.hall_outline", level="WARNING"):
+            result = detect_hall_outline(image, [*booths, Box(1800, 1200, 30, 30)], venue_label="\u897f12")
+        self.assertEqual(result.method, "nonwhite_bbox")
+
     def test_closed_frame_is_preferred_over_outside_text_or_marker(self) -> None:
         image = Image.new("RGB", (240, 180), "white")
         draw = ImageDraw.Draw(image)

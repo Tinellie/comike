@@ -8,6 +8,7 @@ type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
 export interface ColourPriority {
   colour: string
   priority: number
+  coefficient: number
 }
 
 export class ColourOrderConflictError extends Error {}
@@ -19,7 +20,9 @@ function database() {
 
 // Callers lock the user row first, serializing imports and priority changes.
 export async function syncColourPriorities(tx: Transaction, userId: number): Promise<ColourPriority[]> {
-  const saved = await tx.select({ colour: userColourPriorities.colour, priority: userColourPriorities.priority })
+  const saved = await tx.select({
+    colour: userColourPriorities.colour, priority: userColourPriorities.priority, coefficient: userColourPriorities.coefficient,
+  })
     .from(userColourPriorities).where(eq(userColourPriorities.user_id, userId))
     .orderBy(userColourPriorities.priority, userColourPriorities.colour)
   const colours = await tx.selectDistinct({ colour: userFavorites.colour }).from(userFavorites)
@@ -32,7 +35,7 @@ export async function syncColourPriorities(tx: Transaction, userId: number): Pro
   for (let offset = 0; offset < added.length; offset += 500) {
     await tx.insert(userColourPriorities).values(added.slice(offset, offset + 500))
   }
-  return [...saved, ...added.map(({ colour, priority }) => ({ colour, priority }))]
+  return [...saved, ...added.map(({ colour, priority }) => ({ colour, priority, coefficient: 1 }))]
 }
 
 export class MysqlColourStore {
@@ -57,7 +60,7 @@ export class MysqlColourStore {
   async reorder(userId: string, colours: string[]): Promise<ColourPriority[]> {
     return this.withUser(userId, async (tx, id) => {
       const current = await syncColourPriorities(tx, id)
-      const known = new Set(current.map(entry => entry.colour))
+      const known = new Map(current.map(entry => [entry.colour, entry.coefficient]))
       if (colours.length !== known.size || new Set(colours).size !== colours.length || colours.some(colour => !known.has(colour))) {
         throw new ColourOrderConflictError('颜色列表已变更，请重新加载后排序')
       }
@@ -66,9 +69,21 @@ export class MysqlColourStore {
           eq(userColourPriorities.user_id, id), eq(userColourPriorities.colour, colour),
         ))
       }
-      return colours.map((colour, priority) => ({ colour, priority }))
+      return colours.map((colour, priority) => ({ colour, priority, coefficient: known.get(colour)! }))
+    })
+  }
+
+  async setCoefficient(userId: string, colour: string, coefficient: number): Promise<void> {
+    await this.withUser(userId, async (tx, id) => {
+      const current = await syncColourPriorities(tx, id)
+      if (!current.some(entry => entry.colour === colour)) {
+        throw new ColourOrderConflictError('颜色列表已变更，请重新加载')
+      }
+      await tx.update(userColourPriorities).set({ coefficient }).where(and(
+        eq(userColourPriorities.user_id, id), eq(userColourPriorities.colour, colour),
+      ))
     })
   }
 }
 
-export type ColourStore = Pick<MysqlColourStore, 'list' | 'reorder'>
+export type ColourStore = Pick<MysqlColourStore, 'list' | 'reorder' | 'setCoefficient'>

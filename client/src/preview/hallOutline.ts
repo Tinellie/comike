@@ -1,5 +1,5 @@
 export interface PreviewHallOutline {
-  method: 'closed_frame' | 'nonwhite_bbox'
+  method: 'closed_frame' | 'layout_notch' | 'nonwhite_bbox'
   polygon: { x: number; y: number }[]
   bbox: { x: number; y: number; width: number; height: number }
 }
@@ -10,8 +10,11 @@ function record(value: unknown): value is Record<string, unknown> {
 
 export function parseHallOutline(value: unknown, width: number, height: number): PreviewHallOutline | null {
   if (value === undefined) return null
-  if (!record(value) || !['closed_frame', 'nonwhite_bbox'].includes(String(value.method))
-    || !Array.isArray(value.polygon) || value.polygon.length < 3 || !record(value.bbox)) {
+  if (!record(value) || !Array.isArray(value.polygon) || value.polygon.length < 3 || !record(value.bbox)) {
+    throw new Error('Hall 边框格式无效')
+  }
+  const { method } = value
+  if (method !== 'closed_frame' && method !== 'layout_notch' && method !== 'nonwhite_bbox') {
     throw new Error('Hall 边框格式无效')
   }
   const polygon = value.polygon.map((point: unknown) => {
@@ -31,10 +34,10 @@ export function parseHallOutline(value: unknown, width: number, height: number):
   if (Object.entries(bbox).some(([key, number]) => sourceBox[key] !== number)) {
     throw new Error('Hall 边框包围框与顶点不一致')
   }
-  if (value.method === 'nonwhite_bbox' && (polygon.length !== 4
+  if (method === 'nonwhite_bbox' && (polygon.length !== 4
     || polygon.some((point, index) => point.x !== [minX, maxX, maxX, minX][index]
       || point.y !== [minY, minY, maxY, maxY][index]))) {
     throw new Error('Hall 矩形边框顶点不一致')
   }
-  return { method: value.method === 'closed_frame' ? 'closed_frame' : 'nonwhite_bbox', polygon, bbox }
+  return { method, polygon, bbox }
 }

@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Box, LinearProgress } from '@mui/material'
 import type { PreviewPage } from './data'
 import type { PreviewOptions } from './layers'
 import { MapPreviewRenderer, previewMargin } from './MapPreviewRenderer'
 import { previewSurface } from './pdfPreview'
+import { preprocessPdfBackground } from './pdfBackground'
+import { parsePathGraph } from './pathGraph'
+import type { PathSegment } from './pathGraph'
+import { inferBoothFacings } from './boothFacing'
+import { facingColors } from './BoothFacingLayer'
 
 interface MapCanvasProps {
   page: PreviewPage
@@ -14,10 +19,18 @@ interface MapCanvasProps {
 export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [image, setImage] = useState<HTMLImageElement | null>(null)
+  const [images, setImages] = useState<{ original: HTMLImageElement; processed: HTMLCanvasElement | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [availableWidth, setAvailableWidth] = useState(0)
+  const [paths, setPaths] = useState<PathSegment[] | null>(null)
+  const [pathError, setPathError] = useState<string | null>(null)
+  const needsPaths = options.pathGraph || options.boothFacing
+  const facings = useMemo(() => options.boothFacing && (paths || pathError)
+    ? inferBoothFacings(page, paths ?? []) : null, [options.boothFacing, page, paths, pathError])
   const background = page.pdfPreview ?? page
+  const isPdf = !!page.pdfPreview
+  const removeWestGuideLines = page.hallOutline?.method === 'layout_notch'
+  const image = (options.preprocessPdf ? images?.processed : null) ?? images?.original
 
   useEffect(() => {
     const container = containerRef.current
@@ -43,10 +56,11 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
         const loaded = new Image()
         loaded.src = objectUrl
         await loaded.decode()
+        if (!active) return
         if (loaded.naturalWidth !== background.width || loaded.naturalHeight !== background.height) {
           throw new Error('背景图片尺寸与识别坐标不一致，请重新生成识别输出')
         }
-        if (active) setImage(loaded)
+        setImages({ original: loaded, processed: isPdf ? preprocessPdfBackground(loaded, removeWestGuideLines) : null })
       } catch (reason) {
         if (active) {
           console.error('Map image loading failed:', reason)
@@ -60,18 +74,41 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
       controller.abort()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [background.image, background.width, background.height])
+  }, [background.image, background.width, background.height, isPdf, removeWestGuideLines])
+
+  useEffect(() => {
+    if (!needsPaths || !page.pdfPreview) return
+    const controller = new AbortController()
+    const { width, height } = page.pdfPreview
+    const load = async () => {
+      const name = `page-${String(page.page).padStart(3, '0')}-paths.json`
+      const response = await fetch(`/api/preview/${name}`, { signal: controller.signal, cache: 'no-store' })
+      if (response.status === 404) throw new Error('此页尚未生成路径图，请重新生成地图数据')
+      if (!response.ok) throw new Error(`路径图加载失败（HTTP ${response.status}）`)
+      const result = parsePathGraph(await response.json(), width, height)
+      if (!controller.signal.aborted) {
+        setPaths(result)
+        setPathError(null)
+      }
+    }
+    void load().catch((reason: unknown) => {
+      if (controller.signal.aborted) return
+      console.error('Map path graph loading failed:', reason)
+      setPathError(reason instanceof Error ? reason.message : '路径图加载失败')
+    })
+    return () => controller.abort()
+  }, [needsPaths, page.page, page.pdfPreview])
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || !image || availableWidth <= 0) return
-    if (image.naturalWidth !== background.width || image.naturalHeight !== background.height) return
+    if (!canvas || !images || !image || availableWidth <= 0) return
+    if (images.original.naturalWidth !== background.width || images.original.naturalHeight !== background.height) return
     let renderer: MapPreviewRenderer | undefined
     const frame = requestAnimationFrame(() => {
       try {
         renderer = new MapPreviewRenderer(canvas)
         const viewWidth = previewSurface(page, previewMargin(page, options)).width
-        renderer.draw(page, image, options, zoom === 'fit' ? availableWidth : viewWidth * zoom)
+        renderer.draw(page, image, options, zoom === 'fit' ? availableWidth : viewWidth * zoom, paths, facings)
       } catch (reason) {
         console.error('Map rendering failed:', reason)
         setError(reason instanceof Error ? reason.message : '地图绘制失败')
@@ -81,11 +118,22 @@ export default function MapCanvas({ page, options, zoom }: MapCanvasProps) {
       cancelAnimationFrame(frame)
       renderer?.dispose()
     }
-  }, [page, image, options, zoom, availableWidth, background.width, background.height])
+  }, [page, images, image, options, zoom, availableWidth, background.width, background.height, paths, facings])
+
+  const shownFacings = facings && page.booths
+    .filter(booth => options.selectedIsland === null || options.selectedIsland === booth.islandId)
+    .map(booth => facings.get(booth.id)!)
 
   return (
     <Box ref={containerRef} sx={{ width: '100%', minWidth: 0 }}>
       {error && <Alert severity="error">{error}</Alert>}
+      {needsPaths && pathError && <Alert severity="error">{pathError}</Alert>}
+      {needsPaths && !paths && !pathError && <LinearProgress aria-label="加载路径图" />}
+      {shownFacings && <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, fontSize: 13, mb: 1 }}>
+        <Box component="span" sx={{ color: facingColors.wall }}>壁摊 {shownFacings.filter(item => item.wall).length}</Box>
+        <Box component="span" sx={{ color: facingColors.aisle }}>普通摊位朝向 {shownFacings.filter(item => !item.wall && item.direction).length}</Box>
+        <Box component="span">圆点：待确认 {shownFacings.filter(item => !item.direction).length}</Box>
+      </Box>}
       {!image && !error && <LinearProgress aria-label="加载地图背景" />}
       <Box sx={{ overflow: 'auto', maxHeight: '75vh', bgcolor: '#eceff1', border: '1px solid', borderColor: 'divider' }}>
         <canvas

@@ -8,6 +8,10 @@ import { HallOutlineLayer } from './HallOutlineLayer'
 import { HallLabelLayer } from './hallLabels'
 import type { CanvasLayer, PreviewOptions } from './layers'
 import { previewSurface } from './pdfPreview'
+import { PathGraphLayer } from './pathGraph'
+import type { PathSegment } from './pathGraph'
+import { BoothFacingLayer } from './BoothFacingLayer'
+import type { BoothFacing } from './boothFacing'
 
 export function previewMargin(page: PreviewPage, options: PreviewOptions): number {
   const markerMargin = options.islands
@@ -27,7 +31,7 @@ export class MapPreviewRenderer {
     layers: CanvasLayer[] = [
       new BackgroundLayer(), new AssignmentLayer(), new BlockLayer(), new BlockFrameLayer(),
       new NumberLayer(), new HalfBoothLayer(), new IslandLayer(), new NumberGapLayer(),
-      new HallOutlineLayer(), new HallLabelLayer(),
+      new HallOutlineLayer(), new HallLabelLayer(), new PathGraphLayer(), new BoothFacingLayer(),
     ],
   ) {
     const context = canvas.getContext('2d')
@@ -37,7 +41,8 @@ export class MapPreviewRenderer {
     this.canvas = canvas
   }
 
-  draw(page: PreviewPage, image: HTMLImageElement, options: PreviewOptions, displayWidth: number) {
+  draw(page: PreviewPage, image: HTMLImageElement | HTMLCanvasElement, options: PreviewOptions, displayWidth: number,
+    paths?: PathSegment[] | null, facings?: ReadonlyMap<string, BoothFacing> | null) {
     const margin = previewMargin(page, options)
     const surface = previewSurface(page, margin)
     const viewWidth = surface.width
@@ -56,7 +61,7 @@ export class MapPreviewRenderer {
     if (page.pdfPreview) this.context.transform(...page.pdfPreview.transform)
     for (const layer of this.layers) {
       this.context.save()
-      layer.draw(this.context, { page, image, options })
+      layer.draw(this.context, { page, image, options, paths, facings })
       this.context.restore()
     }
   }

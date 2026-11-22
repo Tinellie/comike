@@ -8,6 +8,12 @@ export function tagValues(tags: Tags, key: string): string[] {
   return value === undefined ? [] : Array.isArray(value) ? value : [value]
 }
 
+export function onewayDirection(tags: Tags): -1 | 0 | 1 {
+  const values = tagValues(tags, 'oneway').map(value => value.trim().toLowerCase())
+  return values.some(value => ['-1', 'reverse'].includes(value)) ? -1
+    : values.some(value => ['yes', 'true', '1'].includes(value)) ? 1 : 0
+}
+
 export function featureLevels(tags: Tags): number[] {
   return [...new Set(tagValues(tags, 'level').flatMap(value => value.split(/[;,]/))
     .map(value => value.trim()).filter(value => value !== '').map(Number).filter(Number.isFinite))]
@@ -67,6 +73,30 @@ export interface OsmMapData {
   places: { point: Point; name: string }[]
   bounds: Bounds
   warnings: string[]
+  outsideHallRoutes: ReadonlyMap<string, readonly OsmRouteSegment[]>
+  navigationRoutes?: readonly OsmRouteSegment[]
+  venueRoutes?: readonly OsmRouteSegment[]
+  namedRoutes?: readonly OsmNamedRoute[]
+  queueRoutes?: ReadonlyMap<string, readonly OsmRouteSegment[]>
+}
+
+export interface OsmNamedRoute {
+  id: string
+  name: string
+  hall: string
+  wayIds: string[]
+}
+
+export interface OsmRouteSegment {
+  from: string
+  to: string
+  start: Point
+  end: Point
+  direction?: ReturnType<typeof onewayDirection>
+  levels?: readonly number[]
+  connector?: boolean
+  ratioable?: boolean
+  venueEntry?: boolean
 }
 
 function boundsOf(paths: Point[][]): Bounds {
@@ -128,11 +158,60 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
   const features: OsmFeature[] = []
   const polygonMembers = new Set<string>()
   const relationTags = new Map<string, Tags>()
+  const outsideHallRoutes = new Map<string, OsmRouteSegment[]>()
+  const outsideHallWays = new Map<string, Set<string>>()
+  const isConnector = (tags: Tags) => tagValues(tags, 'name').some(name => /[連连][絡络]通路/.test(name))
+  const isNavigation = (tags: Tags) => Object.keys(tags).some(key =>
+    key.startsWith('outside-hall:') || key === 'outside-hall')
+    || isConnector(tags)
+  const navigationWays = new Set(ways.filter(way => isNavigation(way.tags)).map(way => way.id))
+  const connectorWays = new Set(ways.filter(way => isConnector(way.tags)).map(way => way.id))
+  const segmentsFor = (members: Iterable<string>, queue = false) => {
+    const segments: OsmRouteSegment[] = []
+    for (const id of members) {
+      const way = wayById.get(id)
+      if (!way) continue
+      const { refs } = way
+      const direction = onewayDirection(way.tags)
+      const levels = featureLevels(way.tags)
+      for (let i = 1; i < refs.length; i++) {
+        const from = refs[i - 1], to = refs[i], start = points.get(from), end = points.get(to)
+        if (start && end && (start.x !== end.x || start.y !== end.y)) {
+          segments.push({ from, to, start, end, direction, levels,
+            ...(connectorWays.has(id) && { connector: true,
+              ...(tagValues(way.tags, 'ratioable').includes('yes') && { ratioable: true }),
+            }),
+            ...(queue && tagValues(way.tags, 'tokyo-big-sight').includes('yes') && { venueEntry: true }),
+          })
+        }
+      }
+    }
+    return segments
+  }
   for (const relation of relations) {
+    const keys = tagValues(relation.tags, 'outside-hall').map(value => value.trim().toLowerCase())
+    if (!keys.length) {
+      for (const name of tagValues(relation.tags, 'name')) {
+        const key = /^(?:outside-hall|hall-outside)-([ewsn]\d+)$/i.exec(name.trim())?.[1]
+        if (key) keys.push(key.toLowerCase())
+      }
+    }
     for (const member of relation.members) {
       if (member.type !== 'way') continue
       relationTags.set(member.ref, mergeTags(relationTags.get(member.ref) ?? {}, relation.tags))
+      if (isConnector(relation.tags)) connectorWays.add(member.ref)
+      if (keys.length || isNavigation(relation.tags)) {
+        navigationWays.add(member.ref)
+      }
+      for (const key of keys) {
+        let members = outsideHallWays.get(key)
+        if (!members) outsideHallWays.set(key, members = new Set())
+        members.add(member.ref)
+      }
     }
+  }
+  for (const [key, members] of outsideHallWays) {
+    outsideHallRoutes.set(key, segmentsFor(members))
   }
   let incompleteRelations = 0
   for (const relation of relations) {
@@ -168,6 +247,7 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
     }
   }
   let missingReferences = 0
+  const venueWays = new Set<string>()
   for (const way of ways) {
     const paths: Point[][] = []
     let segment: Point[] = []
@@ -187,10 +267,14 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
     if (!paths.length) continue
     const closed = !missing && way.refs.length >= 4 && way.refs[0] === way.refs.at(-1)
     const tags = mergeTags(relationTags.get(way.id) ?? {}, way.tags)
+    const polygonMember = polygonMembers.has(way.id)
+    const area = !polygonMember && isArea(tags, closed)
+    if (!area && !polygonMember && !navigationWays.has(way.id)
+      && tagValues(tags, 'tokyo-big-sight').includes('yes')
+      && (tagValues(way.tags, 'highway').some(value => ['footway', 'pedestrian', 'path', 'steps', 'corridor'].includes(value))
+        || Object.keys(way.tags).some(key => /^(?:path:.+|pathway)$/.test(key)))) venueWays.add(way.id)
     features.push({
-      id: `way/${way.id}`, paths, tags, bounds: boundsOf(paths),
-      area: !polygonMembers.has(way.id) && isArea(tags, closed),
-      polygonMember: polygonMembers.has(way.id),
+      id: `way/${way.id}`, paths, tags, bounds: boundsOf(paths), area, polygonMember,
     })
   }
   if (!features.length) throw new Error('OSM 文件中没有可绘制的有效地图线段或区域')
@@ -204,7 +288,30 @@ export function buildOsmMap(nodes: OsmNode[], ways: OsmWay[], relations: OsmRela
   const places = nodes.filter(node => tagValues(node.tags, 'name').length).map(node => ({
     point: points.get(node.id)!, name: tagValues(node.tags, 'name')[0],
   }))
-  return { features, places, bounds, warnings }
+  const featureIds = new Set(features.map(feature => feature.id))
+  const queueRoutes = new Map<string, OsmRouteSegment[]>()
+  const namedRoutes = relations.flatMap(({ id, tags, members }): OsmNamedRoute[] => {
+    const name = tagValues(tags, 'name')[0]?.trim()
+    if (!name) return []
+    const normalized = name.normalize('NFKC').replace(/东/g, '東')
+    const hall = /^[東西南北]+\s*[-‐‑–—→]\s*([東西南北])\s*[連连][絡络]通路$/.exec(normalized)?.[1]
+      ?? /^([東西南北])[東西南北]*\s*待[機机]列$/.exec(normalized)?.[1]
+    if (!hall) return []
+    const wayIds = [...new Set(members.filter(member => member.type === 'way')
+      .map(member => `way/${member.ref}`).filter(ref => featureIds.has(ref)))]
+    if (/^[東西南北]+\s*待[機机]列$/.test(normalized)) {
+      const lineMembers = new Set(members.filter(member => {
+        if (member.type !== 'way') return false
+        const way = wayById.get(member.ref)
+        return way && !polygonMembers.has(way.id)
+          && !isArea(way.tags, way.refs.length >= 4 && way.refs[0] === way.refs.at(-1))
+      }).map(member => member.ref))
+      queueRoutes.set(normalized.replace(/\s/g, '').replace('待机列', '待機列'), segmentsFor(lineMembers, true))
+    }
+    return wayIds.length ? [{ id, name, hall, wayIds }] : []
+  })
+  return { features, places, bounds, warnings, outsideHallRoutes, navigationRoutes: segmentsFor(navigationWays),
+    venueRoutes: segmentsFor(venueWays), namedRoutes, queueRoutes }
 }
 
 function attribute(element: Element, name: string): string {

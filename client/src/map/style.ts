@@ -1,4 +1,4 @@
-import { featureLevels, hallCodes, tagValues } from './osm'
+import { featureLevels, hallCodes, onewayDirection, tagValues } from './osm'
 import type { OsmFeature, Tags } from './osm'
 import type { Point } from './viewport'
 
@@ -132,9 +132,7 @@ export function filteredLevelStyle(style: MapStyle): MapStyle {
 }
 
 export function onewayTriangles(paths: Point[][], tags: Tags, metersPerUnit: number): Point[][] {
-  const values = tagValues(tags, 'oneway').map(value => value.toLowerCase())
-  const direction = values.some(value => ['-1', 'reverse'].includes(value)) ? -1
-    : values.some(value => ['yes', 'true', '1'].includes(value)) ? 1 : 0
+  const direction = onewayDirection(tags)
   if (!direction) return []
   const rail = has(tags, 'railway', 'rail') || has(tags, 'railway', 'light_rail')
   const interval = 30 / metersPerUnit

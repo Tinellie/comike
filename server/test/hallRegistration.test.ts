@@ -45,7 +45,8 @@ function feature(hall: MapHall, p: HallPlacement, id: string, ring: Point[], tag
 }
 
 function map(features: OsmFeature[]): OsmMapData {
-  return { features, places: [], warnings: [], bounds: pointsBounds(features.flatMap(f => f.paths.flat())) }
+  return { features, places: [], warnings: [], outsideHallRoutes: new Map(),
+    bounds: pointsBounds(features.flatMap(f => f.paths.flat())) }
 }
 
 function assertFit(hall: MapHall, actual: HallPlacement, expected: HallPlacement) {

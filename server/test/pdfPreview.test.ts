@@ -4,6 +4,7 @@ import { inverseTransform, parsePdfPreview, previewSurface, transformPoint } fro
 import { parsePreviewData } from '../../client/src/preview/data.ts'
 import { MapPreviewRenderer } from '../../client/src/preview/MapPreviewRenderer.ts'
 import { BackgroundLayer } from '../../client/src/preview/layers.ts'
+import { whitenPdfColors } from '../../client/src/preview/pdfBackground.ts'
 import type { PdfTransform } from '../../client/src/preview/pdfPreview.ts'
 import type { PreviewOptions } from '../../client/src/preview/layers.ts'
 
@@ -12,6 +13,18 @@ const options: PreviewOptions = {
   background: true, boxes: false, blockFrames: false, numbers: false, islands: false,
   groups: false, gaps: false, halfBooths: false, selectedIsland: null,
 }
+
+test('PDF background whitening removes saturated ink, keeps black and gray, and neutralizes faint color noise', () => {
+  const pixels = new Uint8ClampedArray([
+    185, 29, 100, 255, 15, 70, 180, 255, 240, 225, 233, 255,
+    0, 0, 0, 255, 125, 125, 125, 255, 255, 255, 255, 255, 128, 130, 129, 255,
+  ])
+  whitenPdfColors(pixels)
+  assert.deepEqual([...pixels], [
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    0, 0, 0, 255, 125, 125, 125, 255, 255, 255, 255, 255, 130, 130, 130, 255,
+  ])
+})
 
 test('full PDF metadata allows only the corresponding whitelisted page asset and invertible transform', () => {
   assert.equal(parsePdfPreview(undefined, 1), null)

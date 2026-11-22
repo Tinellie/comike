@@ -23,7 +23,7 @@ test('Map PDF originals remain public without exposing other preview assets', as
   assert.equal(image.status, 200)
   assert.equal(await image.text(), 'pdf image fixture')
   assert.equal((await fetch(`${base}/page-001-pdf.png`, { method: 'HEAD' })).status, 200)
-  for (const name of ['result.json', 'page-001.png', 'page-001-pdf.png/extra', 'regenerate']) {
+  for (const name of ['result.json', 'page-001.png', 'page-001-pdf.png/extra', 'page-001-paths.json', 'regenerate']) {
     assert.equal((await fetch(`${base}/${name}`)).status, 401)
   }
   assert.equal((await fetch(`${base}/page-001-pdf.png`, { method: 'PUT' })).status, 401)
@@ -81,6 +81,8 @@ test('Express APIs and SPA deep links', async (t) => {
   )
   await writeFile(join(directory, 'page-001.png'), png)
   await writeFile(join(directory, 'page-001-pdf.png'), png)
+  const paths = { width: 40, height: 20, segments: [[1, 2, 19, 2]] }
+  await writeFile(join(directory, 'page-001-paths.json'), JSON.stringify(paths))
   const osm = '<osm version="0.6"><node id="1" lat="35.63" lon="139.79"/></osm>'
   await writeFile(join(directory, 'osm-map.osm'), osm)
   let databaseAvailable = true
@@ -145,6 +147,11 @@ test('Express APIs and SPA deep links', async (t) => {
     assert.deepEqual(await response.json(), {
       message: 'Recognition output not found. Run the recognition script first.',
     })
+  })
+  await t.test('admin preview serves the generated path graph', async () => {
+    const response = await fetch(`${base}/api/preview/page-001-paths.json`)
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), paths)
   })
   await t.test('preview does not expose arbitrary files or pre-rendered overlays', async () => {
     for (const name of ['index.html', 'page-001-overlay.png', '%2e%2e%2findex.html']) {

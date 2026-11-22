@@ -1,7 +1,7 @@
 import { hallCodes } from './osm'
 import type { OsmFeature, OsmMapData } from './osm'
 import type { HallPlacement, MapHall } from './halls'
-import { projectCoordinate } from './viewport'
+import { pointInRing as inside, projectCoordinate } from './viewport'
 import type { Point } from './viewport'
 
 interface Segment { start: Point; end: Point }
@@ -39,16 +39,6 @@ function mean(points: Point[]): Point {
 function ringSegments(ring: Point[]): Segment[] {
   return ring.map((start, i) => ({ start, end: ring[(i + 1) % ring.length] }))
     .filter(s => Math.hypot(s.end.x - s.start.x, s.end.y - s.start.y) > 1e-8)
-}
-
-function inside(point: Point, ring: Point[]): boolean {
-  let result = false
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i], b = ring[(i + 1) % ring.length]
-    if ((a.y > point.y) !== (b.y > point.y)
-      && point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x) result = !result
-  }
-  return result
 }
 
 function featureRings(feature: OsmFeature, origin: Point): Point[][] {

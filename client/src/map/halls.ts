@@ -28,7 +28,29 @@ export interface MapHall {
   page: PreviewPage
   pivot: Point
   bounds: Bounds
+  pathGraph: HallPathGraph | null
   labels: { id: string; text: string | null; code: string | null; center: Point }[]
+}
+
+interface HallPathGraph {
+  nodes: Point[]
+  edges: { from: number; to: number; kind: 'indoor' | 'perimeter' }[]
+}
+
+function parseHallPaths(value: unknown): HallPathGraph {
+  const graph = object(value)
+  const nodes = list(graph.nodes).map(point)
+  const seen = new Set<string>()
+  const edges = list(graph.edges).map((raw): HallPathGraph['edges'][number] => {
+    const edge = object(raw), from = number(edge.from), to = number(edge.to), kind = edge.kind
+    const key = `${Math.min(from, to)}:${Math.max(from, to)}`
+    if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to)
+      || from < 0 || to < 0 || from >= nodes.length || to >= nodes.length || from === to
+      || seen.has(key) || (kind !== 'indoor' && kind !== 'perimeter')) throw new Error('Hall 通路边无效')
+    seen.add(key)
+    return { from, to, kind }
+  })
+  return { nodes, edges }
 }
 
 export function object(value: unknown): Record<string, unknown> {
@@ -157,10 +179,11 @@ export function parseHalls(value: unknown): MapHall[] {
       const id = identifier(label.id, ids), center = point(label.pos)
       return { id, text: text(label.text), code: text(label.code), center }
     })
+    const pathGraph = hall.pathGraph === undefined ? null : parseHallPaths(hall.pathGraph)
     const allPoints = [
       ...boundary, ...booths.flatMap(b => [{ x: b.bbox.x, y: b.bbox.y },
         { x: b.bbox.x + b.bbox.width, y: b.bbox.y + b.bbox.height }]),
-      ...markers.map(m => m.center), ...labels.map(l => l.center),
+      ...markers.map(m => m.center), ...labels.map(l => l.center), ...(pathGraph?.nodes ?? []),
     ]
     const extent = pointsBounds(allPoints)
     const page: PreviewPage = {
@@ -177,7 +200,7 @@ export function parseHalls(value: unknown): MapHall[] {
       throw new Error('Hall 标签编号无效')
     }
     return {
-      index, name, textRotation, islandCodes, page, bounds: extent, labels,
+      index, name, textRotation, islandCodes, page, bounds: extent, labels, pathGraph,
       pivot: { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 },
     }
   })

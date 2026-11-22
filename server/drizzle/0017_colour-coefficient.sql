@@ -1,0 +1,1 @@
+ALTER TABLE `user_colour_priorities` ADD `coefficient` double DEFAULT 1 NOT NULL;

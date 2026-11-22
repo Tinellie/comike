@@ -24,6 +24,7 @@ export default function Map() {
   const [halls, setHalls] = useState<MapHall[]>([])
   const [transforms, setTransforms] = useState<HallTransforms | null>(null)
   const [saving, setSaving] = useState(false)
+  const [routesVisible, setRoutesVisible] = useState(true)
   const [options, setOptions] = useState<BoothDays | null>(null)
   const [weekday, setWeekday] = useState('')
   const [circles, setCircles] = useState<Detail[]>([])
@@ -200,19 +201,27 @@ export default function Map() {
       position: 'relative', display: 'flex', flexDirection: 'column',
       height: { xs: 'calc(100dvh - 56px)', sm: 'calc(100dvh - 64px)' },
     }}>
-      {user?.isAdmin && <Button variant="contained" onClick={() => { void recalculateTransforms() }}
-        disabled={saving || (!data && !error)} color={error ? 'error' : 'primary'}
-        aria-busy={saving}
-        title={error ?? undefined}
-        aria-label={error ? `重新计算全部 Hall：${error}，点击重试` : undefined}
-        sx={{ position: 'absolute', top: 16, right: 16, zIndex: 1 }}>
-        {saving ? '计算并保存中…' : error ? '重新计算全部 Hall（失败，重试）' : '重新计算全部 Hall'}
-      </Button>}
+      <Stack direction="row" spacing={1} sx={{ position: 'absolute', top: 16, right: 16, zIndex: 1 }}>
+        {data && transforms && halls.some(hall => hall.pathGraph?.edges.length) && (
+          <Button size="small" variant="contained" color={routesVisible ? 'primary' : 'inherit'}
+            aria-pressed={routesVisible} onClick={() => setRoutesVisible(visible => !visible)}>路径图</Button>
+        )}
+        {user?.isAdmin && <Button size="small" variant="contained" onClick={() => { void recalculateTransforms() }}
+          disabled={saving || (!data && !error)} color={error ? 'error' : 'primary'}
+          aria-busy={saving}
+          title={error ?? undefined}
+          aria-label={error ? `重新计算全部 Hall：${error}，点击重试` : undefined}>
+          {saving ? '计算并保存中…' : error ? '重新计算全部 Hall（失败，重试）' : '重新计算全部 Hall'}
+        </Button>}
+      </Stack>
       {data && transforms && (
         <OsmCanvas data={data} halls={halls} transforms={transforms} onError={setError}
+          routesVisible={routesVisible}
           boothData={boothData}
           favoriteHighlights={highlights}
+          userId={userId}
           loadBooth={locationLookup.preview}
+          loadBoothDetails={locationLookup.load}
           days={options?.days ?? []} weekday={weekday} onDayChange={changeDay} onBoothClick={hit => { void selectBooth(hit) }} />
       )}
       <Stack sx={{ position: 'absolute', top: 16, left: 16, maxWidth: 'min(400px, calc(100% - 32px))', gap: 1 }}>

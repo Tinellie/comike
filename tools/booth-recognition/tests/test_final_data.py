@@ -39,6 +39,40 @@ def fixture() -> dict:
 
 
 class FinalDataTests(unittest.TestCase):
+    def test_map_export_nodes_crossings_and_connects_only_paths_reaching_the_outer_tile(self) -> None:
+        source_data = fixture()
+        page = source_data["pages"][0]
+        page["page"] = 7
+        page["pdfPreview"] = {
+            "image": "page-007-pdf.png", "width": 64, "height": 64, "transform": [1, 0, 0, 1, 4, 8],
+        }
+        page["hallOutline"] = {"polygon": [
+            {"x": x, "y": y} for x, y in ((4, 4), (43, 4), (43, 43), (4, 43))
+        ]}
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "result.json"
+            source.write_text(json.dumps(source_data), encoding="utf-8")
+            source.with_name("page-007-paths.json").write_text(json.dumps({
+                "width": 64, "height": 64, "segments": [
+                    [10, 26, 34, 26], [22, 18, 22, 38], [22, 38, 38, 38], [30, 26, 38, 26],
+                ],
+            }), encoding="utf-8")
+            graph = json.loads(save_final_result(source).read_text(encoding="utf-8"))["halls"][0]["pathGraph"]
+
+        nodes = [(p["x"], p["y"]) for p in graph["nodes"]]
+        self.assertEqual(len(nodes), len(set(nodes)))
+        edges = {(frozenset((nodes[e["from"]], nodes[e["to"]])), e["kind"]) for e in graph["edges"]}
+        self.assertEqual(len(edges), len(graph["edges"]))
+
+        def neighbors(node, kind):
+            return {next(iter(ends - {node})) for ends, edge_kind in edges if node in ends and kind == edge_kind}
+
+        self.assertEqual(neighbors((18, 18), "indoor"), {(6, 18), (18, 10), (18, 30), (26, 18)})
+        self.assertEqual(neighbors((4, 18), "indoor"), {(6, 18)})
+        self.assertEqual(neighbors((4, 18), "perimeter"), {(4, 4), (4, 43)})
+        self.assertEqual(neighbors((34, 18), "indoor"), {(30, 18)})
+        self.assertNotIn((43, 18), nodes)
+
     def test_pdf_metadata_preserves_source_page_and_registration_without_mutation(self) -> None:
         source = fixture()
         source["pages"][0]["page"] = 7

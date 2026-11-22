@@ -21,8 +21,8 @@ test('colour endpoints require a session, reject cross-site writes and derive ow
   }
   const scopes: string[] = []
   const records = new Map([
-    ['first', [{ colour: '#FF0000', priority: 0 }, { colour: '#00B54A', priority: 1 }]],
-    ['second', [{ colour: '#0000FF', priority: 0 }]],
+    ['first', [{ colour: '#FF0000', priority: 0, coefficient: 1 }, { colour: '#00B54A', priority: 1, coefficient: 1 }]],
+    ['second', [{ colour: '#FF0000', priority: 0, coefficient: 1 }]],
   ])
   const store: ColourStore = {
     async list(id) { scopes.push(id); return records.get(id)! },
@@ -32,9 +32,15 @@ test('colour endpoints require a session, reject cross-site writes and derive ow
       if (colours.length !== current.length || colours.some(colour => !current.some(entry => entry.colour === colour))) {
         throw new ColourOrderConflictError('颜色列表已变更')
       }
-      const result = colours.map((colour, priority) => ({ colour, priority }))
+      const result = colours.map((colour, priority) => ({ ...current.find(entry => entry.colour === colour)!, priority }))
       records.set(id, result)
       return result
+    },
+    async setCoefficient(id, colour, coefficient) {
+      scopes.push(id)
+      const entry = records.get(id)?.find(entry => entry.colour === colour)
+      if (!entry) throw new ColourOrderConflictError('颜色列表已变更')
+      entry.coefficient = coefficient
     },
   }
   const server = createApp({ checkDatabase: async () => {}, authStore: auth, colourStore: store }).listen(0, '127.0.0.1')
@@ -51,11 +57,21 @@ test('colour endpoints require a session, reject cross-site writes and derive ow
   assert.deepEqual(await palette.json(), { colours: records.get('first') })
   assert.equal(scopes.at(-1), 'first')
   const put = (body: unknown, headers = first) => fetch(base, { method: 'PUT', headers, body: JSON.stringify(body) })
+  const patch = (body: unknown, headers = first) => fetch(`${base}/coefficient`, { method: 'PATCH', headers, body: JSON.stringify(body) })
+  assert.equal((await patch({ colour: '#FF0000', coefficient: 0 }, { 'Content-Type': 'application/json' })).status, 401)
+  assert.equal((await patch({ colour: '#FF0000', coefficient: 0 }, { ...first, Origin: 'https://other.invalid' })).status, 403)
+  for (const coefficient of [-1, 0.001, 1001, '2', null]) {
+    assert.equal((await patch({ colour: '#FF0000', coefficient })).status, 400)
+  }
+  assert.equal((await patch({ colour: '#FF0000', coefficient: 2, userId: 'second' })).status, 400)
+  assert.equal((await patch({ colour: '#0000FF', coefficient: 2 })).status, 409)
+  assert.equal((await patch({ colour: '#FF0000', coefficient: 0 })).status, 204)
+  assert.equal(scopes.at(-1), 'first')
   const reordered = await put({ colours: ['#00B54A', '#FF0000'] })
   assert.equal(reordered.status, 200)
-  assert.deepEqual(await reordered.json(), { colours: [{ colour: '#00B54A', priority: 0 }, { colour: '#FF0000', priority: 1 }] })
+  assert.deepEqual(await reordered.json(), { colours: [{ colour: '#00B54A', priority: 0, coefficient: 1 }, { colour: '#FF0000', priority: 1, coefficient: 0 }] })
   const other = await fetch(base, { headers: second })
-  assert.deepEqual(await other.json(), { colours: [{ colour: '#0000FF', priority: 0 }] })
+  assert.deepEqual(await other.json(), { colours: [{ colour: '#FF0000', priority: 0, coefficient: 1 }] })
   assert.equal(scopes.at(-1), 'second')
   const before = scopes.length
   for (const invalid of [null, [], {}, { colours: 'red' }, { colours: [null] }, { colours: ['red'] },
@@ -95,22 +111,24 @@ test('MySQL colour preferences persist per numeric user, synchronize imports and
         { user_id: first!.id, booth_id: 'colour-test-3', colour: '#FF0000', memo: '' },
         { user_id: second!.id, booth_id: 'colour-test-1', colour: '#0000FF', memo: '' },
       ])
-      assert.deepEqual(await store.list(firstId), [{ colour: '#00B54A', priority: 0 }, { colour: '#FF0000', priority: 1 }])
-      assert.deepEqual(await store.list(firstId), [{ colour: '#00B54A', priority: 0 }, { colour: '#FF0000', priority: 1 }])
-      const custom = [{ colour: '#FF0000', priority: 0 }, { colour: '#00B54A', priority: 1 }]
+      assert.deepEqual(await store.list(firstId), [{ colour: '#00B54A', priority: 0, coefficient: 1 }, { colour: '#FF0000', priority: 1, coefficient: 1 }])
+      await store.setCoefficient(firstId, '#FF0000', 0)
+      await store.setCoefficient(firstId, '#00B54A', 2.5)
+      await assert.rejects(store.setCoefficient(firstId, '#0000FF', 2), ColourOrderConflictError)
+      const custom = [{ colour: '#FF0000', priority: 0, coefficient: 0 }, { colour: '#00B54A', priority: 1, coefficient: 2.5 }]
       assert.deepEqual(await store.reorder(firstId, custom.map(entry => entry.colour)), custom)
       assert.deepEqual(await new MysqlColourStore(tx).list(firstId), custom)
-      assert.deepEqual(await store.list(secondId), [{ colour: '#0000FF', priority: 0 }])
+      assert.deepEqual(await store.list(secondId), [{ colour: '#0000FF', priority: 0, coefficient: 1 }])
       for (const invalid of [[], ['#0000FF', '#FF0000'], ['#FF0000'], ['#FF0000', '#FF0000']]) {
         await assert.rejects(store.reorder(firstId, invalid), ColourOrderConflictError)
         assert.deepEqual(await store.list(firstId), custom)
       }
       await favorites.replace(firstId, [{ boothId: 'colour-test-new', colour: '#000000', memo: '' }])
-      const appended = [...custom, { colour: '#000000', priority: 2 }]
+      const appended = [...custom, { colour: '#000000', priority: 2, coefficient: 1 }]
       assert.deepEqual(await store.list(firstId), appended)
       assert.equal(await favorites.count(firstId), 1)
       assert.equal(await favorites.count(secondId), 1)
-      assert.deepEqual(await store.list(secondId), [{ colour: '#0000FF', priority: 0 }])
+      assert.deepEqual(await store.list(secondId), [{ colour: '#0000FF', priority: 0, coefficient: 1 }])
       await assert.rejects(store.reorder(firstId, custom.map(entry => entry.colour)), ColourOrderConflictError)
       await favorites.replace(firstId, [])
       assert.deepEqual(await store.list(firstId), appended)
