@@ -23,8 +23,11 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, child
   const [satelliteError, setSatelliteError] = useState(false)
   const [locationEnabled, setLocationEnabled] = useState(false)
   const [locationAttempt, setLocationAttempt] = useState(0)
-  const [location, setLocation] = useState<{ point: Point } | { error: string } | null>(null)
-  const locationPoint = location && 'point' in location ? location.point : null
+  const [locationPoint, setLocationPoint] = useState<Point | null>(null)
+  const [locationError, setLocationError] = useState<string | null>(null)
+  const locationUnavailable = !window.isSecureContext ? '定位需要 HTTPS 或 localhost'
+    : !navigator.geolocation ? '当前浏览器不支持定位' : null
+  const locationWarning = locationUnavailable ?? locationError
   const initialize = useEffectEvent((map: BasemapRenderer) => {
     map.setSatelliteVisible(satelliteVisible, setSatelliteError)
     map.setRotation(rotation)
@@ -41,33 +44,45 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, child
   }, [locationPoint])
 
   useEffect(() => {
-    if (!locationEnabled) return
+    if (!locationEnabled || locationUnavailable) return
     let active = true
-    const fail = (error: string) => { if (active) setLocation({ error }) }
+    let watchId: number | undefined
+    let receivedFix = false
     const geolocation = navigator.geolocation
+    const stop = () => {
+      if (watchId !== undefined) geolocation.clearWatch(watchId)
+      watchId = undefined
+    }
     const request = (enableHighAccuracy: boolean) => {
-      geolocation.getCurrentPosition(({ coords }) => {
-        if (!active) return
+      const id = geolocation.watchPosition(({ coords }) => {
+        if (!active || watchId !== id) return
         try {
-          setLocation({ point: projectCoordinate(coords.latitude, coords.longitude) })
+          const point = projectCoordinate(coords.latitude, coords.longitude)
+          receivedFix = true
+          setLocationPoint(point)
+          setLocationError(null)
         } catch {
-          fail('浏览器返回的定位坐标无效')
+          setLocationError('浏览器返回的定位坐标无效')
         }
       }, ({ code }) => {
-        if (!active) return
-        if (enableHighAccuracy && (code === 2 || code === 3)) {
+        if (!active || watchId !== id) return
+        if (!receivedFix && enableHighAccuracy && (code === 2 || code === 3)) {
+          stop()
           request(false)
           return
         }
-        fail(code === 1 ? '定位权限被拒绝，请在浏览器中允许定位'
+        if (code === 1) {
+          stop()
+          setLocationPoint(null)
+        }
+        setLocationError(code === 1 ? '定位权限被拒绝，请在浏览器中允许定位'
           : code === 3 ? '定位超时，请重试' : '定位服务未能提供位置，请检查设备的定位设置')
       }, { enableHighAccuracy, timeout: enableHighAccuracy ? 8_000 : 7_000 })
+      watchId = id
     }
-    if (!window.isSecureContext) fail('定位需要 HTTPS 或 localhost')
-    else if (!geolocation) fail('当前浏览器不支持定位')
-    else request(true)
-    return () => { active = false }
-  }, [locationEnabled, locationAttempt])
+    request(true)
+    return () => { active = false; stop() }
+  }, [locationEnabled, locationAttempt, locationUnavailable])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -197,11 +212,12 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, child
     </Alert>}
     <FormControlLabel label="定位" sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: 13 } }}
       control={<Switch size="small" checked={locationEnabled}
-        onChange={(_, checked) => { setLocation(null); setLocationEnabled(checked) }} />} />
-    {locationEnabled && !location && <LinearProgress aria-label="正在定位" />}
-    {locationEnabled && location && 'error' in location && <Alert severity="warning">
-      {location.error}
-      <Button size="small" onClick={() => { setLocation(null); setLocationAttempt(value => value + 1) }}>重试定位</Button>
+        onChange={(_, checked) => { setLocationPoint(null); setLocationError(null); setLocationEnabled(checked) }} />} />
+    {locationEnabled && !locationPoint && !locationWarning && <LinearProgress aria-label="正在定位" />}
+    {locationEnabled && locationWarning && <Alert severity="warning">
+      {locationWarning}
+      {!locationUnavailable && <Button size="small"
+        onClick={() => { setLocationError(null); setLocationAttempt(value => value + 1) }}>重试定位</Button>}
     </Alert>}
     <Box>
       <Typography variant="body2">rotation</Typography>
