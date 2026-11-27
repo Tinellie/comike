@@ -6,7 +6,7 @@ import type { Point } from '../viewport'
 import { worldImageryService } from '../satelliteImagery'
 import { BasemapRenderer } from './BasemapRenderer'
 import type { BasemapData, BasemapLayer, BasemapStyle, MapPointer } from './BasemapRenderer'
-import { mapRotationFromOrientation } from './deviceHeading'
+import { mapRotationFromOrientation, smoothMapRotation } from './deviceHeading'
 
 interface Props {
   data: BasemapData
@@ -78,6 +78,22 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, onCon
   useEffect(() => {
     if (directionState !== 'active') return
     let lastReading: DeviceOrientationEvent | null = null
+    let target: number | null = null
+    let frame: number | null = null
+    let previousTime = 0
+    let current = mapRef.current?.view?.rotation ?? 0
+    const animate = (time: number) => {
+      frame = null
+      if (target === null) return
+      const next = smoothMapRotation(current, target, time - previousTime)
+      previousTime = time
+      current = mapRef.current?.setRotation(next) ?? next
+      setRotation(current)
+      const remaining = ((target - next + 180) % 360 + 360) % 360 - 180
+      if (Math.abs(remaining) > 0.000001) {
+        frame = window.requestAnimationFrame(animate)
+      }
+    }
     const update = (reading: DeviceOrientationEvent | null) => {
       if (!reading) return
       const screenAngle = window.screen.orientation?.angle
@@ -86,8 +102,11 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, onCon
       if (angle === null) return
       lastReading = reading
       window.clearTimeout(timeout)
-      const rounded = Math.round(angle)
-      setRotation(mapRef.current?.setRotation(rounded) ?? rounded)
+      target = angle
+      if (frame === null) {
+        previousTime = performance.now()
+        frame = window.requestAnimationFrame(animate)
+      }
     }
     const receive = (event: DeviceOrientationEvent) => update(event)
     const screenChanged = () => update(lastReading)
@@ -100,6 +119,7 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, onCon
     window.screen.orientation?.addEventListener('change', screenChanged)
     return () => {
       window.clearTimeout(timeout)
+      if (frame !== null) window.cancelAnimationFrame(frame)
       window.removeEventListener('deviceorientation', receive)
       window.removeEventListener('deviceorientationabsolute', receive)
       window.screen.orientation?.removeEventListener('change', screenChanged)
