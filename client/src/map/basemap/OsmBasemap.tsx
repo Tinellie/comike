@@ -1,11 +1,12 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { MouseEventHandler, ReactNode } from 'react'
-import { Alert, Box, Button, FormControlLabel, LinearProgress, Slider, Switch, Typography } from '@mui/material'
+import { Alert, Box, Button, Checkbox, FormControlLabel, LinearProgress, Slider, Switch, Typography } from '@mui/material'
 import { dragRotation, projectCoordinate } from '../viewport'
 import type { Point } from '../viewport'
 import { worldImageryService } from '../satelliteImagery'
 import { BasemapRenderer } from './BasemapRenderer'
 import type { BasemapData, BasemapLayer, BasemapStyle, MapPointer } from './BasemapRenderer'
+import { mapRotationFromOrientation } from './deviceHeading'
 
 interface Props {
   data: BasemapData
@@ -20,6 +21,9 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, onCon
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mapRef = useRef<BasemapRenderer | null>(null)
   const [rotation, setRotation] = useState(0)
+  const [directionState, setDirectionState] = useState<'off' | 'requesting' | 'active'>('off')
+  const [directionError, setDirectionError] = useState<string | null>(null)
+  const directionRequest = useRef(0)
   const [satelliteVisible, setSatelliteVisible] = useState(false)
   const [satelliteError, setSatelliteError] = useState(false)
   const [locationEnabled, setLocationEnabled] = useState(false)
@@ -35,6 +39,72 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, onCon
     map.setUserLocation(locationPoint)
   })
   const reportError = useEffectEvent((message: string) => onError?.(message))
+  const directionFollowing = useEffectEvent(() => directionState !== 'off')
+
+  useEffect(() => () => { directionRequest.current++ }, [])
+
+  async function changeDirection(checked: boolean) {
+    const request = ++directionRequest.current
+    setDirectionError(null)
+    if (!checked) {
+      setDirectionState('off')
+      return
+    }
+    if (!window.isSecureContext || typeof DeviceOrientationEvent === 'undefined') {
+      setDirectionError(!window.isSecureContext ? '方向对齐需要 HTTPS 或 localhost' : '当前浏览器不支持设备方向')
+      return
+    }
+    setDirectionState('requesting')
+    try {
+      const orientation = DeviceOrientationEvent as typeof DeviceOrientationEvent & {
+        requestPermission?: (absolute?: boolean) => Promise<PermissionState>
+      }
+      if (orientation.requestPermission && await orientation.requestPermission(true) !== 'granted') {
+        if (request === directionRequest.current) {
+          setDirectionState('off')
+          setDirectionError('设备方向权限被拒绝，请在浏览器中允许访问')
+        }
+        return
+      }
+      if (request === directionRequest.current) setDirectionState('active')
+    } catch (reason) {
+      if (request !== directionRequest.current) return
+      console.error('Device orientation permission failed:', reason)
+      setDirectionState('off')
+      setDirectionError('无法请求设备方向权限，请检查浏览器设置')
+    }
+  }
+
+  useEffect(() => {
+    if (directionState !== 'active') return
+    let lastReading: DeviceOrientationEvent | null = null
+    const update = (reading: DeviceOrientationEvent | null) => {
+      if (!reading) return
+      const screenAngle = window.screen.orientation?.angle
+        ?? (typeof window.orientation === 'number' ? window.orientation : 0)
+      const angle = mapRotationFromOrientation(reading, screenAngle)
+      if (angle === null) return
+      lastReading = reading
+      window.clearTimeout(timeout)
+      const rounded = Math.round(angle)
+      setRotation(mapRef.current?.setRotation(rounded) ?? rounded)
+    }
+    const receive = (event: DeviceOrientationEvent) => update(event)
+    const screenChanged = () => update(lastReading)
+    const timeout = window.setTimeout(() => {
+      setDirectionState('off')
+      setDirectionError('未能获取设备的指南针方向，请检查传感器和浏览器权限')
+    }, 8000)
+    window.addEventListener('deviceorientation', receive)
+    window.addEventListener('deviceorientationabsolute', receive)
+    window.screen.orientation?.addEventListener('change', screenChanged)
+    return () => {
+      window.clearTimeout(timeout)
+      window.removeEventListener('deviceorientation', receive)
+      window.removeEventListener('deviceorientationabsolute', receive)
+      window.screen.orientation?.removeEventListener('change', screenChanged)
+    }
+  }, [directionState])
 
   useEffect(() => {
     mapRef.current?.setSatelliteVisible(satelliteVisible, setSatelliteError)
@@ -154,10 +224,12 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, onCon
       if (!drag) return
       if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) drag.moved = true
       if (event.altKey) {
-        const bounds = canvas.getBoundingClientRect()
-        const delta = dragRotation({ x: drag.x, y: drag.y }, { x: event.clientX, y: event.clientY },
-          { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 })
-        setRotation(map.setRotation((map.view?.rotation ?? 0) + delta))
+        if (!directionFollowing()) {
+          const bounds = canvas.getBoundingClientRect()
+          const delta = dragRotation({ x: drag.x, y: drag.y }, { x: event.clientX, y: event.clientY },
+            { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 })
+          setRotation(map.setRotation((map.view?.rotation ?? 0) + delta))
+        }
       } else {
         map.pan(event.clientX - drag.x, event.clientY - drag.y)
       }
@@ -256,12 +328,19 @@ export default function OsmBasemap({ data, mapStyle, attachLayer, onError, onCon
         onClick={() => { setLocationError(null); setLocationAttempt(value => value + 1) }}>重试定位</Button>}
     </Alert>}
     <Box>
-      <Typography variant="body2">rotation</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Typography variant="body2">rotation</Typography>
+        <Checkbox size="small" checked={directionState !== 'off'}
+          slotProps={{ input: { 'aria-label': '对齐设备方向' } }}
+          onChange={(_, checked) => { void changeDirection(checked) }} />
+      </Box>
       <Slider size="small" aria-label="rotation" value={rotation} min={-180} max={180}
+        disabled={directionState !== 'off'}
         step={1} valueLabelDisplay="auto" valueLabelFormat={value => `${Math.round(value)}°`}
         onChange={(_, value) => {
           if (typeof value === 'number') setRotation(mapRef.current?.setRotation(value) ?? value)
         }} />
+      {directionError && <Alert severity="warning">{directionError}</Alert>}
     </Box>
   </>
 
