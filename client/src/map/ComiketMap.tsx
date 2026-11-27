@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, FormControlLabel,
-  Chip, FormGroup, IconButton, LinearProgress, MenuItem, Paper, Popover, Switch, TextField, Typography,
+  Chip, FormGroup, IconButton, LinearProgress, Paper, Popover, Slider, Switch, TextField, Typography,
 } from '@mui/material'
 import type { OsmMapData } from './osm'
 import { ComiketMapLayer } from './ComiketMapLayer'
@@ -72,6 +72,7 @@ export default function ComiketMap({ data, halls, transforms, routesVisible, onE
   } | null>(null)
   const currentMenu = colourMenu?.scope === favoriteScope ? colourMenu : null
   const menuFavorite = favorites.find(favorite => favorite.boothId === currentMenu?.boothId)
+  const dayIndex = days.findIndex(day => day.weekday === weekday)
   const hoverHit = mapHover?.hit
   const hoveredRouteStop = hoverHit && (routeStops.find(stop => stop.suffix === hoverHit.suffix
     && mapBoothKey(stop.hit) === mapBoothKey(hoverHit))
@@ -398,10 +399,27 @@ export default function ComiketMap({ data, halls, transforms, routesVisible, onE
           '& .MuiAccordionSummary-root': { minHeight: 30, px: 0.5 },
           '& .MuiAccordionSummary-content': { my: 0.5 },
         }}>
-          <TextField select fullWidth size="small" label="日期" value={weekday}
-            disabled={!days.length} onChange={event => onDayChange(event.target.value)}>
-            {days.map(day => <MenuItem key={day.weekday} value={day.weekday}>{day.label}（{day.weekday}）</MenuItem>)}
-          </TextField>
+          <Box>
+            <Typography variant="body2">日期</Typography>
+            <Box sx={{ px: 1.5 }}>
+              <Slider size="small" aria-label="日期" value={Math.max(dayIndex, 0)}
+                min={0} max={Math.max(days.length - 1, 1)} step={null}
+                marks={days.map((_, index) => ({ value: index }))}
+                disabled={days.length <= 1 || dayIndex < 0}
+                sx={{ '& .MuiSlider-mark': {
+                  width: 6, height: 6, borderRadius: '50%', border: '1px solid',
+                  borderColor: 'primary.dark', bgcolor: 'background.paper', opacity: 1,
+                } }}
+                getAriaValueText={value => {
+                  const day = days[value]
+                  return day ? `${day.label}（${day.weekday}）` : ''
+                }}
+                onChange={(_, value) => {
+                  if (typeof value === 'number' && days[value] && value !== dayIndex) onDayChange(days[value].weekday)
+                }} />
+            </Box>
+            {dayIndex >= 0 && <Typography variant="body2">{days[dayIndex].label}（{days[dayIndex].weekday}）</Typography>}
+          </Box>
           <FormControlLabel label="PDF 原图" sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: 13 } }}
             control={<Switch size="small" checked={pdfVisible}
             onChange={(_, checked) => { setPdfVisible(checked); setPdfError(null) }} />} />
