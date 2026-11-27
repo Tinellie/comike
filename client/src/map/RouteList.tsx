@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { MouseEvent } from 'react'
 import { Alert, Box, LinearProgress, Paper, Typography } from '@mui/material'
 import { locationLabel } from '../booths/api'
 import type { BoothDetail, MapBoothLocation } from '../booths/api'
@@ -8,8 +9,10 @@ interface Props {
   stops: RouteListStop[]
   load: (hit: MapBoothHit) => Promise<MapBoothLocation>
   onInspect: (stop: RouteListStop | null) => void
+  onContextMenu: (event: MouseEvent, stop: RouteListStop) => void
   onReorder: (from: number, to: number) => void
   error: string | null
+  hoveredStopId?: string
 }
 
 function StopDetails({ stop, load }: Pick<Props, 'load'> & { stop: RouteListStop }) {
@@ -46,14 +49,35 @@ function StopDetails({ stop, load }: Pick<Props, 'load'> & { stop: RouteListStop
   </>
 }
 
-export default function RouteList({ stops, load, onInspect, onReorder, error }: Props) {
+export default function RouteList({ stops, load, onInspect, onContextMenu, onReorder, error, hoveredStopId }: Props) {
   const [dragging, setDragging] = useState<number | null>(null)
   const [over, setOver] = useState<number | null>(null)
+  const panel = useRef<HTMLElement>(null)
+  const inspectTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(inspectTimer.current), [stops])
+
+  useEffect(() => {
+    const container = panel.current
+    const row = container?.querySelector('[data-map-hovered]')
+    if (!container || !row || !hoveredStopId || dragging !== null) return
+    const bounds = container.getBoundingClientRect()
+    const item = row.getBoundingClientRect()
+    const top = bounds.top + container.clientTop
+    const bottom = top + container.clientHeight
+    if (item.top < top) container.scrollTop += item.top - top
+    else if (item.bottom > bottom) container.scrollTop += item.bottom - bottom
+  }, [hoveredStopId, dragging, stops])
+
+  function cancelInspect() {
+    window.clearTimeout(inspectTimer.current)
+    onInspect(null)
+  }
+
   function endDrag() {
     setDragging(null)
     setOver(null)
   }
-  return <Paper component="section" aria-label="路径列表" elevation={4} sx={{
+  return <Paper component="section" ref={panel} aria-label="路径列表" elevation={4} sx={{
     position: 'absolute', top: 58, right: 236, maxHeight: 'calc(100% - 94px)',
     width: 'min(240px, calc(100% - 244px))', overflow: 'auto',
     '@media (max-width: 430px)': { right: 16, top: 'auto', bottom: 36, width: 'calc(100% - 32px)', maxHeight: '30%' },
@@ -61,14 +85,22 @@ export default function RouteList({ stops, load, onInspect, onReorder, error }: 
     {error && <Alert severity="warning" sx={{ py: 0 }}>{error}</Alert>}
     <Box component="ol" sx={{ listStyle: 'none', m: 0, p: 0.5 }}>
       {stops.map((stop, index) => <Box component="li" key={stop.id} draggable tabIndex={0}
-        onMouseEnter={() => { if (dragging === null) onInspect(stop) }}
-        onMouseLeave={() => onInspect(null)}
-        onFocus={() => onInspect(stop)}
-        onBlur={() => onInspect(null)}
+        data-map-hovered={hoveredStopId === stop.id ? '' : undefined}
+        onMouseEnter={() => {
+          window.clearTimeout(inspectTimer.current)
+          if (dragging === null) inspectTimer.current = window.setTimeout(() => onInspect(stop), 350)
+        }}
+        onMouseLeave={cancelInspect}
+        onFocus={event => { if (event.currentTarget.matches(':focus-visible')) onInspect(stop) }}
+        onBlur={cancelInspect}
+        onContextMenu={event => {
+          cancelInspect()
+          onContextMenu(event, stop)
+        }}
         onDragStart={event => {
           event.dataTransfer.setData('text/plain', stop.id)
           event.dataTransfer.effectAllowed = 'move'
-          onInspect(null)
+          cancelInspect()
           setDragging(index)
         }}
         onDragEnd={endDrag}
@@ -94,6 +126,7 @@ export default function RouteList({ stops, load, onInspect, onReorder, error }: 
           position: 'relative', display: 'flex', alignItems: 'center', gap: 0.75, cursor: 'grab',
           pl: 0.75, pr: 0.5, py: 0.5, borderLeft: '4px solid', borderLeftColor: stop.colour, borderRadius: 0.5,
           opacity: dragging === index ? 0.45 : 1, '&:hover, &:focus-visible': { bgcolor: 'action.hover' },
+          ...(hoveredStopId === stop.id && { bgcolor: 'action.selected' }),
           ...(over === index && dragging !== null && dragging !== index && {
             '&::after': { content: '""', position: 'absolute', insetInline: 0, height: 2, bgcolor: 'primary.main',
               ...(dragging < index ? { bottom: 0 } : { top: 0 }) },

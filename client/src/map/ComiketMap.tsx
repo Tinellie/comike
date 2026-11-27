@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Checkbox, FormControlLabel,
-  Chip, FormGroup, LinearProgress, MenuItem, Paper, Popover, Switch, TextField, Typography,
+  Chip, FormGroup, IconButton, LinearProgress, MenuItem, Paper, Popover, Switch, TextField, Typography,
 } from '@mui/material'
 import type { OsmMapData } from './osm'
 import { ComiketMapLayer } from './ComiketMapLayer'
@@ -12,7 +12,7 @@ import { defaultHallDisplay, hallRouteColor } from './HallMapLayer'
 import OsmBasemap from './basemap/OsmBasemap'
 import type { BasemapRenderer, BasemapLayer } from './basemap/BasemapRenderer'
 import { mapStyle, onewayTriangles } from './style'
-import type { MapBoothData, MapBoothLocation } from '../booths/api'
+import type { MapBoothData, MapBoothLocation, MapFavorite } from '../booths/api'
 import { requestColours, saveColourCoefficient } from '../booths/colourApi'
 import type { ColourPriority } from '../booths/colourApi'
 import BoothHoverPreview from './BoothHoverPreview'
@@ -40,18 +40,21 @@ interface ComiketMapProps {
   onDayChange: (weekday: string) => void
   boothData: MapBoothData | null
   favoriteHighlights: FavoriteHighlights
+  favorites: MapFavorite[]
+  favoriteScope: string
+  onRecolourFavorite: (boothId: string, colour: string) => Promise<void>
   userId?: string
   loadBooth: (hit: MapBoothHit) => Promise<MapBoothLocation>
   loadBoothDetails: (hit: MapBoothHit) => Promise<MapBoothLocation>
 }
 
-export default function ComiketMap({ data, halls, transforms, routesVisible, onError, onBoothClick, days, weekday, onDayChange, boothData, favoriteHighlights, userId, loadBooth, loadBoothDetails }: ComiketMapProps) {
+export default function ComiketMap({ data, halls, transforms, routesVisible, onError, onBoothClick, days, weekday, onDayChange, boothData, favoriteHighlights, favorites, favoriteScope, onRecolourFavorite, userId, loadBooth, loadBoothDetails }: ComiketMapProps) {
   const routeCanvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<ComiketMapLayer | null>(null)
   const hallState = useRef({ halls, transforms })
   const [levels, setLevels] = useState<number[]>([1, 2])
   const [hoverLabel, setHoverLabel] = useState('')
-  const [hoverHit, setHoverHit] = useState<MapBoothHit | null>(null)
+  const [mapHover, setMapHover] = useState<{ hit: MapBoothHit; colour?: string } | null>(null)
   const [genreEnabled, setGenreEnabled] = useState(false)
   const [selectedGenres, setSelectedGenres] = useState<string[] | null>(null)
   const [genreAnchor, setGenreAnchor] = useState<HTMLElement | null>(null)
@@ -64,6 +67,16 @@ export default function ComiketMap({ data, halls, transforms, routesVisible, onE
   const [plannerSide, setPlannerSide] = useState<PlannerSide>('東')
   const [routeStops, setRouteStops] = useState<RouteListStop[]>([])
   const [inspectedStop, setInspectedStop] = useState<RouteListStop | null>(null)
+  const [colourMenu, setColourMenu] = useState<{
+    scope: string; boothId: string; left: number; top: number; saving?: boolean; error?: string
+  } | null>(null)
+  const currentMenu = colourMenu?.scope === favoriteScope ? colourMenu : null
+  const menuFavorite = favorites.find(favorite => favorite.boothId === currentMenu?.boothId)
+  const hoverHit = mapHover?.hit
+  const hoveredRouteStop = hoverHit && (routeStops.find(stop => stop.suffix === hoverHit.suffix
+    && mapBoothKey(stop.hit) === mapBoothKey(hoverHit))
+    ?? routeStops.find(({ hit, suffix }) => suffix === 'ab'
+      && mapBoothKey({ ...hit, suffix: hoverHit.suffix }) === mapBoothKey(hoverHit)))
   const [reorderError, setReorderError] = useState<string | null>(null)
   const [coefficientsOpen, setCoefficientsOpen] = useState(false)
   const [colourAttempt, setColourAttempt] = useState(0)
@@ -90,7 +103,37 @@ export default function ComiketMap({ data, halls, transforms, routesVisible, onE
   const clickHandler = useRef(onBoothClick)
   const boothState = useRef(boothData)
   const favoriteState = useRef(favoriteHighlights)
+  const previousFavoriteScope = useRef(favoriteScope)
   useEffect(() => { clickHandler.current = onBoothClick }, [onBoothClick])
+
+  function openColourMenu(event: MouseEvent, hit: MapBoothHit, suffix?: RouteListStop['suffix']) {
+    if (!userId) return
+    const matches = favorites.filter(favorite => favorite.hallGroup === hit.hallGroup
+      && favorite.island.normalize('NFKC') === hit.island.normalize('NFKC')
+      && favorite.number.padStart(2, '0') === hit.number.padStart(2, '0'))
+    const favorite = matches.find(item => item.suffix === (suffix ?? hit.suffix))
+      ?? (suffix === undefined ? matches.find(item => item.suffix === 'ab') : undefined)
+    if (!favorite) return
+    event.preventDefault()
+    inspectStop(null)
+    rendererRef.current?.setPointer(null)
+    setMapHover(null)
+    setColourMenu({ scope: favoriteScope, boothId: favorite.boothId, left: event.clientX, top: event.clientY })
+  }
+
+  async function chooseFavouriteColour(colour: string) {
+    if (!currentMenu || currentMenu.saving) return
+    const pending = { ...currentMenu, saving: true, error: undefined }
+    setColourMenu(pending)
+    try {
+      await onRecolourFavorite(currentMenu.boothId, colour)
+      setColourMenu(menu => menu === pending ? null : menu)
+    } catch (reason) {
+      console.error('Map favorite colour saving failed:', reason)
+      setColourMenu(menu => menu === pending ? { ...currentMenu,
+        error: reason instanceof Error ? reason.message : '收藏颜色保存失败' } : menu)
+    }
+  }
 
   function inspectStop(stop: RouteListStop | null) {
     const renderer = rendererRef.current
@@ -219,9 +262,15 @@ export default function ComiketMap({ data, halls, transforms, routesVisible, onE
   }, [boothData])
 
   useEffect(() => {
+    const previous = favoriteState.current
+    const preserveRoute = previousFavoriteScope.current === favoriteScope
+      && previous.stops.length === favoriteHighlights.stops.length
+      && previous.stops.every((stop, index) => stop.bbox === favoriteHighlights.stops[index].bbox
+        && stop.hallIndex === favoriteHighlights.stops[index].hallIndex)
     favoriteState.current = favoriteHighlights
-    rendererRef.current?.setFavoriteHighlights(favoriteHighlights)
-  }, [favoriteHighlights])
+    previousFavoriteScope.current = favoriteScope
+    rendererRef.current?.setFavoriteHighlights(favoriteHighlights, preserveRoute)
+  }, [favoriteHighlights, favoriteScope])
 
   useEffect(() => {
     levelsState.current = levels
@@ -237,12 +286,15 @@ export default function ComiketMap({ data, halls, transforms, routesVisible, onE
     const routeCanvas = routeCanvasRef.current
     if (!routeCanvas) throw new Error('路线画布尚未就绪')
     let dragging = false
-    const renderer = new ComiketMapLayer(map, routeCanvas, data, (label, canClick, hit) => {
+    const renderer = new ComiketMapLayer(map, routeCanvas, data, (label, canClick, hit, colour) => {
       setHoverLabel(label)
       if (!dragging) map.canvas.style.cursor = canClick ? 'pointer' : 'grab'
-      setHoverHit(previous => {
-        const next = dragging ? null : hit
-        return previous && next && mapBoothKey(previous) === mapBoothKey(next) ? previous : next
+      setMapHover(previous => {
+        if (dragging || !hit) return null
+        if (previous && mapBoothKey(previous.hit) === mapBoothKey(hit)) {
+          return previous.colour === colour ? previous : { hit: previous.hit, colour }
+        }
+        return { hit, colour }
       })
     }, stops => {
       setRouteStops(stops)
@@ -269,7 +321,7 @@ export default function ComiketMap({ data, halls, transforms, routesVisible, onE
       },
       pointer: point => {
         dragging = point?.dragging ?? false
-        if (!point || dragging) setHoverHit(null)
+        if (!point || dragging) setMapHover(null)
         if (point) tooltipRef.current?.move(point.client.x, point.client.y)
         renderer.setPointer(point?.screen ?? null)
       },
@@ -295,21 +347,49 @@ export default function ComiketMap({ data, halls, transforms, routesVisible, onE
         rendererRef.current = null
         setRouteStops([])
         setInspectedStop(null)
-        setHoverHit(null)
+        setMapHover(null)
       },
     }
   }, [data])
 
   return (
-      <OsmBasemap data={data} mapStyle={comiketStyle} attachLayer={attachLayer} onError={onError}>
+      <OsmBasemap data={data} mapStyle={comiketStyle} attachLayer={attachLayer} onError={onError}
+        onContextMenu={event => {
+          const { left, top } = event.currentTarget.getBoundingClientRect()
+          const hit = rendererRef.current?.pickBooth({ x: event.clientX - left, y: event.clientY - top })
+          if (hit) openColourMenu(event, hit)
+        }}>
         {controls => <>
-        <BoothHoverPreview ref={tooltipRef} hit={inspectedStop?.hit ?? (boothData ? hoverHit : null)} load={loadBooth} />
+        <BoothHoverPreview ref={tooltipRef} hit={currentMenu ? null : inspectedStop?.hit ?? (boothData ? hoverHit ?? null : null)}
+          colour={inspectedStop?.colour ?? mapHover?.colour} load={loadBooth} />
         <canvas ref={routeCanvasRef} aria-hidden="true"
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
         {!!routeStops.length && <RouteList stops={routeStops} load={loadBoothDetails} error={reorderError}
+          hoveredStopId={hoveredRouteStop?.id}
+          onContextMenu={(event, stop) => openColourMenu(event, stop.hit, stop.suffix)}
           onInspect={inspectStop} onReorder={(from, to) => {
             setReorderError(rendererRef.current?.reorderPlannedRoute(from, to) ?? null)
           }} />}
+        {currentMenu && menuFavorite && <Popover open anchorReference="anchorPosition" anchorPosition={currentMenu}
+          onClose={() => { if (!currentMenu.saving) setColourMenu(null) }}>
+          <Box role="dialog" aria-label="收藏颜色" aria-busy={currentMenu.saving} sx={{ p: 1 }}>
+            {!colourConfig && <LinearProgress aria-label="加载颜色配置" />}
+            {colourConfig?.error && <Alert severity="error" action={<Button size="small" onClick={() => {
+              setPlannerColours(null)
+              setColourAttempt(attempt => attempt + 1)
+            }}>重试</Button>}>{colourConfig.error}</Alert>}
+            {colourConfig && !colourConfig.error && <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: 248 }}>
+              {[...new Set([...colourConfig.colours.map(entry => entry.colour), menuFavorite.colour])].map(colour =>
+                <IconButton key={colour} size="small" aria-label={colour} aria-pressed={menuFavorite.colour === colour}
+                  disabled={currentMenu.saving} onClick={() => { void chooseFavouriteColour(colour) }}>
+                  <Box sx={{ width: 18, height: 18, borderRadius: '50%', bgcolor: colour,
+                    outline: menuFavorite.colour === colour ? '2px solid' : '1px solid', outlineOffset: 2,
+                    outlineColor: menuFavorite.colour === colour ? 'text.primary' : 'divider' }} />
+                </IconButton>)}
+            </Box>}
+            {currentMenu.error && <Alert severity="error" sx={{ mt: 0.5 }}>{currentMenu.error}</Alert>}
+          </Box>
+        </Popover>}
         <Paper elevation={4} sx={{
           position: 'absolute', right: 16, top: 58, width: 180, pt: 2.5, px: 2, pb: 2,
           maxHeight: 'calc(100% - 94px)', overflow: 'auto',

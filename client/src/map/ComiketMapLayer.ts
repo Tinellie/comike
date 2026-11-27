@@ -93,13 +93,14 @@ export class ComiketMapLayer {
   private selectedLevels = new Set<number>()
   private pointer: Point | null = null
   private readonly hitIndexes = new WeakMap<MapHall, HallVisibility>()
-  private readonly onHover: (label: string, clickable: boolean, hit: MapBoothHit | null) => void
+  private readonly onHover: (label: string, clickable: boolean, hit: MapBoothHit | null, colour?: string) => void
   private readonly onPlannedRoute: (stops: RouteListStop[]) => void
   private hoverLabel = ''
   private hoverFrame: number | null = null
   private occupancy: BoothOccupancy | null = null
   private boothData: MapBoothData | null = null
   private favoriteHighlights: FavoriteHighlights | null = null
+  private readonly boothColours = new Map<PreviewBooth['bbox'], string>()
   private genreDisplay: { enabled: boolean; selected: ReadonlySet<string> | null } = { enabled: false, selected: null }
 
   setGenreDisplay(enabled: boolean, selected: string[] | null) {
@@ -108,7 +109,7 @@ export class ComiketMapLayer {
   }
   private hover: { hallIndex: number; bbox: PreviewBooth['bbox'] } | null = null
   private pdfImages: ReadonlyMap<MapHall, HTMLImageElement> = new Map()
-  private routesVisible = true
+  private routesVisible = false
   private navigation: ReturnType<typeof buildNavigation> | null = null
   private routeStart: RoutePoint | null = null
   private routeEnd: RoutePoint | null = null
@@ -190,13 +191,6 @@ export class ComiketMapLayer {
     const navigation = this.navigation ??= buildNavigation(this.data, this.halls, this.transforms, hall => hallMetadata(hall).level)
     const queue = queueStart(this.data, navigation, side)
     if (!queue) return `无法接入${side}待機列。`
-    const boothColours = new Map<PreviewBooth['bbox'], string>()
-    // Match the topmost favorite color for a rectangle, using the map layer's draw order.
-    for (const highlights of favorites.byHall.values()) {
-      for (const { colour, rectangles } of highlights) {
-        for (const rectangle of rectangles) boothColours.set(rectangle, colour)
-      }
-    }
     const targets = eligible.flatMap(({ hallIndex, booth, bbox, coefficient, colours }): PlannedStop[] => {
       const { target } = boothRoutePoint(navigation, hallIndex, booth, bbox)
       const hall = navigation.byHall.get(hallIndex)?.hall
@@ -205,7 +199,7 @@ export class ComiketMapLayer {
       const half = hall.page.halfBooths?.find(half => half.bbox === bbox)?.suffix
       const suffix = half === 'a' || half === 'b' ? half : 'ab'
       return [{ ...target, coefficient, hallIndex, bbox, suffix, id: JSON.stringify([hallIndex, booth.id, suffix]),
-        colour: boothColours.get(bbox) ?? colours[0],
+        colour: this.boothColours.get(bbox) ?? colours[0],
         hit: { hallGroup: hall.name, island, number: booth.number, suffix: suffix === 'b' ? 'b' : 'a' } }]
     })
     const { legs, visited } = greedyBoothRoute(navigation, queue.start, targets)
@@ -329,10 +323,24 @@ export class ComiketMapLayer {
     this.requestDraw()
   }
 
-  setFavoriteHighlights(highlights: FavoriteHighlights | null) {
+  setFavoriteHighlights(highlights: FavoriteHighlights | null, preserveRoute = false) {
     if (this.favoriteHighlights === highlights) return
-    this.clearPlannedRoute()
+    if (!preserveRoute) this.clearPlannedRoute()
     this.favoriteHighlights = highlights
+    this.boothColours.clear()
+    for (const groups of highlights?.byHall.values() ?? []) {
+      for (const { colour, rectangles } of groups) {
+        for (const rectangle of rectangles) this.boothColours.set(rectangle, colour)
+      }
+    }
+    if (this.plannedRoute) {
+      const visited = this.plannedRoute.visited.map(stop => {
+        const colour = this.boothColours.get(stop.bbox)
+        return colour && colour !== stop.colour ? { ...stop, colour } : stop
+      })
+      this.inspectedStop = visited.find(stop => stop.id === this.inspectedStop?.id) ?? null
+      this.drawPlannedRoute({ ...this.plannedRoute, visited })
+    }
     this.requestDraw()
   }
 
@@ -340,7 +348,7 @@ export class ComiketMapLayer {
     map: BasemapRenderer,
     routeCanvas: HTMLCanvasElement,
     data: OsmMapData,
-    onHover: (label: string, clickable: boolean, hit: MapBoothHit | null) => void = () => {},
+    onHover: (label: string, clickable: boolean, hit: MapBoothHit | null, colour?: string) => void = () => {},
     onPlannedRoute: (stops: RouteListStop[]) => void = () => {},
   ) {
     this.map = map
@@ -423,6 +431,7 @@ export class ComiketMapLayer {
     let label = ''
     let selected: MapBoothHit | null = null
     let hover: typeof this.hover = null
+    let colour: string | undefined
     if (this.pointer && this.view && this.hallDisplay.visible && this.hallDisplay.boxes
       && this.pointer.x >= 0 && this.pointer.y >= 0
       && this.pointer.x <= this.size.width && this.pointer.y <= this.size.height) {
@@ -453,6 +462,8 @@ export class ComiketMapLayer {
         const appearance = boothHover(hit, islandCode ?? null, this.occupancy)
         this.routeHover = { hallIndex: hall.index, booth: hit.booth, bbox: hit.half.bbox }
         hover = appearance.bbox ? { hallIndex: hall.index, bbox: appearance.bbox } : null
+        if (hover) colour = this.boothColours.get(hover.bbox)
+          ?? this.boothColours.get(hit.half.bbox) ?? this.boothColours.get(hit.booth.bbox)
         label = `${hall.name ?? `Hall ${hall.index + 1}`} / ${islandCode ?? hit.block.islandId ?? '?'} / ${hit.booth.number ?? '?'}${appearance.suffix}`
         if (appearance.bbox && hall.name && islandCode && hit.booth.number && (hit.half.suffix === 'a' || hit.half.suffix === 'b')) {
           selected = { hallGroup: hall.name, island: islandCode, number: hit.booth.number, suffix: hit.half.suffix }
@@ -463,7 +474,7 @@ export class ComiketMapLayer {
     if (label !== this.hoverLabel) {
       this.hoverLabel = label
     }
-    this.onHover(label, selected !== null, hover ? selected : null)
+    this.onHover(label, selected !== null, hover ? selected : null, colour)
     if (hover?.hallIndex !== this.hover?.hallIndex || hover?.bbox !== this.hover?.bbox) {
       this.hover = hover
       if (redraw) this.requestDraw()
