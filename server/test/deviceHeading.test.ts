@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mapRotationFromOrientation } from '../../client/src/map/basemap/deviceHeading.ts'
+import { mapRotationFromOrientation, smoothMapRotation } from '../../client/src/map/basemap/deviceHeading.ts'
 
 const absolute = { alpha: 0, beta: 0, gamma: 0, absolute: true }
 
@@ -29,4 +29,13 @@ test('rejects relative, invalid and vertically ambiguous directions', () => {
     webkitCompassAccuracy: -1 }, 0), null)
   assert.equal(mapRotationFromOrientation({ ...absolute, alpha: null }, 0), null)
   assert.equal(mapRotationFromOrientation({ ...absolute, beta: 90 }, 0), null)
+})
+
+test('smooth rotation follows the shortest path and is independent of frame rate', () => {
+  const first = smoothMapRotation(0, 90, 60)
+  assert.ok(first > 0 && first < 90)
+  assert.ok(Math.abs(smoothMapRotation(first, 90, 60) - smoothMapRotation(0, 90, 120)) < 1e-9)
+  assert.ok(smoothMapRotation(179, -179, 60) > 179)
+  assert.ok(smoothMapRotation(-179, 179, 60) < -179)
+  assert.ok(Math.abs(smoothMapRotation(179.98, -180, 16) - 180) < 1e-9)
 })

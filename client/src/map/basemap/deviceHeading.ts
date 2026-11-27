@@ -7,6 +7,12 @@ interface OrientationReading {
   webkitCompassAccuracy?: number
 }
 
+export function smoothMapRotation(current: number, target: number, elapsedMs: number): number {
+  const delta = ((target - current + 180) % 360 + 360) % 360 - 180
+  if (Math.abs(delta) < 0.05) return current + delta
+  return current + delta * (1 - Math.exp(-Math.max(0, elapsedMs) / 120))
+}
+
 export function mapRotationFromOrientation(event: OrientationReading, screenAngle: number): number | null {
   const { alpha, beta, gamma, webkitCompassHeading, webkitCompassAccuracy } = event
   if (!Number.isFinite(screenAngle)) return null
